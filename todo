@@ -1,0 +1,2 @@
+Code acceleration
+    getJacobianFromContacts: only need to compute once for all sticking contacts, then for each contact mode, just select rows from it
