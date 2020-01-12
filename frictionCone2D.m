@@ -1,22 +1,11 @@
-% 16-741 Mechanics of Manipulation, Fall 2015
-% Author: Sung Kyun Kim (kimsk@cs.cmu.edu)
+% Compute 2D friction cone edges.
 %
-% N: the number of contact points; scalar
-% CP: a set of contact point positions [[pix; piy; piz] ...]; 3xN matrix
-% CN: a set of inward-pointing directions of contact normals [[nix; niy; niz] ...]; 3xN matrix
-% mu: the coefficient of (static) friction; scalar
-% M: the number of side facets of a linearized polyhedral friction cone; scalar
-% CPF: a set of contact point positions of edges of polyhedral friction cones [[pijx; pijy; pijz] ...]; 3x(NM) matrix
-% CNF: a set of inward-pointing directions of edges of polyhedral friction cones [[sijx; sijy; sijz] ...]; 3x(NM) matrix
+% CP: 3xN a set of contact point positions. Last row is all zero.
+% CN: 3xN a set of contact normals pointing towards the object. Last row is all zero.
+% mu: the coefficient of (static) friction.
+% CPF: 3x(2N) a set of contact point positions. Two columns per contact point.
+% CNF: 3x(2N) a set of friction cone edges, pointing towards the object. Left edge 1, right edge 1, left edge 2, right edge 2 ...
 %
-% Examples:
-% i;                            % index for i-th contact normal
-% j;                            % index for j-th edge of polyhedral friction cone of i-th contact normal
-% CPi = CP(1:3, i);             % i-th contact point position
-% CNi = CN(1:3, i);             % i-th contact normal direction
-% CPFij = CPF(1:3, M*(i-1)+j);  % contact point position of j-th edge of polyhedral friction cone of i-th contact normal
-% CNFij = CNF(1:3, M*(i-1)+j);  % contact normal direction of j-th edge of polyhedral friction cone of i-th contact normal
-
 function [CPF, CNF] = frictionCone2D(CP, CN, mu)
 N = size(CP,2);
 %% CPF
@@ -37,6 +26,6 @@ for i = 1:N
     nn = CN(:, i)/norm(CN(:, i));
     assert(abs(nn(3)) < 1e-7);
     CNF(:,2*i-1) = RL*nn;
-    CNF(:,2*i) = RL*nn;
+    CNF(:,2*i) = RR*nn;
 end
 assert(norm(CNF(3, :)) < 1e-7);

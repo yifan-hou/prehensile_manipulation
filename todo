@@ -1,2 +1,26 @@
-Code acceleration
-    getJacobianFromContacts: only need to compute once for all sticking contacts, then for each contact mode, just select rows from it
+dimensionality of a range: does it have to be of certain dimensional to be feasible?
+
+Basic rules/facts
+The space can be divided into the following parts:
+1. Infeasible range: whole space minus cone{Ch}
+    Physically impossible forces. E.g. pull using a contact.
+2. Unstable range: cone{Ch} minus cone{-Ce}
+    It's possible to be at those places, but the force from hand can not be balanced by the environment. Acceleration will generate and quasi-static balance assumption will break.
+3. Stable range: intersection of cone{Ch} and cone{-Ce} force equilibrium is possible in these ranges. It can further be divided based on specific contact modes.
+
+
+
+1. those regions shows the contact forces when the object is in equilibrium. Other regions are either infeasible modes or unstable modes
+2. you can control force in the force controlled subspace. The force in the rest of dimensions is not directly controllable.
+3. Given a velocity command, forces in the velocity controlled dimensions will will accumulate to put you in one of the modes that are compatible.
+
+Type of modes
+Cone_e, cone_h, cone_C have non-empty intersections: force-feasible/force-infeasible cone
+N,C compatibility: velocit-feasible, velocity-infeasible, velocity-impossible
+
+force-feasible, velocity feasible cone:
+force-feasible, velocity infeasible cone
+    reduce to impossible if the cone does not contain a velocity controlled direction
+    if it does contain one, need to preload to avoid it
+force-infeasible, velocity feasible cone:
+
