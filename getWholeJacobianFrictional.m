@@ -14,4 +14,4 @@ W_e_all = contactScrew(CPF_e, CNF_e);
 
 % the linear constraint on velocity from contact screws
 Je = v3t2(W_e_all)'*adj_WH;
-Jh = -v3t2(W_h_all)'*adj_HW;
+Jh = -v3t2(W_h_all)'*adj_HW*adj_WH;

@@ -58,4 +58,4 @@ h_mode = int8([1; 1]); % ff
 %         CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode, h_mode);
 
 solution = wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, ...
-            CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G);
+            CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, 15);

@@ -31,11 +31,11 @@ for i = 1:Nh
     CN = CN_H_h(:,i)/norm(CN_H_h(:,i));
     pq = cross(CP_H_h(:,i), CN);
     c1 = [CN(1), CN(2), pq(3)];
-    c2 = c1*adj_HW;
+    c2 = c1*adj_HW*adj_WH;
     CLeft = cross(z, CN);
     pq_ = cross(CP_H_h(:,i), CLeft);
     c1_ = [CLeft(1), CLeft(2), pq_(3)]';
-    c2_ = c1_'*adj_HW;
+    c2_ = c1_'*adj_HW*adj_WH;
     Jac_h(2*i - 1, :) = [c2, -c2];
     Jac_h(2*i, :) = [c2_, -c2_];
 end
