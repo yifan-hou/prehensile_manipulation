@@ -13,46 +13,38 @@ clc;clear;
 
 % Parameters
 kFrictionH = 1;
-kFrictionE = 0.6;
+kFrictionE = 0.9;
 
 % list of contact points and contact normals
-p_e1 = [0.5; 0; 0];
-p_e2 = [-0.5; 0; 0];
-n_e1 = [0; 1; 0];
-n_e2 = [0; 1; 0];
+p_e1 = [0.5; 0];
+p_e2 = [-0.5; 0];
+n_e1 = [0; 1];
+n_e2 = [0; 1];
 
-p_O_h1 = [0; 1; 0];
-n_O_h1 = [0; -1; 0];
+p_H_h1 = [0; 0];
+n_H_h1 = [0; -1];
 
-CP_e = [p_e1, p_e2];
-CN_e = [n_e1, n_e2];
-CP_O_h = [p_O_h1];
-CN_O_h = [n_O_h1];
+CP_W_e = [p_e1, p_e2];
+CN_W_e = [n_e1, n_e2];
+CP_H_h = [p_H_h1];
+CN_H_h = [n_H_h1];
 
-R_WO = eye(3);
-p_WO = zeros(3, 1);
+R_WH = eye(2);
+p_WH = [0; 1];
+
 %%
 %% Goal
 %% 0, 1 or 2
 
-% % rrf
-% G = [1 0 0 0 0 0];
-% b_G = [0.1];
-% e_mode = int8([2; 2]); % rr
-% h_mode = int8(1); % f
-
-% fsf
-G = [1 1 0 0 0 0];
-b_G = 0.1;
-e_mode = int8([1; 0]); % fs
-h_mode = int8(1); % f
-
-% fsf
+% sff
 G = [0 0 1 0 0 0];
-b_G = -0.1;
-e_mode = int8([1; 0]); % fs
+b_G = 0.1;
+e_mode = int8([0; 1]); % fs
 h_mode = int8(1); % f
 
-% wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, CP_e, CN_e, CP_O_h, CN_O_h, R_WO, p_WO, G, b_G);
+% wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
+%         CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode, h_mode);
 
-wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_e, CN_e, CP_O_h, CN_O_h, R_WO, p_WO, G, b_G, e_mode, h_mode);
+solution = wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, ...
+            CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G);
+

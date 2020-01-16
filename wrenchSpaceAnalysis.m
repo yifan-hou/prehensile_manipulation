@@ -1,31 +1,40 @@
-function wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_e, CN_e, CP_O_h, CN_O_h, R_WO, p_WO, G, b_G, e_mode_goal, h_mode_goal)
+function solution = wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
+        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode_goal, h_mode_goal)
+solution = [];
 
 kForceMagnitude = 5; % newton
+kCharacteristicLength = 0.05; % m
 
-Ne = size(CP_e, 2);
-Nh = size(CP_O_h, 2);
+wrench_scaling_matrix = diag([1, 1, 1/kCharacteristicLength]);
 
-R_OW = R_WO';
-p_OW = -R_OW*p_WO;
-Adj_OW = SE22Adj(R_OW(1:2,1:2), p_OW(1:2));
+Ne = size(CP_W_e, 2);
+Nh = size(CP_H_h, 2);
 
-CP_h = CP_O_h;
-CN_h = CN_O_h;
-for i = 1:Nh
-    CP_h(:, i) = R_WO*CP_O_h(:, i) + p_WO;
-    CN_h(:, i) = R_WO*CN_O_h(:, i);
-end
+% add virtual z axis
+assert(size(CP_W_e, 1) == 2);
+CP_W_e = [CP_W_e; zeros(1, Ne)];
+CN_W_e = [CN_W_e; zeros(1, Ne)];
+CP_H_h = [CP_H_h; zeros(1, Nh)];
+CN_H_h = [CN_H_h; zeros(1, Nh)];
+R_WH = [R_WH [0; 0]; 0 0 1];
+p_WH = [p_WH; 0];
 
-[Jac_e, Jac_h] = getWholeJacobian(CP_e, CN_e, CP_O_h, CN_O_h, Adj_OW);
-[Jacf_e, Jacf_h] = getWholeJacobianFrictional(CP_e, CN_e, kFrictionE, CP_O_h, CN_O_h, kFrictionH, Adj_OW);
+R_HW = R_WH';
+p_HW = -R_HW*p_WH;
+adj_HW = SE22Adj(R_HW(1:2,1:2), p_HW(1:2));
+adj_WH = SE22Adj(R_WH(1:2,1:2), p_WH(1:2));
+
+[Jac_e, Jac_h] = getWholeJacobian(CP_W_e, CN_W_e, CP_H_h, CN_H_h, adj_WH, adj_HW);
+[Jacf_e, Jacf_h] = getWholeJacobianFrictional(CP_W_e, CN_W_e, kFrictionE, ...
+        CP_H_h, CN_H_h, kFrictionH, adj_WH, adj_HW);
 
 disp('Goal Mode:');
 eh_mode_goal = [e_mode_goal; h_mode_goal];
 goal_text = printModes(eh_mode_goal);
+
 %%
 %% Hybrid Servoing
 %%
-
 fprintf("###############################################\n");
 fprintf("##             Hybrid Servoing               ##\n");
 fprintf("###############################################\n");
@@ -72,8 +81,8 @@ fprintf("###############################################\n");
 %       impossible.
 
 % Enumerate contact modes
-e_modes = contact_mode_enumeration(CP_e(1:2,:), CN_e(1:2,:), true);
-h_modes = contact_mode_enumeration(CP_O_h(1:2,:), CN_O_h(1:2,:), true);
+e_modes = contact_mode_enumeration(CP_W_e(1:2,:), CN_W_e(1:2,:), true);
+h_modes = contact_mode_enumeration(CP_H_h(1:2,:), CN_H_h(1:2,:), true);
 % get rid of all separation modes
 e_modes(:, all(e_modes == 0, 1)) = [];
 h_modes(:, all(h_modes == 0, 1)) = [];
@@ -162,9 +171,14 @@ for i = 1:size(e_modes, 2)
             end
         end
 
+        % scaling
+        Je_scaled_ = Je_*wrench_scaling_matrix';
+        Jh_scaled_ = Jh_*wrench_scaling_matrix';
+        R_scaled = wrench_scaling_matrix*R;
+
         % check cone stability margin
-        margin_e = computeStabilityMargin(Je_', R);
-        margin_h = computeStabilityMargin(Jh_', R);
+        margin_e = computeStabilityMargin(Je_scaled_', R_scaled);
+        margin_h = computeStabilityMargin(Jh_scaled_', R_scaled);
         margin_ = min(margin_e, margin_h);
 
 %         figure(1);clf(1);hold on;
@@ -218,6 +232,7 @@ end
 
 % action selection
 flag_force_region_feasible = true;
+force_basis = R_a_inv(:, 1:n_af);
 assert(n_af < 3);
 assert(n_af > 0);
 if flag_goal_is_feasible
@@ -226,15 +241,16 @@ if flag_goal_is_feasible
     compatibilities(goal_id) = true;
     cone_generators_goal = cone_generators{goal_id};
     % project to force controlled plane/line
-    force_basis = R_a_inv(:, 1:n_af);
     % pick a value
     projection_goal = force_basis'*cone_generators_goal;
     force_action = [];
     projection_goal_remains = projection_goal;
 
     force_action = mean(normc(projection_goal), 2);
+    shape_margin = [];
     if ~isempty(cone_generators_other_feasible)
         if n_af == 1
+            shape_margin = norm(wrench_scaling_matrix*force_action);
             for i = 1:length(cone_generators_other_feasible)
                 projection_other_feasible = force_basis'*cone_generators_other_feasible{i};
                 if any(projection_other_feasible'*force_action > 0)
@@ -254,9 +270,12 @@ if flag_goal_is_feasible
             end
             if flag_force_region_feasible
                 force_action = mean(normc(projection_goal_remains), 2);
+                projection_goal_remains_scaled = wrench_scaling_matrix*force_basis*projection_goal_remains;
+                shape_margin = kForceMagnitude*angBTVec(projection_goal_remains_scaled(:, 1), projection_goal_remains_scaled(:, 2))/2;
             end
         end
     end
+
 
     if flag_force_region_feasible
         disp('Force command:')
@@ -278,7 +297,7 @@ figure(1); clf(1); hold on;
 drawWrench(W_action(:, 1:2*n_af), [0.8, 0.4, 0.4], false);
 drawWrench(W_action(:, end-n_av+1:end), [0.4, 0.8, 0.8], true);
 
-
+axis([-1.1 1.1 -1.1 1.1 -1.1 1.1]);
 % draw the origin
 plot3(0,0,0,'r*','markersize',35);
 for i = 1:feasible_mode_count
@@ -318,10 +337,11 @@ if flag_goal_is_feasible
     if flag_force_region_feasible
         faction = [[0;0;0] force_basis*force_action];
         plot3(faction(1,:), faction(2,:), faction(3,:), '-ro', 'markersize', 30);
+        solution.n_af = n_af;
+        solution.n_av = n_av;
+        solution.R_a = R_a;
+        solution.w_av = w_av;
+        solution.eta_af = -kForceMagnitude*force_action; % the minus sign comes from force balance
+        solution.margin = min(shape_margin, margins(m));
     end
 end
-
-
-% todo: output action and score
-n_av, n_af, R_a, w_av
-

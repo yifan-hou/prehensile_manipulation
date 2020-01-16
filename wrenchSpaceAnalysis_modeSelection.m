@@ -1,34 +1,42 @@
-function wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, CP_e, CN_e, CP_O_h, CN_O_h, R_WO, p_WO, G, b_G)
+function solution = wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, ...
+            CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, kForceMagnitude)
 
-kForceMagnitude = 5; % newton
+kCharacteristicLength = 0.05;
+wrench_scaling_matrix = diag([1, 1, 1/kCharacteristicLength]);
 TOL = 1e-7;
 
-Ne = size(CP_e, 2);
-Nh = size(CP_O_h, 2);
+Ne = size(CP_W_e, 2);
+Nh = size(CP_H_h, 2);
 
-R_OW = R_WO';
-p_OW = -R_OW*p_WO;
-Adj_OW = SE22Adj(R_OW(1:2,1:2), p_OW(1:2));
+% add virtual z axis
+assert(size(CP_W_e, 1) == 2);
+CP_W_e = [CP_W_e; zeros(1, Ne)];
+CN_W_e = [CN_W_e; zeros(1, Ne)];
+CP_H_h = [CP_H_h; zeros(1, Nh)];
+CN_H_h = [CN_H_h; zeros(1, Nh)];
+R_WH = [R_WH [0; 0]; 0 0 1];
+p_WH = [p_WH; 0];
 
-CP_h = CP_O_h;
-CN_h = CN_O_h;
-for i = 1:Nh
-    CP_h(:, i) = R_WO*CP_O_h(:, i) + p_WO;
-    CN_h(:, i) = R_WO*CN_O_h(:, i);
-end
+R_HW = R_WH';
+p_HW = -R_HW*p_WH;
+adj_HW = SE22Adj(R_HW(1:2,1:2), p_HW(1:2));
+adj_WH = SE22Adj(R_WH(1:2,1:2), p_WH(1:2));
 
-[Jac_e, Jac_h] = getWholeJacobian(CP_e, CN_e, CP_O_h, CN_O_h, Adj_OW);
-[Jacf_e, Jacf_h] = getWholeJacobianFrictional(CP_e, CN_e, kFrictionE, CP_O_h, CN_O_h, kFrictionH, Adj_OW);
+[Jac_e, Jac_h] = getWholeJacobian(CP_W_e, CN_W_e, CP_H_h, CN_H_h, adj_WH, adj_HW);
+[Jacf_e, Jacf_h] = getWholeJacobianFrictional(CP_W_e, CN_W_e, kFrictionE, ...
+        CP_H_h, CN_H_h, kFrictionH, adj_WH, adj_HW);
 
 fprintf("###############################################\n");
 fprintf("##              Mode Enumeration             ##\n");
 fprintf("###############################################\n");
 % Enumerate contact modes
-e_modes = contact_mode_enumeration(CP_e(1:2,:), CN_e(1:2,:), true);
-h_modes = contact_mode_enumeration(CP_O_h(1:2,:), CN_O_h(1:2,:), true);
+e_modes = contact_mode_enumeration(CP_W_e(1:2,:), CN_W_e(1:2,:), true);
+h_modes = contact_mode_enumeration(CP_H_h(1:2,:), CN_H_h(1:2,:), true);
+
 % get rid of all separation modes
 e_modes(:, all(e_modes == 0, 1)) = [];
 h_modes(:, all(h_modes == 0, 1)) = [];
+
 % add all fixed mode if necessary
 if sum(all(e_modes == 1, 1)) == 0
     e_modes = [e_modes ones(size(e_modes,1),1)];
@@ -67,8 +75,13 @@ for i = 1:size(e_modes, 2)
         [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
 
         % compute cone stability margin
-        margin_e = computeStabilityMargin(Je_', R);
-        margin_h = computeStabilityMargin(Jh_', R);
+        % scaling
+        Je_scaled_ = Je_*wrench_scaling_matrix';
+        Jh_scaled_ = Jh_*wrench_scaling_matrix';
+        R_scaled = wrench_scaling_matrix*R;
+
+        margin_e = computeStabilityMargin(Je_scaled_', R_scaled);
+        margin_h = computeStabilityMargin(Jh_scaled_', R_scaled);
         margin_ = min(margin_e, margin_h);
 
         % figure(1);clf(1);hold on;
@@ -247,12 +260,12 @@ for m = 1:eh_cone_feasible_mode_count
         disp('Goal mode violates velocity inequality constraints. Discard this mode.');
         continue;
     end
-    
+
     if flag_goal_w_impossible
         disp('Goal mode force can not be maintained by velocity. Discard this mode.');
         continue;
     end
-    
+
     disp(['Remaining feasible modes: ' num2str(feasible_mode_count)]);
 
     % trim
@@ -277,8 +290,10 @@ for m = 1:eh_cone_feasible_mode_count
     projection_goal_remains = projection_goal;
 
     force_action = mean(normc(projection_goal), 2);
+    shape_margin = [];
     if ~isempty(eh_cones_other_feasible_m)
         if n_af == 1
+            shape_margin = norm(wrench_scaling_matrix*force_action);
             for i = 1:length(eh_cones_other_feasible_m)
                 projection_other_feasible = force_basis'*eh_cones_other_feasible_m{i};
                 if any(projection_other_feasible'*force_action > 0)
@@ -297,7 +312,20 @@ for m = 1:eh_cone_feasible_mode_count
                 end
             end
             if flag_force_region_feasible
-                force_action = mean(normc(projection_goal_remains), 2);
+                % pick the action that is far away from other regions.
+                if length(eh_cones_other_feasible_m) > 1
+                    force_action = mean(normc(projection_goal_remains), 2);
+                else
+                    ang1 = angBTVec(projection_other_feasible, projection_goal_remains(:, 1));
+                    ang2 = angBTVec(projection_other_feasible, projection_goal_remains(:, 2));
+                    if ang1 > ang2
+                        force_action = normc(projection_goal_remains(:, 1));
+                    else
+                        force_action = normc(projection_goal_remains(:, 2));
+                    end
+                end
+                projection_goal_remains_scaled = wrench_scaling_matrix*force_basis*projection_goal_remains;
+                shape_margin = kForceMagnitude*angBTVec(projection_goal_remains_scaled(:, 1), projection_goal_remains_scaled(:, 2))/2;
             end
         end
     end
@@ -310,8 +338,8 @@ for m = 1:eh_cone_feasible_mode_count
         solution.n_av = n_av;
         solution.R_a = R_a;
         solution.w_av = w_av;
-        solution.eta_af = force_action;
-        solution.margin = margins(m);
+        solution.eta_af = -kForceMagnitude*force_action; % the minus sign comes from force balance
+        solution.margin = min(shape_margin, margins(m));
 
         solutions_count = solutions_count + 1;
         solutions{solutions_count} = solution;
@@ -319,16 +347,24 @@ for m = 1:eh_cone_feasible_mode_count
         disp('No distinguishable force command.');
         continue;
     end
-
 end
-
+fprintf("###############################################\n");
+fprintf("##                  Results                  ##\n");
+fprintf("###############################################\n");
+fprintf("Total number of solutions found: %d\n", solutions_count);
+solution = [];
 if solutions_count > 0
     solutions = solutions(1:solutions_count);
-end
-fprintf("Total number of solutions found: %d\n", solutions_count);
-for i = 1:solutions_count
-    printModes(solutions{i}.eh_mode);
-    fprintf("margin: %f\n", solutions{i}.margin);
+    margins = zeros(1, solutions_count);
+    for i = 1:solutions_count
+        printModes(solutions{i}.eh_mode);
+        fprintf("margin: %f\n", solutions{i}.margin);
+        margins(i) = solutions{i}.margin;
+    end
 
+    [~, best_solution_id] = max(margins);
+    solution = solutions{best_solution_id};
 end
+
+
 return;

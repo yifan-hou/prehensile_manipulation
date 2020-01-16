@@ -1,16 +1,17 @@
 % Jac includes contact screws for all friction cone edges.
 % Nv >= 0
-% N = [Jac_e, 0; -Jac_h Jac_h]
-function [Jac_e, Jac_h] = getWholeJacobianFrictional(CP_e, CN_e, mu_e, CP_O_h, CN_O_h, mu_h, Adj_OW)
+% N = [Je, 0; -Jh Jh]
+function [Je, Jh] = getWholeJacobianFrictional(CP_W_e, CN_W_e, ...
+        mu_e, CP_H_h, CN_H_h, mu_h, adj_WH, adj_HW)
 
 % friction cone
-[CPF_e, CNF_e] = frictionCone2D(CP_e, CN_e, mu_e);
-[CPF_h, CNF_h] = frictionCone2D(CP_O_h, -CN_O_h, mu_h); % note the minus sign
+[CPF_e, CNF_e] = frictionCone2D(CP_W_e, CN_W_e, mu_e);
+[CPF_h, CNF_h] = frictionCone2D(CP_H_h, CN_H_h, mu_h);
 
 % contact screws
 W_h_all = contactScrew(CPF_h, CNF_h);
 W_e_all = contactScrew(CPF_e, CNF_e);
 
 % the linear constraint on velocity from contact screws
-Jac_e = v3t2(W_e_all)';
-Jac_h = v3t2(W_h_all)'*Adj_OW;
+Je = v3t2(W_e_all)'*adj_WH;
+Jh = -v3t2(W_h_all)'*adj_HW;
