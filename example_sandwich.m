@@ -12,7 +12,7 @@ clc;clear;
 
 % Parameters
 kFrictionH = 1.5;
-kFrictionE = 1.1;
+kFrictionE = 0.55;
 
 kW = 0.0435; % object width
 kH = 0.0435; % object height
@@ -33,8 +33,10 @@ CN_W_e = [n_W_e1, n_W_e2];
 CP_H_h = [p_H_h1, p_H_h2];
 CN_H_h = [n_H_h1, n_H_h2];
 
-R_WH = eye(2);
-p_WH = [0; kH];
+angle = 0; % deg
+R_WH = rotz(angle); R_WH = R_WH(1:2, 1:2);
+angle_rad = angle*pi/180;
+p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad)]/2 + kH*[-sin(angle_rad); cos(angle_rad)];
 
 %%
 %% Goal
@@ -54,8 +56,8 @@ h_mode = int8([1; 1]); % ff
 % e_mode = int8([2; 2]); % rr
 % h_mode = int8([1; 1]); % ff
 
-% wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
-%         CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode, h_mode);
+wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
+        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode, h_mode, 15);
 
-solution = wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, ...
-            CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, 15);
+% solution = wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, ...
+%             CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, 15);

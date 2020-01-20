@@ -1,11 +1,18 @@
 function solution = wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
-        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode_goal, h_mode_goal)
+        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode_goal, h_mode_goal, kForceMagnitude)
 solution = [];
 
-kForceMagnitude = 5; % newton
 kCharacteristicLength = 0.05; % m
+% kCharacteristicLength = 1; % m
 
-wrench_scaling_matrix = diag([1, 1, 1/kCharacteristicLength]);
+
+% scaling for generalized velocity
+% V = gvscale * V_scaled
+vscale = diag([1 1 1/kCharacteristicLength]);
+vscale_inv = diag([1 1 kCharacteristicLength]);
+gvscale = diag([1 1 1/kCharacteristicLength 1 1 1/kCharacteristicLength]);
+% N_ * V_scaled = 0, N*V = 0,
+% -> N_ = N*gvscale
 
 Ne = size(CP_W_e, 2);
 Nh = size(CP_H_h, 2);
@@ -28,9 +35,16 @@ adj_WH = SE22Adj(R_WH(1:2,1:2), p_WH(1:2));
 [Jacf_e, Jacf_h] = getWholeJacobianFrictional(CP_W_e, CN_W_e, kFrictionE, ...
         CP_H_h, CN_H_h, kFrictionH, adj_WH, adj_HW);
 
+% scale
+Jac_e = Jac_e * gvscale;
+Jac_h = Jac_h * gvscale;
+Jacf_e = Jacf_e * vscale;
+Jacf_h = Jacf_h * vscale;
+
+
 disp('Goal Mode:');
 eh_mode_goal = [e_mode_goal; h_mode_goal];
-goal_text = printModes(eh_mode_goal);
+printModes(eh_mode_goal);
 
 %%
 %% Hybrid Servoing
@@ -44,10 +58,12 @@ dims.Actualized = 3;
 dims.UnActualized = 3;
 dims.SlidingFriction = 0;
 
-N_all = getJacobianFromContacts(e_mode_goal, h_mode_goal, Jac_e, Jac_h);
+[N_all, ~, Nue] = getJacobianFromContacts(e_mode_goal, h_mode_goal, Jac_e, Jac_h);
 
-[n_av, n_af, R_a, w_av] = solvehfvc(dims, N_all, G, ...
+[n_av, n_af, R_a, w_av] = solvehfvc(dims, N_all, Nue, G, ...
     b_G, [], [], [], [], [], 3, false);
+% unscale
+
 
 fprintf('The force controlled dimension is %d\n', n_af);
 fprintf('The velocity controlled dimension is %d\n', n_av);
@@ -123,6 +139,7 @@ flag_crashing = false;
 
 for i = 1:size(e_modes, 2)
     for j = 1:size(h_modes, 2)
+        printModes([e_modes(:, i); h_modes(:, j)]);
         % filter out modes using velocity command
         [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
         N = rref(N);
@@ -141,6 +158,7 @@ for i = 1:size(e_modes, 2)
                 % this mode can not exist
                 % V-Impossible
                 velocity_filtered_count = velocity_filtered_count + 1;
+                disp('Violates velocity inequality constraints. Discard');
                 continue;
             end
             compatible = true;
@@ -152,15 +170,17 @@ for i = 1:size(e_modes, 2)
         R = coneIntersection(Je_', Jh_');
         if isempty(R) || norm(R) == 0
             force_filtered_count = force_filtered_count + 1;
+            disp('Je, Jh has no intersections. Discard');
             continue;
         end
 
-        % check for feasible actuation
-        R_ = coneIntersection(R, W_action);
-        if isempty(R_) || norm(R_) == 0
-            force_filtered_count = force_filtered_count + 1;
-            continue;
-        end
+%         % check for feasible actuation
+%         R_ = coneIntersection(R, W_action);
+%         if isempty(R_) || norm(R_) == 0
+%             force_filtered_count = force_filtered_count + 1;
+%             disp('R_, W_action has no intersections. Discard');
+%             continue;
+%         end
 
         % Crashing check:
         % Check if the infeasible mode contains v-controlled direction
@@ -171,14 +191,9 @@ for i = 1:size(e_modes, 2)
             end
         end
 
-        % scaling
-        Je_scaled_ = Je_*wrench_scaling_matrix';
-        Jh_scaled_ = Jh_*wrench_scaling_matrix';
-        R_scaled = wrench_scaling_matrix*R;
-
         % check cone stability margin
-        margin_e = computeStabilityMargin(Je_scaled_', R_scaled);
-        margin_h = computeStabilityMargin(Jh_scaled_', R_scaled);
+        margin_e = computeStabilityMargin(Je_', R);
+        margin_h = computeStabilityMargin(Jh_', R);
         margin_ = min(margin_e, margin_h);
 
 %         figure(1);clf(1);hold on;
@@ -189,7 +204,7 @@ for i = 1:size(e_modes, 2)
 %         drawWrench(W_action,'k', true);
 
         feasible_mode_count = feasible_mode_count + 1;
-        cone_generators{feasible_mode_count} = R_;
+        cone_generators{feasible_mode_count} = R;
         cone_e{feasible_mode_count} = Je_';
         cone_h{feasible_mode_count} = Jh_';
         eh_modes = [eh_modes [e_modes(:, i); h_modes(:, j)]];
@@ -206,7 +221,6 @@ disp(['Remaining feasible modes: ' num2str(feasible_mode_count)]);
 cone_generators = cone_generators(1:feasible_mode_count);
 cone_e = cone_e(1:feasible_mode_count);
 cone_h = cone_h(1:feasible_mode_count);
-
 
 fprintf("###############################################\n");
 fprintf("##                 Evaluation                ##\n");
@@ -250,7 +264,7 @@ if flag_goal_is_feasible
     shape_margin = [];
     if ~isempty(cone_generators_other_feasible)
         if n_af == 1
-            shape_margin = norm(wrench_scaling_matrix*force_action);
+            shape_margin = norm(force_action);
             for i = 1:length(cone_generators_other_feasible)
                 projection_other_feasible = force_basis'*cone_generators_other_feasible{i};
                 if any(projection_other_feasible'*force_action > 0)
@@ -270,12 +284,11 @@ if flag_goal_is_feasible
             end
             if flag_force_region_feasible
                 force_action = mean(normc(projection_goal_remains), 2);
-                projection_goal_remains_scaled = wrench_scaling_matrix*force_basis*projection_goal_remains;
+                projection_goal_remains_scaled = force_basis*projection_goal_remains;
                 shape_margin = kForceMagnitude*angBTVec(projection_goal_remains_scaled(:, 1), projection_goal_remains_scaled(:, 2))/2;
             end
         end
     end
-
 
     if flag_force_region_feasible
         disp('Force command:')
@@ -297,33 +310,32 @@ figure(1); clf(1); hold on;
 drawWrench(W_action(:, 1:2*n_af), [0.8, 0.4, 0.4], false);
 drawWrench(W_action(:, end-n_av+1:end), [0.4, 0.8, 0.8], true);
 
-axis([-1.1 1.1 -1.1 1.1 -1.1 1.1]);
 % draw the origin
 plot3(0,0,0,'r*','markersize',35);
 for i = 1:feasible_mode_count
     if i == goal_id
         fprintf('Mode %d: (Goal)\n', i);
+        fprintf('Margin: %f\n', margins(i));
     else
         fprintf('Mode %d:\n', i);
     end
     texts = printModes(eh_modes(:, i), false);
-    texts(end) = [];
     if compatibilities(i) == true
         disp(texts);
-        rcolor = [0.2*rand(), 0.5 + 0.5*rand(), 0.1+0.2*rand()];
+        rcolor = [0.2*rand(), 0.3 + 0.7*rand(), 0.1+0.4*rand()];
         drawWrench(cone_generators{i}, rcolor, true, texts);
 
         cone_projection_i = force_basis*(force_basis')*cone_generators{i};
         drawWrench(cone_projection_i, rcolor, true);
     else
         disp([texts ' Infeasible']);
-        drawWrench(cone_generators{i}, [0.2*rand(), 0.1+0.2*rand(), 0.5+0.5*rand()], true, texts);
+%         drawWrench(cone_generators{i}, [0.2*rand(), 0.1+0.2*rand(), 0.5+0.5*rand()], true, texts);
     end
-    fprintf('Margin: %f\n', margins(i));
+
     disp(cone_generators{i});
 %     figure(i); clf(i); hold on;
-%     drawWrench(cone_e{i},'r', true);
-%     drawWrench(cone_h{i},'b', true);
+    % drawWrench(cone_e{i},'r', true);
+    % drawWrench(cone_h{i},'b', true);
 end
 
 if flag_goal_is_feasible
@@ -339,9 +351,19 @@ if flag_goal_is_feasible
         plot3(faction(1,:), faction(2,:), faction(3,:), '-ro', 'markersize', 30);
         solution.n_af = n_af;
         solution.n_av = n_av;
-        solution.R_a = R_a;
+        solution.R_a = [R_a(1:n_af, :)*vscale; R_a(end-n_av+1:end, :)*vscale_inv];
         solution.w_av = w_av;
         solution.eta_af = -kForceMagnitude*force_action; % the minus sign comes from force balance
-        solution.margin = min(shape_margin, margins(m));
+        solution.margin = min(shape_margin, margins(goal_id));
+
+        Ra_inv = solution.R_a^-1;
+        V_T = Ra_inv*[zeros(n_af,1); solution.w_av];
+        F_T = Ra_inv*[solution.eta_af; zeros(n_av, 1)];
+        disp('R_a:');
+        disp(solution.R_a);
+        disp('V_T:');
+        disp(V_T);
+        disp('F_T:');
+        disp(F_T);
     end
 end

@@ -46,6 +46,8 @@ xlabel('X');
 ylabel('Y');
 zlabel('Z');
 
+axis([-1.1 1.1 -1.1 1.1 -1.1 1.1]);
+
 axis equal
 
 end
