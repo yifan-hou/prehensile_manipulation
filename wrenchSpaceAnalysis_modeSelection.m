@@ -5,11 +5,10 @@ TOL = 1e-7;
 
 % scaling for generalized velocity
 % V = gvscale * V_scaled
-kCharacteristicLength = 0.05;
+kCharacteristicLength = 0.10;
 vscale = diag([1 1 1/kCharacteristicLength]);
 vscale_inv = diag([1 1 kCharacteristicLength]);
 gvscale = diag([1 1 1/kCharacteristicLength 1 1 1/kCharacteristicLength]);
-gvscale_inv = diag([1 1 kCharacteristicLength 1 1 kCharacteristicLength]);
 % N_ * V_scaled = 0, N*V = 0,
 % -> N_ = N*gvscale
 
@@ -330,6 +329,8 @@ for m = 1:eh_cone_feasible_mode_count
                 shape_margin = kForceMagnitude*angBTVec(projection_goal_remains_scaled(:, 1), projection_goal_remains_scaled(:, 2))/2;
             end
         end
+    else
+        shape_margin = inf;
     end
 
     if flag_force_region_feasible
@@ -338,10 +339,15 @@ for m = 1:eh_cone_feasible_mode_count
         solution.eh_mode = eh_mode_goal;
         solution.n_af = n_af;
         solution.n_av = n_av;
-        solution.R_a = [R_a(1:n_af, :)*vscale; R_a(end-n_av+1:end, :)*vscale_inv];
         solution.w_av = w_av;
         solution.eta_af = -kForceMagnitude*force_action; % the minus sign comes from force balance
         solution.margin = min(shape_margin, margins(m));
+
+        R_a_inv = R_a^-1;
+        Cf_inv = vscale_inv*R_a_inv; Cf_inv = Cf_inv(:, 1:n_af);
+        Cv_inv = vscale*R_a_inv; Cv_inv = Cv_inv(:, end-n_av+1:end);
+        solution.R_a_inv = [Cf_inv Cv_inv];
+        solution.R_a = solution.R_a_inv^-1;
 
         solutions_count = solutions_count + 1;
         solutions{solutions_count} = solution;
@@ -367,9 +373,8 @@ if solutions_count > 0
     disp('Best solution:');
     [~, best_solution_id] = max(margins);
     solution = solutions{best_solution_id};
-    Ra_inv = solution.R_a^-1;
-    V_T = Ra_inv*[zeros(solution.n_af,1); solution.w_av];
-    F_T = Ra_inv*[solution.eta_af; zeros(solution.n_av, 1)];
+    V_T = solution.R_a_inv*[zeros(solution.n_af,1); solution.w_av];
+    F_T = solution.R_a_inv*[solution.eta_af; zeros(solution.n_av, 1)];
     disp('R_a:');
     disp(solution.R_a);
     disp('V_T:');

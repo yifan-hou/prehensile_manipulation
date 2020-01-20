@@ -2,7 +2,7 @@ function solution = wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, 
         CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode_goal, h_mode_goal, kForceMagnitude)
 solution = [];
 
-kCharacteristicLength = 0.05; % m
+kCharacteristicLength = 0.10; % m
 % kCharacteristicLength = 1; % m
 
 
@@ -342,23 +342,32 @@ if flag_goal_is_feasible
     % draw the goal region
     drawWrench(cone_generators{goal_id}, 'r', true);
 
-    % draw the projections
-    projection_goal_remains_3d = force_basis*projection_goal_remains;
-    drawWrench(projection_goal_remains_3d, 'r', true);
-
     if flag_force_region_feasible
+        % draw the projections
+        projection_goal_remains_3d = force_basis*projection_goal_remains;
+        drawWrench(projection_goal_remains_3d, 'r', true);
+
         faction = [[0;0;0] force_basis*force_action];
         plot3(faction(1,:), faction(2,:), faction(3,:), '-ro', 'markersize', 30);
+
         solution.n_af = n_af;
         solution.n_av = n_av;
-        solution.R_a = [R_a(1:n_af, :)*vscale; R_a(end-n_av+1:end, :)*vscale_inv];
         solution.w_av = w_av;
         solution.eta_af = -kForceMagnitude*force_action; % the minus sign comes from force balance
         solution.margin = min(shape_margin, margins(goal_id));
 
-        Ra_inv = solution.R_a^-1;
-        V_T = Ra_inv*[zeros(n_af,1); solution.w_av];
-        F_T = Ra_inv*[solution.eta_af; zeros(n_av, 1)];
+        R_a_inv = R_a^-1;
+        Cf_inv = vscale_inv*R_a_inv; Cf_inv = Cf_inv(:, 1:n_af);
+        Cv_inv = vscale*R_a_inv; Cv_inv = Cv_inv(:, end-n_av+1:end);
+        solution.R_a_inv = [Cf_inv Cv_inv];
+        solution.R_a = solution.R_a_inv^-1;
+
+        % % test
+        % V_T_ = vscale*R_a^-1*[zeros(n_af,1); w_av];
+        % F_T_ = vscale_inv*R_a^-1*[solution.eta_af; zeros(n_av, 1)];
+
+        V_T = solution.R_a_inv*[zeros(n_af,1); solution.w_av];
+        F_T = solution.R_a_inv*[solution.eta_af; zeros(n_av, 1)];
         disp('R_a:');
         disp(solution.R_a);
         disp('V_T:');
