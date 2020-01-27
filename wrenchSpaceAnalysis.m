@@ -132,10 +132,21 @@ cone_h = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 W_action = [R_a_inv(:, 1:n_af), -R_a_inv];
 
 TOL = 1e-7;
+
+% Crashing check:
+% Check if the infeasible mode contains v-controlled direction
+
+R_all_f = coneIntersection(Jacf_e', Jacf_h');
+intersection = coneIntersection(R_all_f, W_action(:, end-n_av+1:end));
+if ~isempty(intersection) && norm(intersection) > TOL
+    disp('Crashing!');
+    return;
+end
+
+
 feasible_mode_count = 0;
 velocity_filtered_count = 0;
 force_filtered_count = 0;
-flag_crashing = false;
 
 for i = 1:size(e_modes, 2)
     for j = 1:size(h_modes, 2)
@@ -181,15 +192,6 @@ for i = 1:size(e_modes, 2)
 %             disp('R_, W_action has no intersections. Discard');
 %             continue;
 %         end
-
-        % Crashing check:
-        % Check if the infeasible mode contains v-controlled direction
-        if ~compatible
-            intersection = coneIntersection(R, W_action(:, end-n_av+1:end));
-            if ~isempty(intersection) && norm(intersection) > TOL
-                flag_crashing = true;
-            end
-        end
 
         % check cone stability margin
         margin_e = computeStabilityMargin(Je_', R);

@@ -40,6 +40,9 @@ Jac_h = Jac_h * gvscale;
 Jacf_e = Jacf_e * vscale;
 Jacf_h = Jacf_h * vscale;
 
+R_all_f = coneIntersection(Jacf_e', Jacf_h');
+
+
 fprintf("###############################################\n");
 fprintf("##              Mode Enumeration             ##\n");
 fprintf("###############################################\n");
@@ -184,9 +187,15 @@ for m = 1:eh_cone_feasible_mode_count
 
     TOL = 1e-7;
     feasible_mode_count = 0;
-    flag_crashing = false;
     flag_goal_infeasible = false;
     flag_goal_impossible = false;
+
+
+    intersection = coneIntersection(R_all_f, W_action(:, end-n_av+1:end));
+    if ~isempty(intersection) && norm(intersection) > TOL
+        disp('Crashing. Discard this mode.');
+        continue;
+    end
 
     for n = 1:eh_cone_feasible_mode_count
         % filter out modes using velocity command
@@ -234,18 +243,6 @@ for m = 1:eh_cone_feasible_mode_count
         %     end
         % end
 
-        % Crashing check:
-        % Check if the infeasible mode contains v-controlled direction
-        if ~compatible
-            intersection = coneIntersection(R, W_action(:, end-n_av+1:end));
-            if ~isempty(intersection) && norm(intersection) > TOL
-                flag_crashing = true;
-                break;
-            else
-                continue;
-            end
-        end
-
         % figure(1);clf(1);hold on;
         % drawWrench(eh_cones{n},'g', true);
         % drawWrench(W_action,'k', true);
@@ -254,10 +251,6 @@ for m = 1:eh_cone_feasible_mode_count
         feasible_mode_id(n) = true;
     end
 
-    if flag_crashing
-        disp('Crashing. Discard this mode.');
-        continue;
-    end
     if flag_goal_infeasible
         disp('Goal mode violates velocity equality constraints. Discard this mode.');
         continue;
