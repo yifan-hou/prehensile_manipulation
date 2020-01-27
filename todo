@@ -1,4 +1,3 @@
-dimensionality of a range: does it have to be of certain dimensional to be feasible?
 
 Basic rules/facts
 The space can be divided into the following parts:
@@ -9,18 +8,9 @@ The space can be divided into the following parts:
 3. Stable range: intersection of cone{Ch} and cone{-Ce} force equilibrium is possible in these ranges. It can further be divided based on specific contact modes.
 
 
+dimensionality of a range: does it have to be of certain dimensional to be feasible?
+
 
 1. those regions shows the contact forces when the object is in equilibrium. Other regions are either infeasible modes or unstable modes
 2. you can control force in the force controlled subspace. The force in the rest of dimensions is not directly controllable.
 3. Given a velocity command, forces in the velocity controlled dimensions will will accumulate to put you in one of the modes that are compatible.
-
-Type of modes
-Cone_e, cone_h, cone_C have non-empty intersections: force-feasible/force-infeasible cone
-N,C compatibility: velocit-feasible, velocity-infeasible, velocity-impossible
-
-force-feasible, velocity feasible cone:
-force-feasible, velocity infeasible cone
-    reduce to impossible if the cone does not contain a velocity controlled direction
-    if it does contain one, need to preload to avoid it
-force-infeasible, velocity feasible cone:
-

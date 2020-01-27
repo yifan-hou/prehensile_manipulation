@@ -5,7 +5,7 @@ TOL = 1e-7;
 
 % scaling for generalized velocity
 % V = gvscale * V_scaled
-kCharacteristicLength = 0.10;
+kCharacteristicLength = 0.15;
 vscale = diag([1 1 1/kCharacteristicLength]);
 vscale_inv = diag([1 1 kCharacteristicLength]);
 gvscale = diag([1 1 1/kCharacteristicLength 1 1 1/kCharacteristicLength]);
