@@ -130,9 +130,15 @@ for i = 1:size(e_modes, 2)
         end
 
         % check cone stability margin
-        margin_e = computeStabilityMargin(Je_', R);
-        margin_h = computeStabilityMargin(Jh_', R);
-        margin_ = min(margin_e, margin_h);
+        if sameConeCheck(Je_', R)
+            margin_ = coneStabilityMargin(Jh_', R);
+        elseif sameConeCheck(Jh_', R)
+            margin_ = coneStabilityMargin(Je_', R);
+        else
+            margin_e = coneStabilityMargin(Je_', R);
+            margin_h = coneStabilityMargin(Jh_', R);
+            margin_ = min(margin_e, margin_h);
+        end
 
 %         figure(1);clf(1);hold on;
 %         printModes([e_modes(:, i); h_modes(:, j)]);

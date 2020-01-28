@@ -43,11 +43,11 @@ p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad)]/2 + kH*[-sin(angle_rad); cos
 %% 0, 1 or 2
 %%
 
-% Palm Pivot
-G = [0 0 1 0 0 0];
-b_G = [0.1];
-e_mode = int8([0; 1]); % sf
-h_mode = int8([1; 1]); % ff
+% % Palm Pivot
+% G = [0 0 1 0 0 0];
+% b_G = [0.1];
+% e_mode = int8([0; 1]); % sf
+% h_mode = int8([1; 1]); % ff
 
 % % Finger Pivot
 % G = [0 0 1 0 0 0];
@@ -72,8 +72,8 @@ h_mode = int8([1; 1]); % ff
 % CP_H_h = CP_H_h(:, 1);
 % CN_H_h = CN_H_h(:, 2);
 
-solution = wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
-        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode, h_mode, 15);
+% solution = wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
+%         CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode, h_mode, 15);
 
 % solution = wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, ...
 %             CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, 15);
@@ -82,5 +82,5 @@ solution = wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
 % p_H_h2 = [-kW/4; 0];
 % CP_H_h = [p_H_h1, p_H_h2];
 % 
-% stabilityMarginOptimization(kFrictionE, kFrictionH, ...
-%         CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, e_mode, h_mode);
+stabilityMarginOptimization(kFrictionE, kFrictionH, ...
+        CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, e_mode, h_mode);

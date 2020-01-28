@@ -17,7 +17,7 @@
 %! i:   index of the ray ai in cone_inside.
 %!
 %! j, k:    index of rays in cone_outside that forms edge Ej.
-function [margin_, i, j, k] = computeStabilityMargin(cone_outside, cone_inside)
+function [margin_, i, j, k] = coneStabilityMargin(cone_outside, cone_inside)
 
 [d, n1] = size(cone_outside);
 n2 = size(cone_inside, 2);
