@@ -1,6 +1,7 @@
-function solution = wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, ...
-            CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, kForceMagnitude)
-
+function solution = wrenchSpaceAnalysis_modeSelection(...
+        kFrictionE, kFrictionH, CP_W_e, CN_W_e,...
+        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, kForceMagnitude)
+solution = [];
 TOL = 1e-7;
 
 % scaling for generalized velocity
@@ -11,7 +12,6 @@ vscale_inv = diag([1 1 kCharacteristicLength]);
 gvscale = diag([1 1 1/kCharacteristicLength 1 1 1/kCharacteristicLength]);
 % N_ * V_scaled = 0, N*V = 0,
 % -> N_ = N*gvscale
-
 
 Ne = size(CP_W_e, 2);
 Nh = size(CP_H_h, 2);
@@ -42,26 +42,10 @@ Jacf_h = Jacf_h * vscale;
 
 R_all_f = coneIntersection(Jacf_e', Jacf_h');
 
-
 fprintf("###############################################\n");
 fprintf("##              Mode Enumeration             ##\n");
 fprintf("###############################################\n");
-% Enumerate contact modes
-e_modes = contact_mode_enumeration(CP_W_e(1:2,:), CN_W_e(1:2,:), true);
-h_modes = contact_mode_enumeration(CP_H_h(1:2,:), CN_H_h(1:2,:), true);
-
-% get rid of all separation modes
-e_modes(:, all(e_modes == 0, 1)) = [];
-h_modes(:, all(h_modes == 0, 1)) = [];
-
-% add all fixed mode if necessary
-if sum(all(e_modes == 1, 1)) == 0
-    e_modes = [e_modes ones(size(e_modes,1),1)];
-end
-if sum(all(h_modes == 1, 1)) == 0
-    h_modes = [h_modes ones(size(h_modes,1),1)];
-end
-disp(['Enumerated modes: ' num2str(size(e_modes, 2)*size(h_modes, 2)) ' modes.']);
+[e_modes, h_modes] = partialGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h);
 
 % EH cone intersection
 %   * Compute safety margins
@@ -138,38 +122,22 @@ for m = 1:eh_cone_feasible_mode_count
     eh_mode_goal = eh_modes(:, m);
     printModes(eh_mode_goal);
 
-    fprintf("=======================\n");
-    fprintf("=== Hybrid Servoing ===\n");
-    fprintf("=======================\n");
-    %   velocity vector: v = [vo, vh]
-    % goal velocity
-    dims.Actualized = 3;
-    dims.UnActualized = 3;
-    dims.SlidingFriction = 0;
-
+    fprintf("====================================\n");
+    fprintf("= Hybrid Servoing & Crashing Check =\n");
+    fprintf("====================================\n");
     N_all = Jacs{m};
     N_ue = Jacues{m};
-
-    [n_av, n_af, R_a, w_av] = solvehfvc(dims, N_all, N_ue, G, ...
-        b_G, [], [], [], [], [], 3, false);
-
-    if isempty(R_a) || any(isnan(w_av))
-        disp('Hybrid servoing has no solution.')
+    [n_av, n_af, R_a, R_a_inv, w_av,Cv, b_C] = hybridServoing(N_all, N_ue, G, b_G);
+    if isempty(n_av)
         continue;
     end
-    fprintf('The force controlled dimension is %d\n', n_af);
-    fprintf('The velocity controlled dimension is %d\n', n_av);
-    assert(n_af < 3);
-    assert(n_af > 0);
-
-    % make sure all velocity commands >= 0
-    R_id_flip = find(w_av < 0);
-    R_a(n_af + R_id_flip, :) = - R_a(n_af + R_id_flip, :);
-    w_av(R_id_flip) = - w_av(R_id_flip);
-    R_a_inv = R_a^-1;
-
-    Cv = [zeros(n_av, 3), R_a(n_af + 1: end, :)];
-    b_C = w_av;
+    W_action = [R_a_inv(:, 1:n_af), -R_a_inv];
+    intersection = coneIntersection(R_all_f, W_action(:, end-n_av+1:end));
+    % Crashing check
+    if ~isempty(intersection) && norm(intersection) > TOL
+        disp('Crashing. Discard this mode.');
+        continue;
+    end
 
     fprintf("=======================\n");
     fprintf("=== Mode Filtering ===\n");
@@ -183,19 +151,12 @@ for m = 1:eh_cone_feasible_mode_count
 
     % cone of possible actuation forces
     %   force controlled direction can have both positive and negative forces
-    W_action = [R_a_inv(:, 1:n_af), -R_a_inv];
 
     TOL = 1e-7;
     feasible_mode_count = 0;
     flag_goal_infeasible = false;
     flag_goal_impossible = false;
 
-
-    intersection = coneIntersection(R_all_f, W_action(:, end-n_av+1:end));
-    if ~isempty(intersection) && norm(intersection) > TOL
-        disp('Crashing. Discard this mode.');
-        continue;
-    end
 
     for n = 1:eh_cone_feasible_mode_count
         % filter out modes using velocity command
@@ -232,23 +193,13 @@ for m = 1:eh_cone_feasible_mode_count
             end
         end
 
-        % % check for feasible actuation
-        % R_ = coneIntersection(eh_cones{n}, W_action);
-        % if isempty(R_) || norm(R_) == 0
-        %     if n == m
-        %         flag_goal_w_impossible = true;
-        %         break;
-        %     else
-        %         continue;
-        %     end
-        % end
-
         % figure(1);clf(1);hold on;
         % drawWrench(eh_cones{n},'g', true);
         % drawWrench(W_action,'k', true);
-
-        feasible_mode_count = feasible_mode_count + 1;
-        feasible_mode_id(n) = true;
+        if compatible
+            feasible_mode_count = feasible_mode_count + 1;
+            feasible_mode_id(n) = true;
+        end
     end
 
     if flag_goal_infeasible
@@ -259,74 +210,22 @@ for m = 1:eh_cone_feasible_mode_count
         disp('Goal mode violates velocity inequality constraints. Discard this mode.');
         continue;
     end
-
     disp(['Remaining feasible modes: ' num2str(feasible_mode_count)]);
-
-    % trim
-%     feasible_mode_id = find(feasible_mode_id);
-
-%     others_id = find();
 
     eh_cones_goal_m = eh_cones{m};
     feasible_mode_id(m) = 0;
     eh_cones_other_feasible_m = eh_cones(feasible_mode_id);
 
-    fprintf("=======================\n");
-    fprintf("===   Evaluation    ===\n");
-    fprintf("=======================\n");
+    fprintf("===============================\n");
+    fprintf("===  Compute Force Action   ===\n");
+    fprintf("===============================\n");
 
     % action selection
-    flag_force_region_feasible = true;
-
-    % project to force controlled plane/line
     force_basis = R_a_inv(:, 1:n_af);
-    projection_goal = force_basis'*eh_cones_goal_m;
-    projection_goal_remains = projection_goal;
+    [force_action, shape_margin] = forceControl(force_basis, ...
+            eh_cones_goal_m, eh_cones_other_feasible_m);
 
-    force_action = mean(normc(projection_goal), 2);
-    shape_margin = [];
-    if ~isempty(eh_cones_other_feasible_m)
-        if n_af == 1
-            shape_margin = norm(force_action);
-            for i = 1:length(eh_cones_other_feasible_m)
-                projection_other_feasible = force_basis'*eh_cones_other_feasible_m{i};
-                if any(projection_other_feasible'*force_action > 0)
-                    flag_force_region_feasible = false;
-                    break;
-                end
-            end
-        elseif n_af == 2
-            for i = 1:length(eh_cones_other_feasible_m)
-                projection_other_feasible = force_basis'*eh_cones_other_feasible_m{i};
-                [~, projection_goal_remains] = coneIntersection2D( ...
-                        projection_goal_remains, projection_other_feasible);
-                if isempty(projection_goal_remains)
-                    flag_force_region_feasible = false;
-                    break;
-                end
-            end
-            if flag_force_region_feasible
-                % pick the action that is far away from other regions.
-                if length(eh_cones_other_feasible_m) > 1
-                    force_action = mean(normc(projection_goal_remains), 2);
-                else
-                    ang1 = angBTVec(projection_other_feasible, projection_goal_remains(:, 1));
-                    ang2 = angBTVec(projection_other_feasible, projection_goal_remains(:, 2));
-                    if ang1 > ang2
-                        force_action = normc(projection_goal_remains(:, 1));
-                    else
-                        force_action = normc(projection_goal_remains(:, 2));
-                    end
-                end
-                projection_goal_remains_scaled = force_basis*projection_goal_remains;
-                shape_margin = kForceMagnitude*angBTVec(projection_goal_remains_scaled(:, 1), projection_goal_remains_scaled(:, 2))/2;
-            end
-        end
-    else
-        shape_margin = inf;
-    end
-
-    if flag_force_region_feasible
+    if ~isempty(force_action)
         disp('Force command:');
         disp(force_action);
         solution.eh_mode = eh_mode_goal;
@@ -349,6 +248,7 @@ for m = 1:eh_cone_feasible_mode_count
         continue;
     end
 end
+
 fprintf("###############################################\n");
 fprintf("##                  Results                  ##\n");
 fprintf("###############################################\n");

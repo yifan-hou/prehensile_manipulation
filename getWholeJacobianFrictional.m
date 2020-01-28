@@ -1,7 +1,7 @@
 % Jac includes contact screws for all friction cone edges.
 % Nv >= 0
 % N = [Je, 0; -Jh Jh]
-function [Je, Jh] = getWholeJacobianFrictional(CP_W_e, CN_W_e, ...
+function [Je, Jh, CNF_e, CNF_h] = getWholeJacobianFrictional(CP_W_e, CN_W_e, ...
         mu_e, CP_H_h, CN_H_h, mu_h, adj_WH, adj_HW)
 
 % friction cone

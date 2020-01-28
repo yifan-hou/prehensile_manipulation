@@ -14,7 +14,7 @@
 %!             boundary. When margin_ is negative, the two cones only intersect
 %!             at the origin.
 %!
-%! i:   index of the ray ai in cone_outside.
+%! i:   index of the ray ai in cone_inside.
 %!
 %! j, k:    index of rays in cone_outside that forms edge Ej.
 function [margin_, i, j, k] = computeStabilityMargin(cone_outside, cone_inside)
@@ -57,8 +57,6 @@ if n1 >= 3
         end
     end
 elseif n1 == 2
-    j = 1;
-    k = 2;
     z = cross(cone_outside(:, 1), cone_outside(:, 2));
     z = z/norm(z);
 
@@ -73,9 +71,13 @@ elseif n1 == 2
     if max1 < max2
         margin_ = max1;
         i = i1;
+        j = 1;
+        k = [];
     else
         margin_ = max2;
         i = i2;
+        j = 2;
+        k = [];
     end
 else
     % n1 == 1
