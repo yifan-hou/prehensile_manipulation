@@ -107,7 +107,7 @@ for i = 1:size(e_modes, 2)
         b_Lambda_bar = [b_C; zeros(size(N,1), 1)];
 
         compatible = false;
-        if rank([N;Cv], TOL) - rank_N > 0
+        if rank([Lambda_bar b_Lambda_bar], TOL) == rank(Lambda_bar, TOL)
             v_star = linsolve(Lambda_bar, b_Lambda_bar);
             if any(Nu*v_star < -TOL)
                 % this mode can not exist
@@ -193,7 +193,7 @@ if flag_goal_is_feasible
     compatibilities(goal_id) = true;
     [force_action, shape_margin] = forceControl(force_basis, ...
             cone_generators_goal, cone_generators_other_feasible);
-    
+
     if ~isempty(force_action)
         disp('Force command:')
         disp(force_action);

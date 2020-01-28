@@ -173,7 +173,7 @@ for m = 1:eh_cone_feasible_mode_count
         b_Lambda_bar = [b_C; zeros(size(N,1), 1)];
 
         compatible = false;
-        if rank([N;Cv], TOL) - rank_N > 0
+        if rank([Lambda_bar b_Lambda_bar], TOL) == rank(Lambda_bar, TOL)
             v_star = linsolve(Lambda_bar, b_Lambda_bar);
             if any(Nu*v_star < -TOL)
                 % this mode can not exist
