@@ -39,6 +39,7 @@ Jac_e = Jac_e * gvscale;
 Jac_h = Jac_h * gvscale;
 Jacf_e = Jacf_e * vscale;
 Jacf_h = Jacf_h * vscale;
+G = G*gvscale;
 
 R_all_f = coneIntersection(Jacf_e', Jacf_h');
 
@@ -269,9 +270,19 @@ if solutions_count > 0
         margins(i) = solutions{i}.margin;
     end
 
+%     solution = [];
+%     for i=1:solutions_count
+%         if all(solutions{i}.eh_mode == [2 0 1 1]')
+%             solution = solutions{i};
+%             break;
+%         end
+%     end
+    
     disp('Best solution:');
     [~, best_solution_id] = max(margins);
     solution = solutions{best_solution_id};
+
+    printModes(solution.eh_mode);
     V_T = solution.R_a_inv*[zeros(solution.n_af,1); solution.w_av];
     F_T = solution.R_a_inv*[solution.eta_af; zeros(solution.n_av, 1)];
     disp('R_a:');

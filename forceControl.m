@@ -44,8 +44,8 @@ elseif n_af == 2
             shape_margin = shape_margin/2;
         else
             % there is only one another cone.
-            ang1 = angBTVec(projection_others{1}, projection_goal_remains(:, 1));
-            ang2 = angBTVec(projection_others{1}, projection_goal_remains(:, 2));
+            ang1 = angBTVec(mean(projection_others{1}, 2), projection_goal_remains(:, 1));
+            ang2 = angBTVec(mean(projection_others{1}, 2), projection_goal_remains(:, 2));
             if ang1 > ang2
                 force_action = normc(projection_goal_remains(:, 1));
             else

@@ -12,6 +12,7 @@ vscale_inv = diag([1 1 kCharacteristicLength]);
 gvscale = diag([1 1 1/kCharacteristicLength 1 1 1/kCharacteristicLength]);
 % N_ * V_scaled = 0, N*V = 0,
 % -> N_ = N*gvscale
+% same for G
 
 Ne = size(CP_W_e, 2);
 Nh = size(CP_H_h, 2);
@@ -39,6 +40,7 @@ Jac_e = Jac_e * gvscale;
 Jac_h = Jac_h * gvscale;
 Jacf_e = Jacf_e * vscale;
 Jacf_h = Jacf_h * vscale;
+G = G*gvscale;
 
 R_all_f = coneIntersection(Jacf_e', Jacf_h');
 
@@ -58,8 +60,11 @@ fprintf("###############################################\n");
 fprintf("##    Hybrid Servoing & Crashing Check       ##\n");
 fprintf("###############################################\n");
 
-[N_all, ~, Nue] = getJacobianFromContacts(e_mode_goal, h_mode_goal, Jac_e, Jac_h);
-[n_av, n_af, R_a, R_a_inv, w_av,Cv, b_C] = hybridServoing(N_all, Nue, G, b_G);
+[N, ~, Nue] = getJacobianFromContacts(e_mode_goal, h_mode_goal, Jac_e, Jac_h);
+N = rref(N);
+rank_N = rank(N);
+N = N(1:rank_N, :);
+[n_av, n_af, R_a, R_a_inv, w_av,Cv, b_C] = hybridServoing(N, Nue, G, b_G);
 if isempty(n_av)
     return;
 end
@@ -238,8 +243,8 @@ for i = 1:feasible_mode_count
         rcolor = [0.2*rand(), 0.3 + 0.7*rand(), 0.1+0.4*rand()];
         drawWrench(cone_generators{i}, rcolor, true, texts);
 
-        cone_projection_i = force_basis*(force_basis')*cone_generators{i};
-        drawWrench(cone_projection_i, rcolor, true);
+%         cone_projection_i = force_basis*(force_basis')*cone_generators{i};
+%         drawWrench(cone_projection_i, rcolor, true);
     else
         disp([texts ' Infeasible']);
 %         drawWrench(cone_generators{i}, [0.2*rand(), 0.1+0.2*rand(), 0.5+0.5*rand()], true, texts);
