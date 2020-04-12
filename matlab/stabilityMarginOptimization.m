@@ -3,6 +3,7 @@ function stabilityMarginOptimization(...
         CP_H_h, CN_H_h, R_WH, p_WH, e_mode_goal, h_mode_goal)
 addpath generated
 
+tic
 % scaling for generalized velocity
 % V = gvscale * V_scaled
 kCharacteristicLength = 0.15;
@@ -37,8 +38,10 @@ const_h = -(adj_WH')*(adj_HW');
 Nx = (Ne + Nh)*2;
 Nx_acc_Ne = Ne*2; % last position of Pe in X
 
-NIter = 10;
+NIter = 200;
 
+margin_record = zeros(NIter, 1);
+p_record = zeros(NIter, 1);
 for iter = 1:NIter
     % =======================================
     %           compute the value
@@ -71,8 +74,8 @@ for iter = 1:NIter
         [margin_, id_margin_R, id_margin_J1, id_margin_J2] = coneStabilityMargin(Je_', R);
         id = 1;
     else
-        [margin_e, id_margin_R_e, id_margin_Je1, id_margin_Je2] = computeStabilityMargin(Je_', R);
-        [margin_h, id_margin_R_h, id_margin_Jh1, id_margin_Jh2] = computeStabilityMargin(Jh_', R);
+        [margin_e, id_margin_R_e, id_margin_Je1, id_margin_Je2] = coneStabilityMargin(Je_', R);
+        [margin_h, id_margin_R_h, id_margin_Jh1, id_margin_Jh2] = coneStabilityMargin(Jh_', R);
         [margin_, id] = min([margin_e, margin_h]);
         if id == 1
             id_margin_R = id_margin_R_e;
@@ -87,9 +90,12 @@ for iter = 1:NIter
 
 
     fprintf('Margin: %f\n', margin_);
-    % figure(1);clf(1);hold on;
-    % drawWrench(Je_','g', true);
-    % drawWrench(Jh_','b', true);
+    margin_record(iter) = margin_;
+    figure(1);clf(1);hold on;
+    drawWrench(Je_','g', true);
+    drawWrench(Jh_','b', true);
+    view(-132, 26)
+    drawnow
 
     % =======================================
     %           compute the gradient
@@ -211,11 +217,25 @@ for iter = 1:NIter
     % =======================================
     %           Update parameter
     % =======================================
-    delta = 0.005;
-    CP_H_h(1, 1) = CP_H_h(1, 1) + delta*jac_phi(5);
-    CP_H_h(1, 2) = CP_H_h(1, 2) + delta*jac_phi(7);
-    disp(CP_H_h);
+%     delta = 0.005;
+%     CP_H_h(1, 1) = CP_H_h(1, 1) + delta*jac_phi(5);
+%     CP_H_h(1, 2) = CP_H_h(1, 2) + delta*jac_phi(7);
+%     disp(CP_H_h);
+
+    delta = 0.002;
+    CP_H_h(1) = CP_H_h(1) + delta*jac_phi(5);
+    p_record(iter) = CP_H_h(1);
+    disp(CP_H_h(1));
 end
+toc
+
+figure(1);clf(1);hold on;
+plot(margin_record,'.-b','markersize',2);
+title('margin');
+figure(2);clf(2);hold on;
+plot(p_record,'.-b','markersize',2);
+
+save generated/llf.mat margin_record p_record
 
 end
 

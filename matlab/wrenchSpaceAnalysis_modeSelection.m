@@ -48,6 +48,17 @@ fprintf("##              Mode Enumeration             ##\n");
 fprintf("###############################################\n");
 [e_modes, h_modes] = partialGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h);
 
+
+
+
+
+
+
+
+
+
+
+
 % EH cone intersection
 %   * Compute safety margins
 %   * get rid of infeasible cone
@@ -74,9 +85,6 @@ for i = 1:size(e_modes, 2)
             continue;
         end
 
-        % compute velocity Jacobian
-        [N, Nu, Nue] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
-
         % compute cone stability margin
         if sameConeCheck(Je_', R)
             margin_ = coneStabilityMargin(Jh_', R);
@@ -87,6 +95,13 @@ for i = 1:size(e_modes, 2)
             margin_h = coneStabilityMargin(Jh_', R);
             margin_ = min(margin_e, margin_h);
         end
+        if margin_ < TOL
+            continue;
+        end
+
+        % compute velocity Jacobian
+        [N, Nu, Nue] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
+
 
         % figure(1);clf(1);hold on;
         % printModes([e_modes(:, i); h_modes(:, j)]);
@@ -105,7 +120,7 @@ for i = 1:size(e_modes, 2)
     end
 end
 
-disp(['Modes with none empty EH Cone: ' num2str(eh_cone_feasible_mode_count)]);
+disp(['Modes with Margin > 0: ' num2str(eh_cone_feasible_mode_count)]);
 
 % trim
 eh_cones = eh_cones(1:eh_cone_feasible_mode_count);
@@ -134,12 +149,12 @@ for m = 1:eh_cone_feasible_mode_count
     fprintf("====================================\n");
     N_all = Jacs{m};
     N_ue = Jacues{m};
-    [n_av, n_af, R_a, R_a_inv, w_av,Cv, b_C] = hybridServoing(N_all, N_ue, G, b_G);
+    [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, N_ue, G, b_G);
     if isempty(n_av)
         continue;
     end
-    W_action = [R_a_inv(:, 1:n_af), -R_a_inv];
-    intersection = coneIntersection(R_all_f, W_action(:, end-n_av+1:end));
+    V_action = -R_a_inv(:, end-n_av+1:end);
+    intersection = coneIntersection(R_all_f, V_action);
     % Crashing check
     if ~isempty(intersection) && norm(intersection) > TOL
         disp('Crashing. Discard this mode.');

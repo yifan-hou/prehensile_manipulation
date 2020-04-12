@@ -9,6 +9,13 @@ else
     data = W';
 end
 
+
+% for i = 1:size(W,2)
+%     quiver3(0,0,0, W(1, i), W(2, i), W(3, i), 'linewidth',3, 'markersize', 15, 'markerEdgeColor', color);
+% end
+plot3(W(1, :), W(2, :), W(3, :), '.', 'markersize', 20, 'markerEdgeColor', color);
+
+
 if rank(W) >= 3
     % 3D polytope
     K = convhull(data(:,1), data(:,2), data(:,3));
@@ -35,19 +42,20 @@ h.EdgeColor = color;
 
 % axis equal;
 
-plot3(W(1, :), W(2, :), W(3, :), '.', 'markersize', 20, 'markerEdgeColor', color);
-
 if nargin >= 4
-    text(mean(W(1,:)),mean(W(2,:)),mean(W(3,:)),['   ' ...
-        texts], 'HorizontalAlignment','left','FontSize',18);
+    text(1.1*mean(W(1,:)),1.1*mean(W(2,:)),1.1*mean(W(3,:)+0.1),['   ' ...
+        texts], 'HorizontalAlignment','center','FontSize',14,'FontName','Times New Roman');
 end
 
-xlabel('X');
-ylabel('Y');
-zlabel('Z');
-
+hxl = xlabel('F_X(N)');
+hyl = ylabel('F_Y(N)');
+hzl = zlabel('T_Z(N)');
+grid on;
+set([hxl hyl hzl], 'FontName', 'Times New Roman', 'FontWeight','bold')
 axis([-1.1 1.1 -1.1 1.1 -1.1 1.1]);
 
-axis equal
+set(gca, 'XColor', [.3 .3 .3], 'YColor', [.3 .3 .3], 'ZColor', [.3 .3 .3],...
+    'LineWidth', 1)
+% axis equal
 
 end

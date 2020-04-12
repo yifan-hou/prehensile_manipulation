@@ -4,7 +4,7 @@
 % Nu: unilateral constraints. Nu*v > 0. Includes:
 %   1. vn >=0 for separation.
 %   2. vt >= 0 for left sliding, vt <= 0 for right sliding.
-% 
+%
 % id_e: id of rows of Jac_e that goes to Je_
 % id_h: id of rows of Jac_h that goes to Jh_
 function [Je_, Jh_, id_e, id_h] = getFrictionalJacobianFromContacts(mode_e, mode_h, Jac_e, Jac_h)

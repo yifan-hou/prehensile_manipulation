@@ -11,7 +11,7 @@ clc;clear;
 %%
 
 % Parameters
-kFrictionH = 1.2;
+kFrictionH = 0.7;
 kFrictionE = 0.25;
 
 kW = 0.0435; % object width
@@ -27,6 +27,9 @@ p_H_h1 = [kW/2; 0];
 p_H_h2 = [-kW/2; 0];
 n_H_h1 = [0; -1];
 n_H_h2 = [0; -1];
+
+p_H_h3 = [kW/2; -kH/4];
+n_H_h3 = [0; -1];
 
 CP_W_e = [p_W_e1, p_W_e2];
 CN_W_e = [n_W_e1, n_W_e2];
@@ -45,10 +48,16 @@ adj_WH = SE22Adj(R_WH, p_WH);
 %% 0, 1 or 2
 %%
 
-% % Palm Pivot
-% G = [0 0 1 0 0 0];
+% Palm Pivot
+G = [0 0 1 0 0 0];
+b_G = [0.1];
+e_mode = int8([0; 1]); % sf
+h_mode = int8([1; 1]); % ff
+
+% % Palm Slide
+% G = [1 0 0 0 0 0];
 % b_G = [0.1];
-% e_mode = int8([0; 1]); % sf
+% e_mode = int8([3; 3]); % ss
 % h_mode = int8([1; 1]); % ff
 
 % % Finger Pivot
@@ -57,15 +66,21 @@ adj_WH = SE22Adj(R_WH, p_WH);
 % e_mode = int8([0; 1]); % sf
 % h_mode = int8([0; 1]); % sf
 
-% Palm Pivot slide
-GO = [1 0 -p_W_e2(2)]*adj_WH;
-G = [GO 0 0 0;
-     0 0 1 0 0 0];
-b_G = [-0.1; 0.5];
-e_mode = int8([0; 3]); % sl
-h_mode = int8([1; 1]); % ff
+% % Palm Pivot slide
+% GO = [1 0 -p_W_e2(2)]*adj_WH;
+% G = [GO 0 0 0;
+%      0 0 1 0 0 0];
+% b_G = [-0.1; 0.5];
+% e_mode = int8([0; 3]); % sl
+% h_mode = int8([1; 1]); % ff
 
-% 
+% % Test three contacts
+% G = [1 0 0 0 0 0];
+% b_G = [0.1];
+% e_mode = int8([3; 3]); % ss
+% h_mode = int8([1; 1; 1]); % fff
+
+
 % G = [adj_WH eye(3); 0 0 0 0 0 1];
 % b_G = [0;0;0;-0.1];
 % e_mode = int8(1); % f
@@ -78,8 +93,10 @@ h_mode = int8([1; 1]); % ff
 % solution = wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
 %         CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode, h_mode, 15);
 
+tic
 solution = wrenchSpaceAnalysis_modeSelection(kFrictionE, kFrictionH, ...
             CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, 15);
+toc
 
 % p_H_h1 = [kW/4; 0];
 % p_H_h2 = [-kW/4; 0];
