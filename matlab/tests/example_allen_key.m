@@ -24,7 +24,7 @@ W = contactScrew(CPF, CNF);
 
 % draw contact screws
 figure(1); clf(1); hold on;
-drawWrench(W([1 2 6], :), 'b');
+drawCone(W([1 2 6], :), 'b');
 plot3(W(1, 1), W(2, 1), W(6, 1), 'r*', 'markersize', 15);
 plot3(W(1, 2), W(2, 2), W(6, 2), 'g*', 'markersize', 15);
 plot3(W(1, 3), W(2, 3), W(6, 3), 'ro', 'markersize', 15);

@@ -1,8 +1,14 @@
 function solution = wrenchSpaceAnalysis_modeSelection(...
         kFrictionE, kFrictionH, CP_W_e, CN_W_e,...
-        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, kForceMagnitude)
+        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, kForceMagnitude,...
+        e_mode_goal, h_mode_goal)
 solution = [];
 TOL = 1e-7;
+
+mode_is_given = false;
+if nargin == 13
+    mode_is_given = true;
+end
 
 % scaling for generalized velocity
 % V = gvscale * V_scaled
@@ -41,11 +47,8 @@ Jacf_e = Jacf_e * vscale;
 Jacf_h = Jacf_h * vscale;
 G = G*gvscale;
 
-R_all_f = coneIntersection(Jacf_e', Jacf_h');
+cone_all_fix = coneIntersection(Jacf_e', Jacf_h');
 
-fprintf("###############################################\n");
-fprintf("##              Mode Enumeration             ##\n");
-fprintf("###############################################\n");
 [e_modes, h_modes] = partialGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h);
 
 
@@ -53,12 +56,9 @@ fprintf("###############################################\n");
 
 
 
-
-
-
-
-
-
+fprintf("###############################################\n");
+fprintf("##         Compute Stability Margins         ##\n");
+fprintf("###############################################\n");
 % EH cone intersection
 %   * Compute safety margins
 %   * get rid of infeasible cone
@@ -75,6 +75,7 @@ Jacus = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 Jacues = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 
 eh_cone_feasible_mode_count = 0;
+goal_id = 0;
 for i = 1:size(e_modes, 2)
     for j = 1:size(h_modes, 2)
         [Je_, Jh_] = getFrictionalJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jacf_e, Jacf_h);
@@ -102,12 +103,11 @@ for i = 1:size(e_modes, 2)
         % compute velocity Jacobian
         [N, Nu, Nue] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
 
-
         % figure(1);clf(1);hold on;
         % printModes([e_modes(:, i); h_modes(:, j)]);
         % fprintf('Margin: %f\n', margin_);
-        % drawWrench(Je_','g', true);
-        % drawWrench(Jh_','b', true);
+        % drawCone(Je_','g', true);
+        % drawCone(Jh_','b', true);
 
         eh_modes = [eh_modes [e_modes(:, i); h_modes(:, j)]];
         margins = [margins margin_];
@@ -117,10 +117,21 @@ for i = 1:size(e_modes, 2)
         Jacs{eh_cone_feasible_mode_count} = N;
         Jacus{eh_cone_feasible_mode_count} = Nu;
         Jacues{eh_cone_feasible_mode_count} = Nue;
+
+        if mode_is_given
+            if (i == e_mode_goal) && (j == h_mode_goal)
+                goal_id = eh_cone_feasible_mode_count;
+            end
+        end
     end
 end
 
 disp(['Modes with Margin > 0: ' num2str(eh_cone_feasible_mode_count)]);
+
+if mode_is_given && (goal_id == 0)
+    disp("Failure: the Cone of the goal mode is empty.");
+    return;
+end
 
 % trim
 eh_cones = eh_cones(1:eh_cone_feasible_mode_count);
@@ -132,18 +143,22 @@ Jacues = Jacues(1:eh_cone_feasible_mode_count);
 %% Begin to check each cone
 %%
 fprintf("###############################################\n");
-fprintf("##             Check Each Mode               ##\n");
+fprintf("##            Velocity Filtering             ##\n");
 fprintf("###############################################\n");
 
 solutions = cell(eh_cone_feasible_mode_count, 1);
 solutions_count = 0;
 
 for m = 1:eh_cone_feasible_mode_count
-    disp('***********');
-    fprintf("Mode %d of %d\n", m, eh_cone_feasible_mode_count);
-    eh_mode_goal = eh_modes(:, m);
-    printModes(eh_mode_goal);
+    if mode_is_given
+        m = goal_id;
+    else
+        disp('***********');
+        fprintf("Mode %d of %d\n", m, eh_cone_feasible_mode_count);
+        printModes(eh_modes(:, m));
+    end
 
+    eh_mode_goal = eh_modes(:, m);
     fprintf("====================================\n");
     fprintf("= Hybrid Servoing & Crashing Check =\n");
     fprintf("====================================\n");
@@ -151,14 +166,25 @@ for m = 1:eh_cone_feasible_mode_count
     N_ue = Jacues{m};
     [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, N_ue, G, b_G);
     if isempty(n_av)
-        continue;
+        disp("Failure: Hybrid Servoing returns no solution.")
+        if mode_is_given
+            return;
+        else
+            continue;
+        end
     end
-    V_action = -R_a_inv(:, end-n_av+1:end);
-    intersection = coneIntersection(R_all_f, V_action);
+
+    V_control_directions = -R_a_inv(:, end-n_av+1:end);
+    F_control_directions = [R_a_inv(:, 1:n_af) -R_a_inv(:, 1:n_af)];
+    intersection = coneIntersection(cone_all_fix, V_control_directions);
     % Crashing check
     if ~isempty(intersection) && norm(intersection) > TOL
-        disp('Crashing. Discard this mode.');
-        continue;
+        disp('Failure: Crashing. The mode is not feasible.');
+        if mode_is_given
+            return;
+        else
+            continue;
+        end
     end
 
     fprintf("=======================\n");
@@ -174,11 +200,9 @@ for m = 1:eh_cone_feasible_mode_count
     % cone of possible actuation forces
     %   force controlled direction can have both positive and negative forces
 
-    TOL = 1e-7;
     feasible_mode_count = 0;
     flag_goal_infeasible = false;
     flag_goal_impossible = false;
-
 
     for n = 1:eh_cone_feasible_mode_count
         % filter out modes using velocity command
@@ -216,8 +240,8 @@ for m = 1:eh_cone_feasible_mode_count
         end
 
         % figure(1);clf(1);hold on;
-        % drawWrench(eh_cones{n},'g', true);
-        % drawWrench(W_action,'k', true);
+        % drawCone(eh_cones{n},'g', true);
+        % drawCone(W_action,'k', true);
         if compatible
             feasible_mode_count = feasible_mode_count + 1;
             feasible_mode_id(n) = true;
@@ -226,13 +250,26 @@ for m = 1:eh_cone_feasible_mode_count
 
     if flag_goal_infeasible
         disp('Goal mode violates velocity equality constraints. Discard this mode.');
-        continue;
+        if mode_is_given
+            return;
+        else
+            continue;
+        end
     end
     if flag_goal_impossible
         disp('Goal mode violates velocity inequality constraints. Discard this mode.');
-        continue;
+        if mode_is_given
+            return;
+        else
+            continue;
+        end
     end
     disp(['Remaining feasible modes: ' num2str(feasible_mode_count)]);
+
+    todo: check arguments
+    drawWrenchSpace(cone_all_fix, V_control_directions, F_control_directions, ...
+        Jacf_e, Jacf_h, cone_generators, eh_modes, feasible_mode_count, ...
+        compatibilities, goal_id);
 
     eh_cones_goal_m = eh_cones{m};
     feasible_mode_id(m) = 0;
@@ -265,37 +302,40 @@ for m = 1:eh_cone_feasible_mode_count
 
         solutions_count = solutions_count + 1;
         solutions{solutions_count} = solution;
+
+        if mode_is_given
+            break;
+        end
     else
-        disp('No distinguishable force command.');
-        continue;
+        disp('Failure: no distinguishable force command.');
+        if mode_is_given
+            return;
+        else
+            continue;
+        end
     end
 end
 
 fprintf("###############################################\n");
 fprintf("##                  Results                  ##\n");
 fprintf("###############################################\n");
-fprintf("Total number of solutions found: %d\n", solutions_count);
+fprintf("Total number of feasible modes found: %d\n", solutions_count);
 solution = [];
 if solutions_count > 0
-    solutions = solutions(1:solutions_count);
-    margins = zeros(1, solutions_count);
-    for i = 1:solutions_count
-        mode_text = printModes(solutions{i}.eh_mode, false);
-        fprintf("Mode %d: %s\nmargin: %f\n", i, mode_text, solutions{i}.margin);
-        margins(i) = solutions{i}.margin;
+    if mode_is_given
+        solution = solutions(1);
+    else
+        solutions = solutions(1:solutions_count);
+        margins = zeros(1, solutions_count);
+        for i = 1:solutions_count
+            mode_text = printModes(solutions{i}.eh_mode, false);
+            fprintf("Mode %d: %s\nmargin: %f\n", i, mode_text, solutions{i}.margin);
+            margins(i) = solutions{i}.margin;
+        end
+        disp('Best solution:');
+        [~, best_solution_id] = max(margins);
+        solution = solutions{best_solution_id};
     end
-
-%     solution = [];
-%     for i=1:solutions_count
-%         if all(solutions{i}.eh_mode == [2 0 1 1]')
-%             solution = solutions{i};
-%             break;
-%         end
-%     end
-    
-    disp('Best solution:');
-    [~, best_solution_id] = max(margins);
-    solution = solutions{best_solution_id};
 
     printModes(solution.eh_mode);
     V_T = solution.R_a_inv*[zeros(solution.n_af,1); solution.w_av];
@@ -307,6 +347,3 @@ if solutions_count > 0
     disp('F_T:');
     disp(F_T);
 end
-
-
-return;

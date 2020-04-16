@@ -157,9 +157,9 @@ for i = 1:size(e_modes, 2)
 %         figure(1);clf(1);hold on;
 %         printModes([e_modes(:, i); h_modes(:, j)]);
 %         fprintf('Margin: %f\n', margin_);
-%         drawWrench(Je_','g', true);
-%         drawWrench(Jh_','b', true);
-%         drawWrench(W_action,'k', true);
+%         drawCone(Je_','g', true);
+%         drawCone(Jh_','b', true);
+%         drawCone(W_action,'k', true);
 
         feasible_mode_count = feasible_mode_count + 1;
         cone_generators{feasible_mode_count} = R;
@@ -282,17 +282,17 @@ figure(1); clf(1); hold on;
 
 % draw the force controlled subspace
 % slate=[63/255,61/255,83/255];
-% drawWrench(10*W_action(:, 1:2*n_af), ocean, false);
-% drawWrench(10*W_action(:, end-n_av+1:end), blueberry, true);
+% drawCone(10*W_action(:, 1:2*n_af), ocean, false);
+% drawCone(10*W_action(:, end-n_av+1:end), blueberry, true);
 
 % draw the origin
 plot3(0,0,0,'k.','markersize',25);
 
 % draw the whole hand cone and e cone
-drawWrench(R_all_f, sapphire, true);
-% drawWrench([Jacf_e; -Jacf_h]', peacock, true);
-% drawWrench(Jacf_e', peacock, true);
-% drawWrench(Jacf_h', spruce, true);
+drawCone(R_all_f, sapphire, true);
+% drawCone([Jacf_e; -Jacf_h]', peacock, true);
+% drawCone(Jacf_e', peacock, true);
+% drawCone(Jacf_h', spruce, true);
 
 % draw cones
 for i = 1:feasible_mode_count
@@ -306,22 +306,22 @@ for i = 1:feasible_mode_count
     if compatibilities(i) == true
         disp(texts);
         bcolor = bluecolors(randi(nbcolor), :);
-        drawWrench(cone_generators{i}, bcolor, true, texts);
+        drawCone(cone_generators{i}, bcolor, true, texts);
 
 %         % projection on force plane
 %         cone_projection_i = force_basis*(force_basis')*cone_generators{i};
-%         drawWrench(cone_projection_i, bcolor, true);
+%         drawCone(cone_projection_i, bcolor, true);
     else
         disp([texts ' Infeasible']);
         rcolor = redcolors(randi(nrcolor), :);
         bcolor = bluecolors(randi(nbcolor), :);
-        drawWrench(cone_generators{i}, bcolor, true, texts);
+        drawCone(cone_generators{i}, bcolor, true, texts);
     end
 
     disp(cone_generators{i});
 %     figure(i); clf(i); hold on;
-    % drawWrench(cone_e{i},'r', true);
-    % drawWrench(cone_h{i},'b', true);
+    % drawCone(cone_e{i},'r', true);
+    % drawCone(cone_h{i},'b', true);
 end
 
 
@@ -335,12 +335,12 @@ view(-135, 27);
 
 if flag_goal_is_feasible
     % draw the cone of goal mode
-%     drawWrench(cone_generators{goal_id}, 'r', true);
+%     drawCone(cone_generators{goal_id}, 'r', true);
 
     if flag_force_region_feasible
         % draw the projections
         % projection_goal_remains_3d = force_basis*projection_goal_remains;
-        % drawWrench(projection_goal_remains_3d, 'r', true);
+        % drawCone(projection_goal_remains_3d, 'r', true);
 
         % draw the action
         faction = [[0;0;0] force_basis*force_action];

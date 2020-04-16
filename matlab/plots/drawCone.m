@@ -1,6 +1,4 @@
-% Draw 3D wrenches
-
-function drawWrench(W, color, addOrigin, texts)
+function drawCone(W, color, addOrigin, texts)
 
 if addOrigin
     origin = [0 0 0];

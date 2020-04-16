@@ -92,8 +92,8 @@ for iter = 1:NIter
     fprintf('Margin: %f\n', margin_);
     margin_record(iter) = margin_;
     figure(1);clf(1);hold on;
-    drawWrench(Je_','g', true);
-    drawWrench(Jh_','b', true);
+    drawCone(Je_','g', true);
+    drawCone(Jh_','b', true);
     view(-132, 26)
     drawnow
 
