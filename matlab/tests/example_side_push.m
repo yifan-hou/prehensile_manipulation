@@ -45,7 +45,7 @@ kNumSlidingPlanes = 4;
 % mode enumeration
 [e_modes, h_modes] = sharedGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h);
 
-e_mode = int8([1; 1]); % rr
+e_mode = int8([2; 2]); % rr
 h_mode = int8([1; 1]); % ff
 
 kObjWeight = 10; % newton
