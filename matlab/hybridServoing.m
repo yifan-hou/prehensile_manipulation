@@ -4,7 +4,7 @@ dims.Actualized = 3;
 dims.UnActualized = 3;
 dims.SlidingFriction = 0;
 
-[n_av, n_af, R_a, w_av] = solvehfvc(dims, N_all, Nue, G, ...
+[n_av, n_af, R_a, w_av] = solvehfvc(dims, N_all, G, ...
     b_G, [], [], [], [], [], 3, false);
 
 

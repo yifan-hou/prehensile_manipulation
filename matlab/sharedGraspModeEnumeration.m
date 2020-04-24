@@ -1,4 +1,4 @@
-function [e_modes, h_modes] = partialGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h)
+function [e_modes, h_modes] = sharedGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h)
 
 % Enumerate contact modes
 e_modes = contact_mode_enumeration(CP_W_e(1:2,:), CN_W_e(1:2,:), true);

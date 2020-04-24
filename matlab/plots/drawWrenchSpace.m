@@ -1,6 +1,6 @@
 % Draw multiple cones in wrench space
-function drawWrenchSpace(cone_all_fix, V_control_directions, F_control_directions, ...
-    Jacf_e, Jacf_h, cone_generators, eh_modes, feasible_mode_count, ...
+function drawWrenchSpace(cone_all_fix, eCone_allFix, hCone_allFix, V_control_directions, F_control_directions, ...
+    cone_generators, eh_modes, number_of_modes, ...
     compatibilities, goal_id)
 
 % blue shades
@@ -65,15 +65,14 @@ plot3(0,0,0,'k.','markersize',25);
 
 % draw the whole hand cone and e cone
 drawCone(cone_all_fix, sapphire, true);
-% drawCone([Jacf_e; -Jacf_h]', peacock, true);
-% drawCone(Jacf_e', peacock, true);
-% drawCone(Jacf_h', spruce, true);
+% drawCone([eCone_allFix; -hCone_allFix]', peacock, true);
+% drawCone(eCone_allFix', peacock, true);
+% drawCone(hCone_allFix', spruce, true);
 
 % draw cones
-for i = 1:feasible_mode_count
+for i = 1:number_of_modes
     if i == goal_id
         fprintf('Mode %d: (Goal)\n', i);
-        fprintf('Margin: %f\n', margins(i));
     else
         fprintf('Mode %d:\n', i);
     end

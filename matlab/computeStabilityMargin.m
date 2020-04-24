@@ -1,10 +1,9 @@
 function margin = computeStabilityMargin(...
         kFrictionE, kFrictionH, CP_W_e, CN_W_e,...
-        CP_H_h, CN_H_h, R_WH, p_WH, e_mode_goal, h_mode_goal)
+        CP_H_h, CN_H_h, CP_W_G, R_WH, p_WH, e_mode_goal, h_mode_goal, kObjWeight, kContactForce)
 % scaling for generalized velocity
 % V = gvscale * V_scaled
 kCharacteristicLength = 0.15;
-vscale = diag([1 1 1/kCharacteristicLength]);
 
 % N_ * V_scaled = 0, N*V = 0,
 % -> N_ = N*gvscale
@@ -18,6 +17,7 @@ CP_W_e = [CP_W_e; zeros(1, Ne)];
 CN_W_e = [CN_W_e; zeros(1, Ne)];
 CP_H_h = [CP_H_h; zeros(1, Nh)];
 CN_H_h = [CN_H_h; zeros(1, Nh)];
+CP_W_G = [CP_W_G; 0];
 R_WH = [R_WH [0; 0]; 0 0 1];
 p_WH = [p_WH; 0];
 
@@ -29,30 +29,50 @@ adj_WH = SE22Adj(R_WH(1:2,1:2), p_WH(1:2));
 [Jacf_e, Jacf_h] = getWholeJacobianFrictional(CP_W_e, CN_W_e, kFrictionE, ...
         CP_H_h, CN_H_h, kFrictionH, adj_WH, adj_HW);
 
-% scale
+% gravity
+W_G = contactScrew(CP_W_G, [0 -1 0]');
+F_G = kObjWeight*v3t2(W_G)'*adj_WH;
+
+
+% scale torque to force
+vscale = diag([1 1 1/kCharacteristicLength]);
 Jacf_e = Jacf_e * vscale;
 Jacf_h = Jacf_h * vscale;
 
 [Je_, Jh_] = getFrictionalJacobianFromContacts(...
     e_mode_goal, h_mode_goal, Jacf_e, Jacf_h);
 
-% check force balance
-R = coneIntersection(Je_', Jh_');
-if isempty(R) || norm(R) == 0
+% scale kContactForce
+Je_ = kContactForce * Je_;
+Jh_ = kContactForce * Jh_;
+
+% % construct polytopes by convex hull
+% id_e = unique(convhulln([zeros(1, 3); Je_]), 'stable') - 1; id_e(id_e == 0) = [];
+% id_h = unique(convhulln([zeros(1, 3); Jh_]), 'stable') - 1; id_h(id_h == 0) = [];
+% poly_e = Polyhedron('V', [zeros(1, 3); Je_(id_e, :)]);
+% poly_h_minus = Polyhedron('V', [zeros(1, 3); -Jh_(id_h, :)]);
+% polytope = poly_e + poly_h_minus;
+
+% compute minkowski sum
+polytope_e = Polyhedron('V', zeros(1, 3));
+for i = 1:size(Je_, 1)
+    V = [0 0 0; Je_(i, :)] + [1;1] * F_G;
+    polytope_e = polytope_e + Polyhedron('V', V);
+end
+polytope_h = Polyhedron('V', zeros(1, 3));
+for i = 1:size(Jh_, 1)
+    polytope_h = polytope_h + Polyhedron('V', [0 0 0; -Jh_(i, :)]);
+end
+polytope = polytope_e + polytope_h;
+
+% find the shortest distance from the origin to the face of the polytope
+polytope.computeHRep;
+A = polytope.A;
+b = polytope.b;
+if any(b <= 1e-5)
     margin = 0;
     return;
 end
 
-% compute cone stability margin
-if sameConeCheck(Je_', R)
-    margin = coneStabilityMargin(Jh_', R);
-elseif sameConeCheck(Jh_', R)
-    margin = coneStabilityMargin(Je_', R);
-else
-    margin_e = coneStabilityMargin(Je_', R);
-    margin_h = coneStabilityMargin(Jh_', R);
-    margin = min([margin_e, margin_h]);
-end
+margin = min(b./normByRow(A));
 
-
-% fprintf('Margin: %f\n', margin);

@@ -1,60 +1,44 @@
+
+%!
+%! Wrench space analysis.
+%!
+%!
+%! @return     { description_of_the_return_value }
+%!
 function solution = wrenchSpaceAnalysis_modeSelection(...
-        kFrictionE, kFrictionH, CP_W_e, CN_W_e,...
-        CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, kForceMagnitude,...
-        e_mode_goal, h_mode_goal)
+        Jac_e, Jac_h, eCone_allFix, hCone_allFix, G, b_G, kForceMagnitude,...
+        e_modes, h_modes, e_mode_goal, h_mode_goal)
+
 solution = [];
 TOL = 1e-7;
+assert(size(CP_W_e, 3) == 2);
 
-mode_is_given = false;
-if nargin == 13
-    mode_is_given = true;
+goal_mode_is_given = false;
+if nargin == 15
+    goal_mode_is_given = true;
+end
+
+% is this useful at all?
+planar_problem = false;
+if size(G, 2) == 6
+    planar_problem = true;
 end
 
 % scaling for generalized velocity
 % V = gvscale * V_scaled
 kCharacteristicLength = 0.15;
-vscale = diag([1 1 1/kCharacteristicLength]);
-vscale_inv = diag([1 1 kCharacteristicLength]);
-gvscale = diag([1 1 1/kCharacteristicLength 1 1 1/kCharacteristicLength]);
+vscale = diag([1 1 1 [1 1 1]/kCharacteristicLength]);
+vscale_inv = diag([1 1 1 [1 1 1]*kCharacteristicLength]);
+gvscale = diag([1 1 1 [1 1 1]/kCharacteristicLength 1 1 1 [1 1 1]/kCharacteristicLength]);
 % N_ * V_scaled = 0, N*V = 0,
 % -> N_ = N*gvscale
-
-Ne = size(CP_W_e, 2);
-Nh = size(CP_H_h, 2);
-
-% add virtual z axis
-assert(size(CP_W_e, 1) == 2);
-CP_W_e = [CP_W_e; zeros(1, Ne)];
-CN_W_e = [CN_W_e; zeros(1, Ne)];
-CP_H_h = [CP_H_h; zeros(1, Nh)];
-CN_H_h = [CN_H_h; zeros(1, Nh)];
-R_WH = [R_WH [0; 0]; 0 0 1];
-p_WH = [p_WH; 0];
-
-R_HW = R_WH';
-p_HW = -R_HW*p_WH;
-adj_HW = SE22Adj(R_HW(1:2,1:2), p_HW(1:2));
-adj_WH = SE22Adj(R_WH(1:2,1:2), p_WH(1:2));
-
-[Jac_e, Jac_h] = getWholeJacobian(CP_W_e, CN_W_e, CP_H_h, CN_H_h, adj_WH, adj_HW);
-[Jacf_e, Jacf_h] = getWholeJacobianFrictional(CP_W_e, CN_W_e, kFrictionE, ...
-        CP_H_h, CN_H_h, kFrictionH, adj_WH, adj_HW);
-
-% scale
 Jac_e = Jac_e * gvscale;
 Jac_h = Jac_h * gvscale;
-Jacf_e = Jacf_e * vscale;
-Jacf_h = Jacf_h * vscale;
+eCone_allFix = eCone_allFix * vscale;
+hCone_allFix = hCone_allFix * vscale;
 G = G*gvscale;
 
-cone_all_fix = coneIntersection(Jacf_e', Jacf_h');
-
-[e_modes, h_modes] = partialGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h);
-
-
-
-
-
+cone_allFix = coneIntersection(eCone_allFix', hCone_allFix');
 
 fprintf("###############################################\n");
 fprintf("##         Compute Stability Margins         ##\n");
@@ -78,7 +62,7 @@ eh_cone_feasible_mode_count = 0;
 goal_id = 0;
 for i = 1:size(e_modes, 2)
     for j = 1:size(h_modes, 2)
-        [Je_, Jh_] = getFrictionalJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jacf_e, Jacf_h);
+        [Je_, Jh_] = getFrictionalJacobianFromContacts(e_modes(:, i), h_modes(:, j), eCone_allFix, hCone_allFix);
 
         % check force balance
         R = coneIntersection(Je_', Jh_');
@@ -101,7 +85,7 @@ for i = 1:size(e_modes, 2)
         end
 
         % compute velocity Jacobian
-        [N, Nu, Nue] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
+        [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
 
         % figure(1);clf(1);hold on;
         % printModes([e_modes(:, i); h_modes(:, j)]);
@@ -116,9 +100,8 @@ for i = 1:size(e_modes, 2)
         eh_cones{eh_cone_feasible_mode_count} = R;
         Jacs{eh_cone_feasible_mode_count} = N;
         Jacus{eh_cone_feasible_mode_count} = Nu;
-        Jacues{eh_cone_feasible_mode_count} = Nue;
 
-        if mode_is_given
+        if goal_mode_is_given
             if (i == e_mode_goal) && (j == h_mode_goal)
                 goal_id = eh_cone_feasible_mode_count;
             end
@@ -128,7 +111,7 @@ end
 
 disp(['Modes with Margin > 0: ' num2str(eh_cone_feasible_mode_count)]);
 
-if mode_is_given && (goal_id == 0)
+if goal_mode_is_given && (goal_id == 0)
     disp("Failure: the Cone of the goal mode is empty.");
     return;
 end
@@ -137,7 +120,6 @@ end
 eh_cones = eh_cones(1:eh_cone_feasible_mode_count);
 Jacs = Jacs(1:eh_cone_feasible_mode_count);
 Jacus = Jacus(1:eh_cone_feasible_mode_count);
-Jacues = Jacues(1:eh_cone_feasible_mode_count);
 
 %%
 %% Begin to check each cone
@@ -150,7 +132,7 @@ solutions = cell(eh_cone_feasible_mode_count, 1);
 solutions_count = 0;
 
 for m = 1:eh_cone_feasible_mode_count
-    if mode_is_given
+    if goal_mode_is_given
         m = goal_id;
     else
         disp('***********');
@@ -163,11 +145,10 @@ for m = 1:eh_cone_feasible_mode_count
     fprintf("= Hybrid Servoing & Crashing Check =\n");
     fprintf("====================================\n");
     N_all = Jacs{m};
-    N_ue = Jacues{m};
-    [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, N_ue, G, b_G);
+    [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, G, b_G);
     if isempty(n_av)
         disp("Failure: Hybrid Servoing returns no solution.")
-        if mode_is_given
+        if goal_mode_is_given
             return;
         else
             continue;
@@ -176,11 +157,11 @@ for m = 1:eh_cone_feasible_mode_count
 
     V_control_directions = -R_a_inv(:, end-n_av+1:end);
     F_control_directions = [R_a_inv(:, 1:n_af) -R_a_inv(:, 1:n_af)];
-    intersection = coneIntersection(cone_all_fix, V_control_directions);
+    intersection = coneIntersection(cone_allFix, V_control_directions);
     % Crashing check
     if ~isempty(intersection) && norm(intersection) > TOL
         disp('Failure: Crashing. The mode is not feasible.');
-        if mode_is_given
+        if goal_mode_is_given
             return;
         else
             continue;
@@ -195,7 +176,7 @@ for m = 1:eh_cone_feasible_mode_count
     % 1. If NC degenerates, mark this mode as incompatible;
     % 2. If nominal velocity under NC exists, and it cause the contact point to
     %    slide in a different direction, remove this mode.
-    feasible_mode_id = false(eh_cone_feasible_mode_count, 1);
+    feasibilities = false(eh_cone_feasible_mode_count, 1);
 
     % cone of possible actuation forces
     %   force controlled direction can have both positive and negative forces
@@ -244,13 +225,13 @@ for m = 1:eh_cone_feasible_mode_count
         % drawCone(W_action,'k', true);
         if compatible
             feasible_mode_count = feasible_mode_count + 1;
-            feasible_mode_id(n) = true;
+            feasibilities(n) = true;
         end
     end
 
     if flag_goal_infeasible
         disp('Goal mode violates velocity equality constraints. Discard this mode.');
-        if mode_is_given
+        if goal_mode_is_given
             return;
         else
             continue;
@@ -258,7 +239,7 @@ for m = 1:eh_cone_feasible_mode_count
     end
     if flag_goal_impossible
         disp('Goal mode violates velocity inequality constraints. Discard this mode.');
-        if mode_is_given
+        if goal_mode_is_given
             return;
         else
             continue;
@@ -266,14 +247,13 @@ for m = 1:eh_cone_feasible_mode_count
     end
     disp(['Remaining feasible modes: ' num2str(feasible_mode_count)]);
 
-    todo: check arguments
-    drawWrenchSpace(cone_all_fix, V_control_directions, F_control_directions, ...
-        Jacf_e, Jacf_h, cone_generators, eh_modes, feasible_mode_count, ...
-        compatibilities, goal_id);
+    drawWrenchSpace(cone_allFix, eCone_allFix, hCone_allFix, ...
+            V_control_directions, F_control_directions, eh_cones, eh_modes, ...
+            eh_cone_feasible_mode_count, feasibilities, goal_id);
 
     eh_cones_goal_m = eh_cones{m};
-    feasible_mode_id(m) = 0;
-    eh_cones_other_feasible_m = eh_cones(feasible_mode_id);
+    feasibilities(m) = 0;
+    eh_cones_other_feasible_m = eh_cones(feasibilities);
 
     fprintf("===============================\n");
     fprintf("===  Compute Force Action   ===\n");
@@ -303,12 +283,12 @@ for m = 1:eh_cone_feasible_mode_count
         solutions_count = solutions_count + 1;
         solutions{solutions_count} = solution;
 
-        if mode_is_given
+        if goal_mode_is_given
             break;
         end
     else
         disp('Failure: no distinguishable force command.');
-        if mode_is_given
+        if goal_mode_is_given
             return;
         else
             continue;
@@ -322,7 +302,7 @@ fprintf("###############################################\n");
 fprintf("Total number of feasible modes found: %d\n", solutions_count);
 solution = [];
 if solutions_count > 0
-    if mode_is_given
+    if goal_mode_is_given
         solution = solutions(1);
     else
         solutions = solutions(1:solutions_count);
