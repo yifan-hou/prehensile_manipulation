@@ -44,28 +44,35 @@ Jacf_h = Jacf_h * vscale;
 
 % scale kContactForce
 Je_ = kContactForce * Je_;
-Jh_ = kContactForce * Jh_;
-
-% % construct polytopes by convex hull
-% id_e = unique(convhulln([zeros(1, 3); Je_]), 'stable') - 1; id_e(id_e == 0) = [];
-% id_h = unique(convhulln([zeros(1, 3); Jh_]), 'stable') - 1; id_h(id_h == 0) = [];
-% poly_e = Polyhedron('V', [zeros(1, 3); Je_(id_e, :)]);
-% poly_h_minus = Polyhedron('V', [zeros(1, 3); -Jh_(id_h, :)]);
-% polytope = poly_e + poly_h_minus;
+Jh_ = - kContactForce * Jh_;
 
 % compute minkowski sum
-polytope_e = Polyhedron('V', zeros(1, 3));
-for i = 1:size(Je_, 1)
-    V = [0 0 0; Je_(i, :)] + [1;1] * F_G;
-    polytope_e = polytope_e + Polyhedron('V', V);
+polytope = [0 0 0; Je_(1, :)];
+for i = 2:size(Je_, 1)
+    polytope = [polytope; bsxfun(@plus, polytope, Je_(i, :))];
 end
-polytope_h = Polyhedron('V', zeros(1, 3));
+% id = unique(convhulln(polytope), 'stable');
+% polytope = polytope(id, :);
+polytope = bsxfun(@plus, polytope, F_G);
 for i = 1:size(Jh_, 1)
-    polytope_h = polytope_h + Polyhedron('V', [0 0 0; -Jh_(i, :)]);
+    polytope = [polytope; bsxfun(@plus, polytope, Jh_(i, :))];
 end
-polytope = polytope_e + polytope_h;
+id = unique(convhulln(polytope), 'stable');
+polytope = polytope(id, :);
+
+% polytope_e = Polyhedron('V', zeros(1, 3));
+% for i = 1:size(Je_, 1)
+%     V = [0 0 0; Je_(i, :)] + [1;1] * F_G;
+%     polytope_e = polytope_e + Polyhedron('V', V);
+% end
+% polytope_h = Polyhedron('V', zeros(1, 3));
+% for i = 1:size(Jh_, 1)
+%     polytope_h = polytope_h + Polyhedron('V', [0 0 0; -Jh_(i, :)]);
+% end
+% polytope = polytope_e + polytope_h;
 
 % find the shortest distance from the origin to the face of the polytope
+polytope = Polyhedron('V', polytope);
 polytope.computeHRep;
 A = polytope.A;
 b = polytope.b;

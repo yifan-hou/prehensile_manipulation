@@ -13,13 +13,14 @@ end
 % end
 plot3(W(1, :), W(2, :), W(3, :), '.', 'markersize', 20, 'markerEdgeColor', color);
 
+rw = rank(bsxfun(@minus, W, W(:,1)));
 
-if rank(W) >= 3
+if rw >= 3
     % 3D polytope
     K = convhull(data(:,1), data(:,2), data(:,3));
     h = trisurf(K, data(:,1), data(:,2), data(:,3));
     h.FaceAlpha = 0.5;
-elseif rank(W) == 2
+elseif rw == 2
     % 2D plane
     if size(data, 1) >= 3
         [U,S]=svd(   bsxfun(@minus,data,mean(data)),   0);
