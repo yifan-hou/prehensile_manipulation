@@ -20,7 +20,7 @@ include_directories(include/)
 ##
 pybind11_add_module(example src/test.cpp)
 
-add_library(polylib src/polyhedral.cpp)
+add_library(polylib src/polyhedron.cpp)
 target_link_libraries(polylib ${CDDLIB})
 
 

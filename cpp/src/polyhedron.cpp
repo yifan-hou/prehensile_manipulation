@@ -1,4 +1,4 @@
-#include "polyhedral.h"
+#include "polyhedron.h"
 #include "setoper.h"
 #include "cdd.h"
 

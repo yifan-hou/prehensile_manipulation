@@ -1,5 +1,5 @@
 #include <iostream>
-#include "polyhedral.h"
+#include "polyhedron.h"
 
 Eigen::IOFormat CleanFmt(4, 0, ", ", "\n", "[", "]");
 

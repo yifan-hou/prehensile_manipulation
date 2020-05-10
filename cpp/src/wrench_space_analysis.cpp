@@ -2,6 +2,7 @@
 #include <Eigen/Geometry>
 
 #include "solvehfvc.h"
+#include "polyhedron.h"
 
 #define TOL 1e-7
 #define PI 3.1415926
