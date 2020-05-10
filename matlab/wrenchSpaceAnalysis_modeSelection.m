@@ -11,7 +11,6 @@ function solution = wrenchSpaceAnalysis_modeSelection(...
 
 solution = [];
 TOL = 1e-7;
-assert(size(CP_W_e, 3) == 2);
 
 goal_mode_is_given = false;
 if nargin == 15
