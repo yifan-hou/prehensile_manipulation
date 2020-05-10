@@ -57,19 +57,14 @@ polytope = bsxfun(@plus, polytope, F_G);
 for i = 1:size(Jh_, 1)
     polytope = [polytope; bsxfun(@plus, polytope, Jh_(i, :))];
 end
+% check if the polytope
+rank_polytope = rank(bsxfun(@minus, polytope, mean(polytope)));
+if rank_polytope < size(polytope, 2)
+    margin = 0;
+    return;
+end
 id = unique(convhulln(polytope), 'stable');
 polytope = polytope(id, :);
-
-% polytope_e = Polyhedron('V', zeros(1, 3));
-% for i = 1:size(Je_, 1)
-%     V = [0 0 0; Je_(i, :)] + [1;1] * F_G;
-%     polytope_e = polytope_e + Polyhedron('V', V);
-% end
-% polytope_h = Polyhedron('V', zeros(1, 3));
-% for i = 1:size(Jh_, 1)
-%     polytope_h = polytope_h + Polyhedron('V', [0 0 0; -Jh_(i, :)]);
-% end
-% polytope = polytope_e + polytope_h;
 
 % find the shortest distance from the origin to the face of the polytope
 polytope = Polyhedron('V', polytope);
