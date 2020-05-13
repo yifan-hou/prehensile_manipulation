@@ -165,3 +165,15 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
   return vertexEnumeration(A, b, R);
 }
 
+bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2, Eigen::MatrixXd *C) {
+  Eigen::MatrixXd R1(C1.rows(), C1.cols() + 1);
+  Eigen::MatrixXd R2(C2.rows(), C2.cols() + 1);
+  R1 << Eigen::VectorXd::Zero(C1.rows()), C1;
+  R2 << Eigen::VectorXd::Zero(C2.rows()), C2;
+
+  Eigen::MatrixXd R;
+  if (!intersection(R1, R2, &R)) return false;
+  assert(R.leftCols<1>().norm() < 1e-10);
+  *C = R.rightCols(R.cols()-1);
+  return true;
+}

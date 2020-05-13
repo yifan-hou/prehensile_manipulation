@@ -19,10 +19,53 @@ T_h = zeros(Nh*kNumSlidingPlanes, 6);
 % J_e = zeros(kd*Ne, 6);
 % J_h = zeros(kd*Nh, 6);
 
-eCone = zeros(2*kNumSlidingPlanes*Ne, 6);
-hCone = zeros(2*kNumSlidingPlanes*Nh, 6);
+eCone = zeros((2*kNumSlidingPlanes+1)*Ne, 6);
+hCone = zeros((2*kNumSlidingPlanes+1)*Nh, 6);
 
-% z = [0 0 1]';
+% The following code generates a list of sliding modes. This list controls the
+% order of friction cone facets in eCone and hCone.
+% For example, for kNumSlidingPlanes = 4, it should look like
+% phase = [1 0 0 0
+%          1 1 0 0
+%          1 1 1 0
+%          1 1 1 1
+%          0 1 1 1
+%          0 0 1 1
+%          0 0 0 1
+%          0 0 0 0];
+% phase = zeros(2*kNumSlidingPlanes, kNumSlidingPlanes);
+% for i = 1:2*kNumSlidingPlanes-1
+%     id1_start = i - kNumSlidingPlanes + 1 ;
+%     id1_end = i;
+%     if id1_start < 1
+%         id1_start = 1;
+%     end
+%     if id1_end > kNumSlidingPlanes
+%         id1_end = kNumSlidingPlanes;
+%     end
+%     phase(i, id1_start:id1_end) = 1;
+% end
+%
+% Compute the order from bit-wise code:
+% if phase(1) == 1
+%     id = sum(phase);
+% else
+%     id = 2*kNumSlidingPlanes - sum(phase);
+% end
+
+% sliding planes
+SP = zeros(kNumSlidingPlanes, 3);
+for i = 1:kNumSlidingPlanes
+    SP(i, :) = [cos(pi/kNumSlidingPlanes*i), sin(pi/kNumSlidingPlanes*i), 0];
+end
+SP = [SP; -SP; SP(1, :)];
+% contact tangential directions in contact frame
+z = [0 0 1]';
+CT = zeros(2*kNumSlidingPlanes+1, 3);
+for i = 1:2*kNumSlidingPlanes+1
+    CT(i, :) = cross(SP(i, :), z);
+end
+
 vr = rand(3, 1);
 vr = vr/norm(vr);
 mu_norm = sqrt(1 + kFrictionE^2);
@@ -36,20 +79,14 @@ for i = 1:Ne
     % contact tangential and friction cones
     CX = cross(vr, CN); CX = CX/norm(CX);
     CY = cross(CN, CX); CY = CY/norm(CY);
-    c_Wei = [CX', cross(CP_W_e(:,i), CX)';
-             CY', cross(CP_W_e(:,i), CY)'];
-    c_Wei = zeros(kNumSlidingPlanes, 6);
-    eConei = zeros(2*kNumSlidingPlanes, 6);
-    for j = 0:kNumSlidingPlanes-1
-        Ct = cos(pi/kNumSlidingPlanes*j) * CX + sin(pi/kNumSlidingPlanes*j) * CY;
-        c_Wei(j + 1, :) = [Ct', cross(CP_W_e(:,i), Ct)'];
-        CconePlus = (kFrictionE*Ct + CN)/mu_norm;
-        CconeNeg = (-kFrictionE*Ct + CN)/mu_norm;
-        eConei(2*j + 1:2*j+2, :) = [CconePlus', cross(CP_W_e(:,i), CconePlus)';
-                                    CconeNeg',  cross(CP_W_e(:,i), CconeNeg)'];
-    end
+    CT_e = CT(:, 1:2)*[CX';CY']; % tangential directions
+    CCone = (kFrictionE*CT_e + ones(2*kNumSlidingPlanes+1, 1)*CN')/mu_norm; % friction cone edges
+
+    CT_e = CT_e(1:kNumSlidingPlanes, :);
+    c_Wei = [CT_e, cross(ones(kNumSlidingPlanes, 1)*CP_W_e(:,i)', CT_e)];
+    eConei = [CCone, cross(ones(2*kNumSlidingPlanes+1, 1)*CP_W_e(:,i)', CCone)];
     T_e(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = c_Wei*adj_WH;
-    eCone(2*kNumSlidingPlanes*(i-1)+1:2*kNumSlidingPlanes*i, :) = eConei*adj_WH;
+    eCone((2*kNumSlidingPlanes+1)*(i-1)+1:(2*kNumSlidingPlanes+1)*i, :) = eConei*adj_WH;
 end
 
 % CP_O gives constraints in object frame. But our hand velocity is in world frame.
@@ -61,28 +98,21 @@ mu_norm = sqrt(1+kFrictionH^2);
 for i = 1:Nh
     % contact normal
     CN = CN_H_h(:,i)/norm(CN_H_h(:,i));
-    c_Wei = [CN', cross(CP_H_h(:,i), CN)'];
-    cadj = c_Wei*adj_HW*adj_WH;
+    c_Whi = [CN', cross(CP_H_h(:,i), CN)'];
+    cadj = c_Whi*adj_HW*adj_WH;
     N_h(i, :) = -cadj;
 
-    % contact tangential
+    % contact tangential and friction cones
     CX = cross(vr, CN); CX = CX/norm(CX);
     CY = cross(CN, CX); CY = CY/norm(CY);
-    c_Wei = [CX', cross(CP_H_h(:,i), CX)';
-             CY', cross(CP_H_h(:,i), CY)'];
-    cadj = c_Wei*adj_HW*adj_WH;
-    c_Wei = zeros(kNumSlidingPlanes, 6);
-    hConei = zeros(2*kNumSlidingPlanes, 6);
-    for j = 0:kNumSlidingPlanes-1
-        Ct = cos(pi/kNumSlidingPlanes*j) * CX + sin(pi/kNumSlidingPlanes*j) * CY;
-        c_Wei(j + 1, :) = [Ct', cross(CP_H_h(:,i), Ct)'];
-        CconePlus = (kFrictionH*Ct + CN)/mu_norm;
-        CconeNeg = (-kFrictionH*Ct + CN)/mu_norm;
-        hConei(2*j+1 : 2*j+2, :) = [CconePlus', cross(CP_H_h(:,i), CconePlus)';
-                                    CconeNeg', cross(CP_H_h(:,i), CconeNeg)'];
-    end
-    T_h(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = -c_Wei*adj_HW*adj_WH;
-    hCone(2*kNumSlidingPlanes*(i-1)+1 : 2*kNumSlidingPlanes*i, :) = -hConei*adj_HW*adj_WH;
+    CT_h = CT(:, 1:2)*[CX';CY']; % tangential directions
+    CCone = (kFrictionH*CT_h + ones(2*kNumSlidingPlanes+1, 1)*CN')/mu_norm; % friction cone edges
+
+    CT_h = CT_h(1:kNumSlidingPlanes, :);
+    c_Whi = [CT_h, cross(ones(kNumSlidingPlanes, 1)*CP_H_h(:,i)', CT_h)];
+    hConei = [CCone, cross(ones(2*kNumSlidingPlanes+1, 1)*CP_H_h(:,i)', CCone)];
+    T_h(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = -c_Whi*adj_HW*adj_WH;
+    hCone((2*kNumSlidingPlanes+1)*(i-1)+1:(2*kNumSlidingPlanes+1)*i, :) = -hConei*adj_HW*adj_WH;
 end
 
 eCone = eCone';

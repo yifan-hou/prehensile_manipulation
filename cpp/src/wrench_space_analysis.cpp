@@ -1,3 +1,6 @@
+#include <list>
+#include <string>
+#include <algorithm>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
@@ -13,31 +16,45 @@ typedef Matrix<double, 6, 6> Matrix6d;
 typedef Matrix<double, 6, 1> Vector6d;
 
 
+bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes,
+    MatrixXi *sss_modes, std::vector<MatrixXi> *s_modes);
 
 // Geometrical parameters:
-//  Jac_e
-//  Jac_h
-//  eCone_allFix
-//  hCone_allFix
+//  Jac_e, Jac_h
+//  eCone_allFix_raw, hCone_allFix_raw: each row denotes a generator
+//  F_G: gravity vector
 // Magnitude parameters:
 //  kContactForce
 //  kObjWeight
 //  kCharacteristicLength
 // List of all velocity-consistent contact modes
-//  e_cs_modes, e_modes
-//  h_cs_modes, h_modes
+//  e_cs_modes, h_cs_modes: number of cs modes x number of contacts
+//  e_ss_modes, h_ss_modes: a vector, each element is a (number of modes x number of total sliding directions) matrix describing the stick-sliding modes for a particular cs modes.
 // Optional arguments (use an empty matrix to denote an unused argument):
 //  A, b: additional force constraint
 //  G, b_G: goal velocity description
 //  e_mode_goal, h_mode_goal: a particular goal mode
-
-void wrench_space_analysis(const MatrixXd &Jac_e_raw, const MatrixXd &Jac_h_raw,
+void wrenchSpaceAnalysis(const MatrixXd &Jac_e_raw, const MatrixXd &Jac_h_raw,
     const MatrixXd &eCone_allFix_raw, const MatrixXd &hCone_allFix_raw,
-    const double kContactForce, const double kObjWeight, const double kCharacteristicLength,
-    const MatrixXi &e_cs_modes, const MatrixXi &e_modes,
-    const MatrixXi &h_cs_modes, const MatrixXi &h_modes,
+    const VectorXd &F_G,
+    const double kContactForce, const double kObjWeight,
+    const double kCharacteristicLength, const int kNumSlidingPlanes,
+    const MatrixXi &e_cs_modes, const std::vector<MatrixXi> &e_ss_modes,
+    const MatrixXi &h_cs_modes, const std::vector<MatrixXi> &h_ss_modes,
     const MatrixXd &G, const VectorXd &b_G,
     const VectorXi &e_mode_goal, const VectorXi &h_mode_goal) {
+
+  Eigen::MatrixXi e_sss_modes, h_sss_modes;
+  std::vector<Eigen::MatrixXi> e_s_modes, h_s_modes;
+
+  if (!modeCleaning(e_cs_modes, e_ss_modes, kNumSlidingPlanes, &e_sss_modes, &e_s_modes)) {
+    std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for e contacts." << std::endl;
+    return;
+  }
+  if (!modeCleaning(h_cs_modes, h_ss_modes, kNumSlidingPlanes, &h_sss_modes, &h_s_modes)) {
+    std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for h contacts." << std::endl;
+    return;
+  }
 
   bool flag_given_goal_mode = false;
   if (e_mode_goal.size() > 0) flag_given_goal_mode = true;
@@ -47,7 +64,8 @@ void wrench_space_analysis(const MatrixXd &Jac_e_raw, const MatrixXd &Jac_h_raw,
   /**
    * Preparation
    */
-
+  const int NE_SSS_MODES = e_sss_modes.rows();
+  const int NH_SSS_MODES = h_sss_modes.rows();
   // scaling for generalized velocity
   // V = gvscale * V_scaled
   Matrix6d vscale = Vector6d(1., 1., 1., 1./kCharacteristicLength, 1./kCharacteristicLength, 1./kCharacteristicLength).asDiagonal();
@@ -64,11 +82,32 @@ void wrench_space_analysis(const MatrixXd &Jac_e_raw, const MatrixXd &Jac_h_raw,
   if (flag_given_goal_velocity) G = G*gvscale;
 
   // for crashing check
-  cone_allFix = coneIntersection(eCone_allFix', hCone_allFix');
+  MatrixXd cone_allFix;
+  Poly::coneIntersection(eCone_allFix, hCone_allFix, &cone_allFix);
 
-  fprintf("###############################################\n");
-  fprintf("##         Compute Stability Margins         ##\n");
-  fprintf("###############################################\n");
+  printf("##         Compute Stability Margins         ##\n");
+  Eigen::VectorXi e_sss_mode, h_sss_mode;
+  Eigen::VectorXi e_s_mode, h_s_mode;
+  Eigen::MatrixXd e_cone, h_cone;
+  for (int e_sss_i = 0; e_sss_i < NE_SSS_MODES; ++e_sss_i) {
+    e_sss_mode = e_sss_modes.middleRows(e_sss_i, 1);
+    for (int h_sss_i = 0; h_sss_i < NH_SSS_MODES; ++h_sss_i) {
+      h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1);
+      for (int e_s_i = 0; e_s_i < e_s_modes[e_sss_i].size(); ++e_s_i) {
+        e_s_mode = e_s_modes[e_sss_i].middleRows(e_s_i, 1);
+        for (int h_s_i = 0; h_s_i < h_s_modes[h_sss_i].size(); ++h_s_i) {
+          h_s_mode = h_s_modes[h_sss_i].middleRows(h_s_i, 1);
+          e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
+          h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
+          /* construct two polytopes */
+          // scale kContactForce
+          e_cone = kContactForce * e_cone;
+          h_cone = - kContactForce * h_cone;
+        }
+      }
+    }
+  }
+
   // EH cone intersection
   //   * Compute safety margins
   //   * get rid of infeasible cone
@@ -355,3 +394,132 @@ void wrench_space_analysis(const MatrixXd &Jac_e_raw, const MatrixXd &Jac_h_raw,
   end
 
 }
+
+
+
+bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes,
+    MatrixXi *sss_modes, std::vector<MatrixXi> *s_modes) {
+  int num_cs_modes = cs_modes.rows();
+  int num_contacts = cs_modes.cols();
+  int total_sliding_directions = ss_modes[0].cols();
+  assert(sss_modes->size() == 0);
+  /**
+   * First, we need to build a cs mode representation with {f = sticking, 0 = sliding, 1 = separation}
+   */
+  std::vector<std::string> sss_modes_; // sticking, sliding, separation
+  std::vector<std::vector<int>> s_modes_;
+
+  Eigen::VectorXi cs_mode;
+  std::string sss_mode;
+  sss_mode.resize(num_contacts);
+  for (int cs = 0; cs < num_cs_modes; ++cs) {
+    cs_mode = cs_modes.middleRows(cs, 1).transpose();
+    int num_ss_modes = ss_modes[cs].rows();
+    for (int row = 0; row < num_ss_modes; ++row) {
+      // process one contact mode
+      bool redundant = false;
+      for (int i = 0; i < num_contacts; ++i) {
+        if (cs_mode(i) == 0) {
+          int ss_mode_contact_i_sum = ss_modes[cs].block(row,i*kNumSlidingPlanes, 1, kNumSlidingPlanes).cwiseAbs().sum();
+          if (ss_mode_contact_i_sum == 0)
+            sss_mode[i] = 'f';
+          else if (ss_mode_contact_i_sum == kNumSlidingPlanes) {
+            sss_mode[i] = '0';
+          } else {
+            redundant = true;
+            break;
+          }
+        } else {
+          sss_mode[i] = '1';
+        }
+      }
+      if (!redundant) {
+        // update sss modes
+        auto findIter = std::find(sss_modes_.begin(), sss_modes_.end(), sss_mode);
+        if (findIter != sss_modes_.end()) {
+          // this sss mode is already in our library
+          // just record this mode
+          int id = std::distance(sss_modes_.begin(), findIter);
+          for (int i = 0; i < total_sliding_directions; ++i) s_modes_[id].push_back(ss_modes[cs](row, i));
+        } else {
+          // this sss mode is new
+          sss_modes_.push_back(sss_mode);
+          s_modes_.emplace_back();
+          for (int i = 0; i < total_sliding_directions; ++i) s_modes_.back().push_back(ss_modes[cs](row, i));
+        }
+      }
+      // end processing one mode in a cs mode
+    } // end processing all modes in a cs mode
+    // end processing one cs mode
+  } // end processing all cs modes
+
+  // clean ups: package the result into output format
+  *sss_modes = MatrixXi(sss_modes_.size(), num_contacts);
+  for (int i = 0; i < sss_modes_.size(); ++i) {
+    for (int j = 0; j < num_contacts; ++j) {
+      switch(sss_modes_[i].at(j)) {
+        case 'f':
+          (*sss_modes)(i, j) = -1;
+          break;
+        case '0':
+          (*sss_modes)(i, j) = 0;
+          break;
+        case '1':
+          (*sss_modes)(i, j) = 1;
+          break;
+        default:
+          std::cerr << "[modeCleaning] wrong sign: " << sss_modes_[i].at(j) << std::endl;
+          return false;
+      }
+    }
+  }
+  for (int i = 0; i < s_modes_.size(); ++i) {
+    Eigen::MatrixXi modes_i_colmajor(total_sliding_directions, s_modes_[i].size()/total_sliding_directions);
+    modes_i_colmajor = MatrixXi::Map(s_modes_[i].data(), modes_i_colmajor.rows(), modes_i_colmajor.cols());
+    s_modes.push_back(modes_i_colmajor.transpose());
+  }
+  return true;
+}
+
+Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
+    const Eigen::VectorXi &sss_mode, const Eigen::VectorXi &s_mode, int kNumSlidingPlanes) {
+
+  int number_of_edges = 0;
+  int num_contacts = sss_mode.cols();
+
+  s_mode.array() = (s_mode.array() + 1)/2; // -1/1 -> 0/1
+  std::vector<double> generators; // concatenation of all generators
+  for (int i = 0; i < count; ++i) {
+    // -1: sticking   0: sliding   1: separation
+    int id_start = (2*kNumSlidingPlanes+1)*(i-1);
+    MatrixXd generators_add(0, 0);
+    if (sss_mode[i] == -1) {
+      // record all 2*kNumSlidingPlanes generators
+      generators_add = cone_allFix.middleRows(id_start, 2*kNumSlidingPlanes);
+    } else if (sss_mode[i] == 0) {
+      // find two corresponding generators
+      std::vector<double> v;
+      v.resize(2*6);
+
+      // Compute the order from bit-wise code:
+      int id_s = kNumSlidingPlanes*(i-1);
+      int mode_sum = s_mode.segment(id_s, kNumSlidingPlanes).sum();
+      int id_g;
+      if (s_mode(id_s) == 1)
+          id_g = mode_sum - 1;
+      else
+          id_g = 2*kNumSlidingPlanes - mode_sum - 1;
+      generators_add = cone_allFix.middleRows(id_start + id_g, 2);
+    }
+    // add generators
+    if (generators_add.size() > 0) {
+      int g_size = generators.size();
+      generators.resize(g_size + generators_add.rows()*6);
+      Eigen::MatrixXd::Map(&generators[g_size], 6, generators_add.rows()) = generators_add.transpose();
+    }
+  }
+  // convert generators to matrix form
+  int num_generators = generators.size()/6;
+  return MatrixXd::Map(generators.data(), 6, num_generators).transpose();
+}
+

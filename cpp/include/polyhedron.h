@@ -6,7 +6,7 @@ namespace Poly {
  * Vertex enumeration. Given a polyhedron (A, b):
  *      {x: A*x <= b},
  * Find its generator representation R = [m M]:
- *      {y: y = M_ray*x1 + M_vertex*x2, x1 >= 0, 0 <= x2 <= 1}
+ *      {y: y = M_ray'*x1 + M_vertex'*x2, x1 >= 0, 0 <= x2 <= 1}
  * where M_ray and M_vertex are rows of M whose corresponding m equals 0 and 1.
  *
  *   Examples:
@@ -23,7 +23,7 @@ bool vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen
 
 /**
  * Facet enumeration. Given a polyhedron R = [m M]:
- *      {y: y = M_ray*x1 + M_vertex*x2, x1 >= 0, 0 <= x2 <= 1}
+ *      {y: y = M_ray'*x1 + M_vertex'*x2, x1 >= 0, 0 <= x2 <= 1}
  * where M_ray and M_vertex are rows of M whose corresponding m equals 0 and 1;
  * Find its inequality representation (A, b):
  *      {x: A*x <= b},
@@ -36,8 +36,29 @@ bool vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen
  */
 bool facetEnumeration(const Eigen::MatrixXd &R, Eigen::MatrixXd *A, Eigen::VectorXd *b);
 
-
+/**
+ * Compute the intersection of two polyhedra. Both input and output variables
+ * are generator representations:  R = [m M]:
+ *      {y: y = M_ray'*x1 + M_vertex'*x2, x1 >= 0, 0 <= x2 <= 1}
+ * where M_ray and M_vertex are rows of M whose corresponding m equals 0 and 1;
+ *
+ * @param[in]  R1    Input polyhedron 1
+ * @param[in]  R2    Input polyhedron 2
+ * @param      R     The intersection of R1 and R2
+ *
+ * @return     True if no error occurs.
+ */
 bool intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Eigen::MatrixXd *R);
 
+/**
+ * Compute the intersection of two homogeneous cones. Both input and output
+ * variables are generator representations: C
+ *      {y: y = C'*x, x >= 0}
+ *
+ * @return     True if no error occurs.
+ */
+bool coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2, Eigen::MatrixXd *C);
+
+bool minkowskiSum(const Eigen::MatrixXd)
 
 }
