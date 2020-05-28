@@ -6,7 +6,7 @@
 %   2. vt >= 0 for left sliding, vt <= 0 for right sliding.
 % Nue: the equality constraints that are actually active unilateral constraints
 %   1. vn >= 0 for sticking and sliding
-function [N, Nu, Nue] = getJacobianFromContacts(mode_e, mode_h, Jac_e, Jac_h)
+function [N, Nu, Nue] = getJacobianFromContacts(mode_e, mode_h, Normal_e, Normal_h, Tangent_e, Tangent_h)
 
 Ne = length(mode_e);
 Nh = length(mode_h);
@@ -29,25 +29,25 @@ for i = 1:Ne
     if mode_e(i) == 0
         % separating
         Ncount_u = Ncount_u + 1;
-        Nu(Ncount_u, :) = Jac_e(2*i-1, :);
+        Nu(Ncount_u, 1:3) = Normal_e(i, :);
         continue;
     end
     Ncount = Ncount + 1;
-    N(Ncount, :) = Jac_e(2*i-1, :);
+    N(Ncount, 1:3) = Normal_e(i, :);
     Ncount_ue = Ncount_ue + 1;
-    Nue(Ncount_ue, :) = Jac_e(2*i-1, :);
+    Nue(Ncount_ue, 1:3) = Normal_e(i, :);
     if mode_e(i) == 1
         % fixed
         Ncount = Ncount + 1;
-        N(Ncount, :) = Jac_e(2*i, :);
+        N(Ncount, 1:3) = Tangent_e(i, :);
     elseif mode_e(i) == 2
         % right sliding
         Ncount_u = Ncount_u + 1;
-        Nu(Ncount_u, :) = -Jac_e(2*i, :);
+        Nu(Ncount_u, 1:3) = -Tangent_e(i, :);
     else
         % left sliding
         Ncount_u = Ncount_u + 1;
-        Nu(Ncount_u, :) = Jac_e(2*i, :);
+        Nu(Ncount_u, 1:3) = Tangent_e(i, :);
     end
 end
 
@@ -55,24 +55,24 @@ for i = 1:Nh
     if mode_h(i) == 0
         % separating
         Ncount_u = Ncount_u + 1;
-        Nu(Ncount_u, :) = Jac_h(2*i-1, :);
+        Nu(Ncount_u, :) = [-Normal_h(i, :), Normal_h(i, :)];
         continue;
     end
     Ncount = Ncount + 1;
-    N(Ncount, :) = Jac_h(2*i-1, :);
+    N(Ncount, :) = [-Normal_h(i, :), Normal_h(i, :)];
     Ncount_ue = Ncount_ue + 1;
-    Nue(Ncount_ue, :) = Jac_h(2*i-1, :);
+    Nue(Ncount_ue, :) = [-Normal_h(i, :), Normal_h(i, :)];
     if mode_h(i) == 1
         % fixed
         Ncount = Ncount + 1;
-        N(Ncount, :) = Jac_h(2*i, :);
+        N(Ncount, :) = [-Tangent_h(i, :), Tangent_h(i, :)];
     elseif mode_h(i) == 2
         % right sliding
         Ncount_u = Ncount_u + 1;
-        Nu(Ncount_u, :) = -Jac_h(2*i, :);
+        Nu(Ncount_u, :) = -[-Tangent_h(i, :), Tangent_h(i, :)];
     else
         % left sliding
         Ncount_u = Ncount_u + 1;
-        Nu(Ncount_u, :) = Jac_h(2*i, :);
+        Nu(Ncount_u, :) = [-Tangent_h(i, :), Tangent_h(i, :)];
     end
 end
