@@ -1,4 +1,4 @@
-function [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, Nue, G, b_G)
+function [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, G, b_G)
 
 dims.Actualized = 3;
 dims.UnActualized = 3;

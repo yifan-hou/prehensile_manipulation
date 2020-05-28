@@ -23,20 +23,20 @@ kW = 0.0435; % object width
 kH = 0.0435; % object height
 
 % center of gravity
-p_W_G = [0; kH/2; 0];
+p_W_G = [0; kH/2];
 % list of contact points and contact normals
-p_W_e1 = [kW/2; 0; 0];
-p_W_e2 = [-kW/2; 0; 0];
-n_W_e1 = [0; 1; 0];
-n_W_e2 = [0; 1; 0];
+p_W_e1 = [kW/2; 0];
+p_W_e2 = [-kW/2; 0];
+n_W_e1 = [0; 1];
+n_W_e2 = [0; 1];
 
-p_H_h1 = [kW/2; 0; 0];
-p_H_h2 = [-kW/2; 0; 0];
-n_H_h1 = [0; -1; 0];
-n_H_h2 = [0; -1; 0];
+p_H_h1 = [kW/2; 0];
+p_H_h2 = [-kW/2; 0];
+n_H_h1 = [0; -1];
+n_H_h2 = [0; -1];
 
-p_H_h3 = [kW/2; -kH/4; 0];
-n_H_h3 = [0; -1; 0];
+p_H_h3 = [kW/2; -kH/4];
+n_H_h3 = [0; -1];
 
 CP_W_e = [p_W_e1, p_W_e2];
 CN_W_e = [n_W_e1, n_W_e2];
@@ -45,14 +45,15 @@ CN_H_h = [n_H_h1, n_H_h2];
 
 angle = 0; % deg
 R_WH = rotz(angle);
+R_WH = R_WH(1:2, 1:2);
 angle_rad = angle*pi/180;
-p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad); 0]/2 + kH*[-sin(angle_rad); cos(angle_rad); 0];
+p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad)]/2 + kH*[-sin(angle_rad); cos(angle_rad)];
 
 %%
 %% Geometrical Pre-processing
 %%
-kNumSlidingPlanes = 4;
-[J_e, J_h, eCone_allFix, hCone_allFix] = preProcessing(...
+kNumSlidingPlanes = 1; % for 2D problem
+[J_e, J_h, T_e, T_h, eCone_allFix, hCone_allFix] = preProcessing(...
         kFrictionE, kFrictionH, kNumSlidingPlanes, CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH);
 
 % mode enumeration
@@ -106,14 +107,11 @@ h_mode = int8([1; 1]); % ff
 % CP_H_h = CP_H_h(:, 1);
 % CN_H_h = CN_H_h(:, 2);
 
-% solution = wrenchSpaceAnalysis(kFrictionE, kFrictionH, CP_W_e, CN_W_e, ...
-%         CP_H_h, CN_H_h, R_WH, p_WH, G, b_G, e_mode, h_mode, 15);
 
-
-% tic
-% solution = wrenchSpaceAnalysis_modeSelection(N_e, N_h, eCone_allFix, ...
-%         hCone_allFix, G, b_G, kForceMagnitude, e_modes, h_modes, e_mode, h_mode);
-% toc
+tic
+solution = wrenchSpaceAnalysis_modeSelection(J_e, J_h, T_e, T_h, eCone_allFix', ...
+        hCone_allFix', G, b_G, kForceMagnitude, e_modes, h_modes, e_mode, h_mode);
+toc
 
 % p_H_h1 = [kW/4; 0];
 % p_H_h2 = [-kW/4; 0];
@@ -123,12 +121,12 @@ h_mode = int8([1; 1]); % ff
 %         CP_W_e(1:2,:), CN_W_e(1:2,:), CP_H_h(1:2,:), CN_H_h(1:2,:), R_WH(1:2,1:2), p_WH(1:2), e_mode, h_mode);
 %
 %
-kObjWeight = 10; % newton
-kContactForce = 30;
-tic
-for i = 1:10
-    margin = computeStabilityMargin(0.1+rand(), kFrictionH, ...
-        CP_W_e(1:2,:), CN_W_e(1:2,:), CP_H_h(1:2,:), CN_H_h(1:2,:), p_W_G(1:2,:), ...
-        R_WH(1:2,1:2), p_WH(1:2), e_mode, h_mode, kObjWeight, kContactForce);
-end
-toc
+% kObjWeight = 10; % newton
+% kContactForce = 30;
+% tic
+% for i = 1:10
+%     margin = computeStabilityMargin(0.1+rand(), kFrictionH, ...
+%         CP_W_e(1:2,:), CN_W_e(1:2,:), CP_H_h(1:2,:), CN_H_h(1:2,:), p_W_G(1:2,:), ...
+%         R_WH(1:2,1:2), p_WH(1:2), e_mode, h_mode, kObjWeight, kContactForce);
+% end
+% toc

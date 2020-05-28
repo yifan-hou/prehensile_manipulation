@@ -6,7 +6,7 @@
 %! @return     { description_of_the_return_value }
 %!
 function solution = wrenchSpaceAnalysis_modeSelection(...
-        Jac_e, Jac_h, eCone_allFix, hCone_allFix, G, b_G, kForceMagnitude,...
+        Normal_e, Normal_h, Tangent_e, Tangent_h, eCone_allFix, hCone_allFix, G, b_G, kForceMagnitude,...
         e_modes, h_modes, e_mode_goal, h_mode_goal)
 
 solution = [];
@@ -17,22 +17,18 @@ if nargin == 15
     goal_mode_is_given = true;
 end
 
-% is this useful at all?
-planar_problem = false;
-if size(G, 2) == 6
-    planar_problem = true;
-end
-
 % scaling for generalized velocity
 % V = gvscale * V_scaled
 kCharacteristicLength = 0.15;
-vscale = diag([1 1 1 [1 1 1]/kCharacteristicLength]);
-vscale_inv = diag([1 1 1 [1 1 1]*kCharacteristicLength]);
-gvscale = diag([1 1 1 [1 1 1]/kCharacteristicLength 1 1 1 [1 1 1]/kCharacteristicLength]);
+vscale = diag([1 1 1/kCharacteristicLength]);
+vscale_inv = diag([1 1 kCharacteristicLength]);
+gvscale = diag([1 1 1/kCharacteristicLength 1 1 1/kCharacteristicLength]);
 % N_ * V_scaled = 0, N*V = 0,
 % -> N_ = N*gvscale
-Jac_e = Jac_e * gvscale;
-Jac_h = Jac_h * gvscale;
+Normal_e = Normal_e * vscale;
+Normal_h = Normal_h * vscale;
+Tangent_e = Tangent_e * vscale;
+Tangent_h = Tangent_h * vscale;
 eCone_allFix = eCone_allFix * vscale;
 hCone_allFix = hCone_allFix * vscale;
 G = G*gvscale;
@@ -84,7 +80,7 @@ for i = 1:size(e_modes, 2)
         end
 
         % compute velocity Jacobian
-        [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
+        [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Normal_e, Normal_h, Tangent_e, Tangent_h);
 
         % figure(1);clf(1);hold on;
         % printModes([e_modes(:, i); h_modes(:, j)]);
