@@ -12,7 +12,7 @@ addpath ../utilities/
 
 % Parameters
 kFrictionH = 0.7;
-kFrictionE = 0.25;
+kFrictionE = 0.3;
 kForceMagnitude = 15;
 
 %%

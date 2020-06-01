@@ -1,5 +1,6 @@
 function drawCone(W, color, addOrigin, texts)
 
+W = normalizeByCol(W);
 if addOrigin
     origin = [0 0 0];
     data = [origin; W'];
@@ -13,7 +14,7 @@ end
 % end
 plot3(W(1, :), W(2, :), W(3, :), '.', 'markersize', 20, 'markerEdgeColor', color);
 
-rw = rank(bsxfun(@minus, W, W(:,1)));
+rw = rank(bsxfun(@minus, data', data(1,:)'));
 
 if rw >= 3
     % 3D polytope
@@ -42,7 +43,7 @@ h.EdgeColor = color;
 % axis equal;
 
 if nargin >= 4
-    text(1.1*mean(W(1,:)),1.1*mean(W(2,:)),1.1*mean(W(3,:)+0.1),['   ' ...
+    text(mean(W(1,:)),mean(W(2,:))+0.1,mean(W(3,:)),['   ' ...
         texts], 'HorizontalAlignment','center','FontSize',14,'FontName','Times New Roman');
 end
 
