@@ -109,8 +109,8 @@ h_mode = int8([1; 1]); % ff
 
 
 tic
-solution = wrenchSpaceAnalysis_modeSelection(J_e, J_h, T_e, T_h, eCone_allFix', ...
-        hCone_allFix', G, b_G, kForceMagnitude, e_modes, h_modes, e_mode, h_mode);
+solution = wrenchSpaceAnalysis_modeSelection(J_e, J_h, T_e, T_h, eCone_allFix, ...
+        hCone_allFix, G, b_G, kForceMagnitude, e_modes, h_modes, e_mode, h_mode);
 toc
 
 % p_H_h1 = [kW/4; 0];

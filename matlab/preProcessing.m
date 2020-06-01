@@ -1,6 +1,6 @@
-function [N_e, T_e, N_h, T_h, eCone_allFix, hCone_allFix] = preProcessing(...
-        kFrictionE, kFrictionH, kNumSlidingPlanes, CP_W_e, CN_W_e, CP_H_h, ...
-        CN_H_h, R_WH, p_WH)
+function [N_e, T_e, N_h, T_h, eCone_allFix, hCone_allFix, F_G] = preProcessing(...
+        kFrictionE, kFrictionH, kNumSlidingPlanes, kObjWeight, CP_W_e, CN_W_e, CP_H_h, ...
+        CN_H_h, R_WH, p_WH, CP_W_G)
 
 R_HW = R_WH';
 p_HW = -R_HW*p_WH;
@@ -14,3 +14,9 @@ end
 
 [N_e, T_e, N_h, T_h, eCone_allFix, hCone_allFix] = getWholeJacobian(CP_W_e, CN_W_e, ...
         CP_H_h, CN_H_h, adj_WH, adj_HW, kNumSlidingPlanes, kFrictionE, kFrictionH);
+
+% gravity
+z = [0 0 -1]';
+W_G = [z; cross(CP_W_G, z)];
+F_G = kObjWeight*(W_G')*adj_WH;
+F_G = F_G'; % reshape to column vector

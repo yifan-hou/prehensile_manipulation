@@ -1,8 +1,11 @@
-% J = [J_e, 0; -J_h, J_h]: 1 normal, d tangential; used by contact mode enumeration
+% J = [J_e, 0; -J_h, J_h]: 1 normal, kNumSlidingPlanes tangential; used by contact mode enumeration
 % J_e = [N_e; T_e]   N: normal, T: tangential
 % J_h = [N_h; T_h]
-% Each contact contributes 1 normal, d tangential constraints.
-% eCone, hCone: each contact contributes 2d edges
+% Each contact contributes 1 normal, kNumSlidingPlanes tangential constraints.
+% eCone, hCone: each row is a wrench space generator created by an edge of a friction cone.
+%   3D: Each contact contributes 2d + 1 edges; the last one is a copy of the first one
+%   2D: Each contact contributes 2 edges (left, right)
+% If planar, kNumSlidingPlanes must = 1, the computation puts everything on XY plane
 function [N_e, T_e, N_h, T_h, eCone, hCone] = getWholeJacobian(CP_W_e, CN_W_e, ...
         CP_H_h, CN_H_h, adj_WH, adj_HW, kNumSlidingPlanes, kFrictionE, kFrictionH)
 
@@ -165,6 +168,3 @@ for i = 1:Nh
     T_h(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = -c_Whi*adj_HW*adj_WH;
     hCone((kEdgesPerContact)*(i-1)+1:(kEdgesPerContact)*i, :) = -hConei*adj_HW*adj_WH;
 end
-
-eCone = eCone';
-hCone = hCone';

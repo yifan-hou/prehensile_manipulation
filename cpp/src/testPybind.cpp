@@ -3,6 +3,8 @@
 #include <pybind11/stl.h>
 #include <iostream>
 #include <Eigen/Dense>
+#include "wrench_space_analysis.h"
+
 namespace py = pybind11;
 
 using namespace Eigen;
@@ -20,8 +22,7 @@ void print(std::vector<Eigen::MatrixXd> matrix) {
     }
 }
 
-
-std::vector<MatrixXi> modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes) {
+std::vector<MatrixXi> modeCleaning_test(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes) {
 
   int num_cs_modes = cs_modes.rows();
   int num_contacts = cs_modes.cols();
@@ -31,6 +32,7 @@ std::vector<MatrixXi> modeCleaning(const MatrixXi &cs_modes, const std::vector<M
    * First, we need to build a cs mode representation with {f = sticking, 0 = sliding, 1 = separation}
    */
   std::cout << "[debug] cs_modes: " << cs_modes.rows() << " rows, " << cs_modes.cols() << " cols." << std::endl;
+  std::cout << "[debug] ss_modes[0]: " << ss_modes[0].rows() << " rows, " << ss_modes[0].cols() << " cols." << std::endl;
   std::vector<std::string> sss_modes_; // sticking, sliding, separation
   std::vector<std::vector<int>> s_modes_;
 
@@ -130,11 +132,27 @@ std::vector<MatrixXi> modeCleaning(const MatrixXi &cs_modes, const std::vector<M
   return s_modes;
 }
 
+void wrenchSpaceAnalysis_wrapper(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
+    Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,
+    const Eigen::VectorXd &F_G,
+    const double kContactForce, const double kCharacteristicLength, const int kNumSlidingPlanes,
+    const Eigen::MatrixXi &e_cs_modes, const std::vector<Eigen::MatrixXi> &e_ss_modes,
+    const Eigen::MatrixXi &h_cs_modes, const std::vector<Eigen::MatrixXi> &h_ss_modes,
+    Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
+    const Eigen::VectorXi &e_mode_goal, const Eigen::VectorXi &h_mode_goal) {
+  wrenchSpaceAnalysis(Jac_e, Jac_h, eCone_allFix, hCone_allFix,
+      F_G, kContactForce, kCharacteristicLength, kNumSlidingPlanes,
+      e_cs_modes, e_ss_modes, h_cs_modes, h_ss_modes, G, b_G,
+      e_mode_goal, h_mode_goal);
+  std::cout << "[wrapper] Finished!\n";
+}
+
 PYBIND11_MODULE(example, m) {
     m.doc() = "pybind11 example plugin"; // optional module docstring
 
     m.def("mtimes", &mtimes, "A function which adds two numbers");
     m.def("print", &print, "A function which adds two numbers");
-    m.def("modeCleaning", &modeCleaning, "Test mode cleaning");
+    m.def("modeCleaning", &modeCleaning_test, "Test mode cleaning");
+    m.def("wrenchSpaceAnalysis", &wrenchSpaceAnalysis_wrapper, "Test mode cleaning");
 }
 
