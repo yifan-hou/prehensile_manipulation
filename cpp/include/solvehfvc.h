@@ -15,6 +15,8 @@ typedef struct
     Eigen::MatrixXd R_a;
     Eigen::VectorXd w_av;
     Eigen::VectorXd eta_af;
+    Eigen::MatrixXd C;
+    Eigen::VectorXd b_C;
 } HFVC;
 
 /**

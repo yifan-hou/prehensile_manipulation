@@ -17,7 +17,12 @@ kCharacteristicLength = 0.15
 ##
 ## Geometrical Problem definition
 ##
-
+# 3       +Y        1
+#          |
+# -------------------> + X
+#          |
+# 4        |        2
+#
 kW = 0.0435 # object width
 kH = 0.02 # object height
 
@@ -47,22 +52,13 @@ R_WH = np.eye(3)
 p_WH = np.array(([0, 0, kH]))
 p_WH = p_WH[:, newaxis]
 
-##
-## Optional
-##
-G = np.array([1., 0., 0., 0., 0., 0., 0, 0, 0, 0, 0, 0]);
-G = G[newaxis, :]
-b_G = np.array([0.1]);
-
-e_mode_goal = np.array([0]);
-h_mode_goal = np.array([0]);
 
 
 ##
 ## Geometrical Pre-processing
 ##
 
-kNumSlidingPlanes = 4
+kNumSlidingPlanes = 2
 jacs = eng.preProcessing(matlab.double([kFrictionE]),
         matlab.double([kFrictionH]),
         matlab.double([kNumSlidingPlanes]),
@@ -115,7 +111,17 @@ h_ss_modes = [np.zeros((1, kNumContactsH*kNumSlidingPlanes)).astype('int32')];
 # e_ss_modes = [np.array([[0, 0, 0, 0, 1, 1, 0, 0]])];
 # h_cs_modes = np.array([[0, 1, 1, 1]]);
 # h_ss_modes = [np.array([[1, 1, 0, 0, 0, 0, 0, 0]])];
+e_cs_modes = np.array([[0, 0, 1, 1]]);
+e_ss_modes = [np.array([[0, 0, 0, 0, 0, 0, 0, 0]])];
 
+G = np.array([1., 0., 0., 0., 0., 0., 0, 0, 0, 0, 0, 0]);
+G = G[newaxis, :]
+b_G = np.array([0.1]);
+
+e_cs_modes_goal = np.array([]);
+h_cs_modes_goal = np.array([]);
+e_ss_modes_goal = [np.array([])];
+h_ss_modes_goal = [np.array([])];
 
 # # Test modeCleaning()
 # s_modes = em.modeCleaning(h_cs_modes, h_ss_modes, 4)
@@ -126,6 +132,8 @@ h_ss_modes = [np.zeros((1, kNumContactsH*kNumSlidingPlanes)).astype('int32')];
 # print('final s modes:')
 # print(num_s)
 
+
 em.wrenchSpaceAnalysis(J_e, J_h, eCone_allFix, hCone_allFix, F_G,
     kContactForce, kCharacteristicLength, kNumSlidingPlanes,
-    e_cs_modes, e_ss_modes, h_cs_modes, h_ss_modes, G, b_G, e_mode_goal, h_mode_goal)
+    e_cs_modes, e_ss_modes, h_cs_modes, h_ss_modes, G, b_G,
+    e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal)

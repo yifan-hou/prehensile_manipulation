@@ -9,19 +9,6 @@ namespace py = pybind11;
 
 using namespace Eigen;
 
-int mtimes(MatrixXd m1, MatrixXd m2) {
-    std::cout << "m1: " << m1.rows() << " by " << m1.cols() << std::endl;
-    std::cout << "m2: " << m2.rows() << " by " << m2.cols() << std::endl;
-    return 0;
-}
-
-void print(std::vector<Eigen::MatrixXd> matrix) {
-    for (int i = 0; i < matrix.size(); ++i) {
-        std::cout << "Matrix " << i << ":\n";
-        std::cout << matrix[i] << std::endl;
-    }
-}
-
 std::vector<MatrixXi> modeCleaning_test(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes) {
 
   int num_cs_modes = cs_modes.rows();
@@ -151,8 +138,6 @@ void wrenchSpaceAnalysis_wrapper(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
 PYBIND11_MODULE(example, m) {
     m.doc() = "pybind11 example plugin"; // optional module docstring
 
-    m.def("mtimes", &mtimes, "A function which adds two numbers");
-    m.def("print", &print, "A function which adds two numbers");
     m.def("modeCleaning", &modeCleaning_test, "Test mode cleaning");
     m.def("wrenchSpaceAnalysis", &wrenchSpaceAnalysis_wrapper, "Test mode cleaning");
 }

@@ -104,9 +104,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   Eigen::MatrixXi e_sss_modes_goal, h_sss_modes_goal;
   std::vector<Eigen::MatrixXi> e_s_modes_goal, h_s_modes_goal;
 
-  std::cout << "debug: e_cs_modes_goal.size(): " << e_cs_modes_goal.size() << std::endl;
-  std::cout << "debug: e_cs_modes_goal: " << e_cs_modes_goal << std::endl;
-  getchar();
   if (e_cs_modes_goal.size() == 0 ) {
     e_sss_modes_goal = e_sss_modes;
     h_sss_modes_goal = h_sss_modes;
@@ -125,169 +122,163 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
 
   std::cout << "timer: modeCleaning time = " << timer.toc() << "ms" << std::endl;
 
-
-
-  Eigen::MatrixXd N = getConstraintOfTheMode(Jac_e, Jac_h,
-      e_sss_modes.middleRows(0, 1).transpose(), h_sss_modes.middleRows(0, 1).transpose(),
-      e_s_modes[0].middleRows(0, 1).transpose(), h_s_modes[0].middleRows(0, 1).transpose(),
-      kNumSlidingPlanes);
-
   Eigen::VectorXd F = Eigen::VectorXd::Zero(12);
+  Eigen::MatrixXd N;
   int kDimActualized = 6;
   int kDimUnActualized = 6;
   int kNumSeeds = 5;
   int kPrintLevel = 0;
   HFVC action;
 
-  std::cout << "N:\n" << N << std::endl;
-  std::cout << "G:\n" << G << std::endl;
-  std::cout << "b_G:\n" << b_G << std::endl;
-  std::cout << "F:\n" << F << std::endl;
+  Eigen::VectorXi e_sss_mode_goal, h_sss_mode_goal;
+  // Eigen::VectorXi e_s_mode, h_s_mode;
 
+  std::cout << "##         Begin loop         ##\n";
   timer.tic();
-  for (int i = 0; i < 100; ++i) {
-    solvehfvc(N, G, b_G, F, kDimActualized, kDimUnActualized, kNumSeeds,
-      kPrintLevel, &action);
-  }
-  std::cout << "timer: HFVC time x 100 = " << timer.toc() << "ms" << std::endl;
-  std::cout << "solution:\n";
-  std::cout << "n_av: " << action.n_av << std::endl;
-  std::cout << "n_af: " << action.n_af << std::endl;
-  std::cout << "R_a:\n" << action.R_a << std::endl;
-  std::cout << "w_av:\n" << action.w_av << std::endl;
+  for (int e_sss_i_goal = 0; e_sss_i_goal < e_sss_modes_goal.rows(); ++e_sss_i_goal) {
+    e_sss_mode_goal = e_sss_modes_goal.middleRows(e_sss_i_goal, 1).transpose();
+    for (int h_sss_i_goal = 0; h_sss_i_goal < h_sss_modes_goal.rows(); ++h_sss_i_goal) {
+      h_sss_mode_goal = h_sss_modes_goal.middleRows(h_sss_i_goal, 1).transpose();
+      std::cout << "[WrenchStamping] goal id: e " << e_sss_i_goal << ", h " << h_sss_i_goal << std::endl;
 
-  std::cout << "\n\nNew Algorithm\n";
-  timer.tic();
-  for (int i = 0; i < 100; ++i) {
-    solvehfvc_new(N, G, b_G, F, kDimActualized, kDimUnActualized, kNumSeeds,
-      kPrintLevel, &action);
-  }
-  std::cout << "timer: HFVC new time x 100 = " << timer.toc() << "ms" << std::endl;
-  return;
-
-  /**
-   * Preparation
-   */
-  const int NE_SSS_MODES = e_sss_modes.rows();
-  const int NH_SSS_MODES = h_sss_modes.rows();
-
-  std::cout << "##         Check CS modes F-feasibility         ##\n";
-  Eigen::VectorXi e_sss_mode, h_sss_mode;
-  Eigen::MatrixXd e_cone, h_cone;
-  Eigen::MatrixXd R;
-
-  // check every s mode
-  Eigen::VectorXi e_s_mode, h_s_mode;
-  int empty = 0;
-  int non_empty = 0;
-  for (int e_sss_i = 0; e_sss_i < NE_SSS_MODES; ++e_sss_i) {
-    e_sss_mode = e_sss_modes.middleRows(e_sss_i, 1).transpose();
-    for (int h_sss_i = 0; h_sss_i < NH_SSS_MODES; ++h_sss_i) {
-      h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
-      for (int e_s_i = 0; e_s_i < e_s_modes[e_sss_i].rows(); ++e_s_i) {
-        e_s_mode = e_s_modes[e_sss_i].middleRows(e_s_i, 1).transpose();
-        e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
-        // std::cout << "\n\n\n";
-        // std::cout << "debug, cone_allFix: \n" << eCone_allFix << std::endl;
-        // std::cout << "debug, sss_mode: \n" << e_sss_mode << std::endl;
-        // std::cout << "debug, s_mode: \n" << e_s_mode << std::endl;
-        // std::cout << "debug, result cone: \n" << e_cone << std::endl;
-        // getchar();
-        for (int h_s_i = 0; h_s_i < h_s_modes[h_sss_i].rows(); ++h_s_i) {
-          h_s_mode = h_s_modes[h_sss_i].middleRows(h_s_i, 1).transpose();
-          h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
-          Poly::coneIntersection(e_cone, h_cone, &R);
-          // std::cout << "coneIntersection for " << e_sss_mode.transpose() << ", at time " << timer.toc() << "ms" << std::endl;
-          if(R.rows() == 0) empty ++;
-          else non_empty ++;
-        }
+      std::cout << "[WrenchStamping] 1. HFVC" << std::endl;
+      N = getConstraintOfTheMode(Jac_e, Jac_h,
+          e_sss_mode_goal, h_sss_mode_goal,
+          e_s_modes[0].middleRows(0, 1).transpose(), // just temporary
+          h_s_modes[0].middleRows(0, 1).transpose(),
+          kNumSlidingPlanes);
+      if (!solvehfvc_new(N, G, b_G, F, kDimActualized, kDimUnActualized, kNumSeeds,
+        kPrintLevel, &action)) {
+        std::cout << "[WrenchStamping]    HFVC has no solution." << std::endl;
+        continue;
       }
+      
+
+      // if isempty(R_a) || any(isnan(w_av))
+      //     disp('[Hybrid servoing] solvehfvc returns no solution.')
+      //     n_av = []; n_af = [];R_a = [];R_a_inv=[];w_av=[];Cv=[]; b_C=[];
+      //     return;
+      // end
+
+      // fprintf('[Hybrid Servoing] force dimension: %d\n', n_af);
+      // fprintf('[Hybrid Servoing] velocity dimension: %d\n', n_av);
+
+      // assert(n_af < 3);
+      // assert(n_af > 0);
+
+      // % make sure all velocity commands >= 0
+      // R_id_flip = find(w_av < 0);
+      // R_a(n_af + R_id_flip, :) = - R_a(n_af + R_id_flip, :);
+      // w_av(R_id_flip) = - w_av(R_id_flip);
+
+      // Cv = [zeros(n_av, 3), R_a(n_af + 1: end, :)];
+      // b_C = w_av;
+      // R_a_inv = R_a^-1;
+
+
+
+
+
+
+
+      // for (int e_s_i = 0; e_s_i < e_s_modes[e_sss_i_goal].rows(); ++e_s_i) {
+      //   e_s_mode = e_s_modes[e_sss_i_goal].middleRows(e_s_i, 1).transpose();
+      //   e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
+      //   for (int h_s_i = 0; h_s_i < h_s_modes[h_sss_i_goal].rows(); ++h_s_i) {
+      //     h_s_mode = h_s_modes[h_sss_i_goal].middleRows(h_s_i, 1).transpose();
+      //     h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
+      //     Poly::coneIntersection(e_cone, h_cone, &R);
+      //     // std::cout << "coneIntersection for " << e_sss_mode.transpose() << ", at time " << timer.toc() << "ms" << std::endl;
+      //     if(R.rows() == 0) empty ++;
+      //     else non_empty ++;
+      //   }
+      // }
     }
   }
 
-  std::cout << "\nEmpty: " << empty << std::endl;
-  std::cout << "Non-empty: " << non_empty << std::endl;
-  std::cout << "timer: All time = " << timer.toc() << "ms" << std::endl;
+  // Eigen::MatrixXd N = getConstraintOfTheMode(Jac_e, Jac_h,
+  //     e_sss_modes.middleRows(0, 1).transpose(), h_sss_modes.middleRows(0, 1).transpose(),
+  //     e_s_modes[0].middleRows(0, 1).transpose(), h_s_modes[0].middleRows(0, 1).transpose(),
+  //     kNumSlidingPlanes);
+
+  // Eigen::VectorXd F = Eigen::VectorXd::Zero(12);
+  // int kDimActualized = 6;
+  // int kDimUnActualized = 6;
+  // int kNumSeeds = 5;
+  // int kPrintLevel = 0;
+  // HFVC action;
+
+  // std::cout << "N:\n" << N << std::endl;
+  // std::cout << "G:\n" << G << std::endl;
+  // std::cout << "b_G:\n" << b_G << std::endl;
+  // std::cout << "F:\n" << F << std::endl;
+
+  // timer.tic();
+  // for (int i = 0; i < 100; ++i) {
+  //   solvehfvc(N, G, b_G, F, kDimActualized, kDimUnActualized, kNumSeeds,
+  //     kPrintLevel, &action);
+  // }
+  // std::cout << "timer: HFVC time x 100 = " << timer.toc() << "ms" << std::endl;
+  // std::cout << "solution:\n";
+  // std::cout << "n_av: " << action.n_av << std::endl;
+  // std::cout << "n_af: " << action.n_af << std::endl;
+  // std::cout << "R_a:\n" << action.R_a << std::endl;
+  // std::cout << "w_av:\n" << action.w_av << std::endl;
+
+  // std::cout << "\n\nNew Algorithm\n";
+  // timer.tic();
+  // for (int i = 0; i < 100; ++i) {
+  //   solvehfvc_new(N, G, b_G, F, kDimActualized, kDimUnActualized, kNumSeeds,
+  //     kPrintLevel, &action);
+  // }
+  // std::cout << "timer: HFVC new time x 100 = " << timer.toc() << "ms" << std::endl;
+  return;
+
+  // /**
+  //  * Preparation
+  //  */
+  // const int NE_SSS_MODES = e_sss_modes.rows();
+  // const int NH_SSS_MODES = h_sss_modes.rows();
+
+  // std::cout << "##         Check CS modes F-feasibility         ##\n";
+  // Eigen::VectorXi e_sss_mode, h_sss_mode;
+  // Eigen::MatrixXd e_cone, h_cone;
+  // Eigen::MatrixXd R;
+
+  // // check every s mode
+  // Eigen::VectorXi e_s_mode, h_s_mode;
+  // int empty = 0;
+  // int non_empty = 0;
+  // for (int e_sss_i = 0; e_sss_i < NE_SSS_MODES; ++e_sss_i) {
+  //   e_sss_mode = e_sss_modes.middleRows(e_sss_i, 1).transpose();
+  //   for (int h_sss_i = 0; h_sss_i < NH_SSS_MODES; ++h_sss_i) {
+  //     h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
+  //     for (int e_s_i = 0; e_s_i < e_s_modes[e_sss_i].rows(); ++e_s_i) {
+  //       e_s_mode = e_s_modes[e_sss_i].middleRows(e_s_i, 1).transpose();
+  //       e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
+  //       // std::cout << "\n\n\n";
+  //       // std::cout << "debug, cone_allFix: \n" << eCone_allFix << std::endl;
+  //       // std::cout << "debug, sss_mode: \n" << e_sss_mode << std::endl;
+  //       // std::cout << "debug, s_mode: \n" << e_s_mode << std::endl;
+  //       // std::cout << "debug, result cone: \n" << e_cone << std::endl;
+  //       // getchar();
+  //       for (int h_s_i = 0; h_s_i < h_s_modes[h_sss_i].rows(); ++h_s_i) {
+  //         h_s_mode = h_s_modes[h_sss_i].middleRows(h_s_i, 1).transpose();
+  //         h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
+  //         Poly::coneIntersection(e_cone, h_cone, &R);
+  //         // std::cout << "coneIntersection for " << e_sss_mode.transpose() << ", at time " << timer.toc() << "ms" << std::endl;
+  //         if(R.rows() == 0) empty ++;
+  //         else non_empty ++;
+  //       }
+  //     }
+  //   }
+  // }
+
+  // std::cout << "\nEmpty: " << empty << std::endl;
+  // std::cout << "Non-empty: " << non_empty << std::endl;
+  // std::cout << "timer: All time = " << timer.toc() << "ms" << std::endl;
 
 
-
-  // // EH cone intersection
-  // //   * Compute safety margins
-  // //   * get rid of infeasible cone
-  // //
-
-  // eh_modes = [];
-  // margins = [];
-
-  // eh_cones = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // cone_e = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // cone_h = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // Jacs = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // Jacus = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // Jacues = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-
-  // eh_cone_feasible_mode_count = 0;
-  // goal_id = 0;
-  // for i = 1:size(e_modes, 2)
-  //     for j = 1:size(h_modes, 2)
-  //         [Je_, Jh_] = getFrictionalJacobianFromContacts(e_modes(:, i), h_modes(:, j), eCone_allFix, hCone_allFix);
-
-  //         % check force balance
-  //         R = coneIntersection(Je_', Jh_');
-  //         if isempty(R) || norm(R) == 0
-  //             continue;
-  //         end
-
-  //         % compute cone stability margin
-  //         if sameConeCheck(Je_', R)
-  //             margin_ = coneStabilityMargin(Jh_', R);
-  //         elseif sameConeCheck(Jh_', R)
-  //             margin_ = coneStabilityMargin(Je_', R);
-  //         else
-  //             margin_e = coneStabilityMargin(Je_', R);
-  //             margin_h = coneStabilityMargin(Jh_', R);
-  //             margin_ = min(margin_e, margin_h);
-  //         end
-  //         if margin_ < TOL
-  //             continue;
-  //         end
-
-  //         % compute velocity Jacobian
-  //         [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
-
-  //         % figure(1);clf(1);hold on;
-  //         % printModes([e_modes(:, i); h_modes(:, j)]);
-  //         % fprintf('Margin: %f\n', margin_);
-  //         % drawCone(Je_','g', true);
-  //         % drawCone(Jh_','b', true);
-
-  //         eh_modes = [eh_modes [e_modes(:, i); h_modes(:, j)]];
-  //         margins = [margins margin_];
-
-  //         eh_cone_feasible_mode_count = eh_cone_feasible_mode_count + 1;
-  //         eh_cones{eh_cone_feasible_mode_count} = R;
-  //         Jacs{eh_cone_feasible_mode_count} = N;
-  //         Jacus{eh_cone_feasible_mode_count} = Nu;
-
-  //         if goal_mode_is_given
-  //             if (i == e_mode_goal) && (j == h_mode_goal)
-  //                 goal_id = eh_cone_feasible_mode_count;
-  //             end
-  //         end
-  //     end
-  // end
-
-  // disp(['Modes with Margin > 0: ' num2str(eh_cone_feasible_mode_count)]);
-
-  // if goal_mode_is_given && (goal_id == 0)
-  //     disp("Failure: the Cone of the goal mode is empty.");
-  //     return;
-  // end
-
-  // % trim
-  // eh_cones = eh_cones(1:eh_cone_feasible_mode_count);
-  // Jacs = Jacs(1:eh_cone_feasible_mode_count);
-  // Jacus = Jacus(1:eh_cone_feasible_mode_count);
 
   // %%
   // %% Begin to check each cone

@@ -7,7 +7,7 @@
 
 #include "eiquadprog.hpp"
 
-#define TOL 1e-10
+#define TOL 1e-9
 
 using std::cout;
 using std::endl;
@@ -209,7 +209,7 @@ bool solvehfvc_new(const MatrixXd &N,
   assert(G.rows() == b_G.rows());
   assert(G.cols() == kDimGeneralized);
   assert(F.rows() == kDimGeneralized);
-
+  assert(b_G.norm() > TOL);
   Eigen::HouseholderQR<Eigen::MatrixXd> qr;
   Eigen::FullPivLU<MatrixXd> lu;
 
@@ -219,6 +219,7 @@ bool solvehfvc_new(const MatrixXd &N,
   // regularize N
   lu.compute(N.transpose());
   int rank_N = lu.rank();
+  if (rank_N == kDimGeneralized) return false;
   Eigen::MatrixXd N_reg = QRWrapper(lu.image(N.transpose()), &qr);
   N_reg.transposeInPlace();
 
@@ -231,9 +232,15 @@ bool solvehfvc_new(const MatrixXd &N,
   int rank_NG = lu.rank();
   assert(rank_NG > 0);
   Eigen::MatrixXd null_space_NG = lu.kernel();
+  // check if empty
+  if (null_space_NG.norm() == 0) {
+    null_space_NG = Eigen::MatrixXd(kDimGeneralized, 0);
+  }
 
   // get a special solution
   Eigen::VectorXd v_star = lu.solve(b_NG);
+  // check if no solution
+  if ((NG*v_star - b_NG).norm() > TOL) return false;
   /**
    * Step two: Handle un-actuated DOF by adding their linear generators to the solution set
    */
@@ -249,7 +256,9 @@ bool solvehfvc_new(const MatrixXd &N,
   lu.compute(null_space_C_proj_N.transpose());
   int rank_NCProj = lu.rank();
   // check if the added generators will break the goal
-  assert(rank_NCProj == kDimUnActualized);
+  assert(rank_NCProj > 0); // This is probably not going to happen
+  assert(rank_NCProj <= kDimUnActualized); // projection all comes from unactuated_linear_generators
+  if (rank_NCProj < kDimUnActualized) return false; // no vel action can achieve the goal
   if (rank_NCProj < N_reg.rows()) {
     Eigen::MatrixXd NCProj_comp = lu.kernel(); // might need QR here to get an orthogonal basis
     Eigen::MatrixXd temp(kDimGeneralized, null_space_C.cols() + NCProj_comp.cols());
@@ -261,8 +270,27 @@ bool solvehfvc_new(const MatrixXd &N,
    * Step three: extract control constraint from the solution set
    */
   lu.compute(null_space_C.transpose());
+  assert(lu.rank() < kDimGeneralized); // this shouldn't happen as long as b_G is not 0
   Eigen::MatrixXd C = lu.kernel().transpose();
   Eigen::VectorXd b_C = C*v_star;
+
+  // get the force-controlled directions
+  assert(C.rows() > 0);
+  if (C.rows() == kDimActualized) {
+    action->R_a = C.rightCols(kDimActualized);
+  } else {
+    Eigen::MatrixXd C_actualized = C.rightCols(kDimActualized);
+    lu.compute(C_actualized);
+    Eigen::MatrixXd force_control_directions = lu.kernel();
+    action->R_a = MatrixXd::Zero(kDimActualized, kDimActualized);
+    action->R_a << force_control_directions.transpose(), C_actualized;
+  }
+
+  action->n_av   = C.rows();
+  action->n_af   = kDimActualized - C.rows();
+  action->w_av   = b_C;
+  action->C      = C;
+  action->b_C    = b_C;
 
   /**
    * Check the solution
@@ -285,9 +313,5 @@ bool solvehfvc_new(const MatrixXd &N,
   // std::cout << "  NG*sol_sp:\n" << NG*sol_sp << std::endl;
   // std::cout << "  NG*sol_homo:\n" << NG*sol_homo << std::endl;
 
-  // action->n_av   = n_av;
-  // action->n_af   = n_af;
-  // action->R_a    = R_a;
-  // action->w_av   = w_av;
   return true;
 }
