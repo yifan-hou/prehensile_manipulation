@@ -62,7 +62,7 @@ h_mode_goal = np.array([0]);
 ## Geometrical Pre-processing
 ##
 
-kNumSlidingPlanes = 2
+kNumSlidingPlanes = 4
 jacs = eng.preProcessing(matlab.double([kFrictionE]),
         matlab.double([kFrictionH]),
         matlab.double([kNumSlidingPlanes]),
@@ -98,21 +98,24 @@ e_modes, cs_lattice, info = cm.enum_sliding_sticking_3d_proj(N_e, b_e, T_e, t_e)
 # divide into cs modes and sliding modes
 kNumContactsE = p_W_e.shape[1];
 e_cs_modes = np.zeros((len(e_modes), kNumContactsE));
-e_ss_modes = e_modes;
+e_ss_modes = [0]*len(e_modes);
 for i in range(len(e_modes)):
       e_cs_modes[i,:] = e_modes[i][0, 0:kNumContactsE]
-      e_ss_modes[i] = e_modes[i][:, kNumSlidingPlanes:]
+      e_ss_modes[i] = e_modes[i][:, kNumContactsE:].copy()
 e_cs_modes = np.array(e_cs_modes)
 
 kNumContactsH = p_H_h.shape[1];
 h_cs_modes = np.zeros((1, kNumContactsH)).astype('int32');
 h_ss_modes = [np.zeros((1, kNumContactsH*kNumSlidingPlanes)).astype('int32')];
 
-# debug
-e_cs_modes = np.array([[1, 1, 0, 1]]);
-e_ss_modes = [np.array([[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0]])];
-h_cs_modes = np.array([[0, 1, 1, 1]]);
-h_ss_modes = [np.array([[1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])];
+# cs mode: 1 separation, 0 contact
+# ss mode: each element can be 1(positive), -1(negative) or 0(on the plane). If all elements for a contaft are 0, this is a sticking contact
+# # debug
+# e_cs_modes = np.array([[1, 1, 0, 1]]);
+# e_ss_modes = [np.array([[0, 0, 0, 0, 1, 1, 0, 0]])];
+# h_cs_modes = np.array([[0, 1, 1, 1]]);
+# h_ss_modes = [np.array([[1, 1, 0, 0, 0, 0, 0, 0]])];
+
 
 # # Test modeCleaning()
 # s_modes = em.modeCleaning(h_cs_modes, h_ss_modes, 4)

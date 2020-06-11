@@ -35,25 +35,27 @@ include_directories(include/)
 ## targets
 ##
 add_library(timer src/timer.cpp)
-
-add_executable(qhulltest src/testQHull.cpp)
-target_link_libraries(qhulltest ${qhullLibs})
+add_library(hfvc src/solvehfvc.cpp)
 
 add_library(polylib src/polyhedron.cpp)
 target_link_libraries(polylib ${CDDLIB} ${qhullLibs})
 
+add_library(sharedgraspinglib src/wrench_space_analysis.cpp)
+target_link_libraries(sharedgraspinglib polylib timer hfvc)
+
+##
+## Tests
+##
+add_executable(qhulltest src/testQHull.cpp)
+target_link_libraries(qhulltest ${qhullLibs})
+
 add_executable(polytest src/testpoly.cpp)
 target_link_libraries(polytest polylib)
-
-add_library(sharedgraspinglib src/wrench_space_analysis.cpp)
-target_link_libraries(sharedgraspinglib polylib timer)
 
 pybind11_add_module(example src/testPybind.cpp)
 target_link_libraries(example PRIVATE sharedgraspinglib)
 
-# SET_TARGET_PROPERTIES(qhulltest PROPERTIES
-#  COMPILE_DEFINITIONS "qh_QHpointer")
-
+add_executable(lutest src/testEigenLU.cpp)
 # add_executable(cddtest src/testcdd.cpp)
 # target_link_libraries(cddtest ${CDDLIB})
 

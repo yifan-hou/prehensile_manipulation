@@ -107,11 +107,13 @@ for i = 1:Ne
     N_e(i, :) = cadj;
 
     % contact tangential and friction cones
-    CX = cross(vr, [CN; 0]); CX = CX/norm(CX);
+    
     if kDim == 3
+        CX = cross(vr, CN); CX = CX/norm(CX);
         CY = cross(CN, CX); CY = CY/norm(CY);
         CT_e = CT(:, 1:2)*[CX'; CY']; % tangential directions
     else
+        CX = cross(vr, [CN; 0]); CX = CX/norm(CX);
         CT_e = [CX'; -CX']; % left, right
         CT_e = CT_e(:, 1:2);
     end
@@ -147,11 +149,12 @@ for i = 1:Nh
     N_h(i, :) = -cadj;
 
     % contact tangential and friction cones
-    CX = cross(vr, [CN; 0]); CX = CX/norm(CX);
     if kDim == 3
+        CX = cross(vr, CN); CX = CX/norm(CX);
         CY = cross(CN, CX); CY = CY/norm(CY);
         CT_h = CT(:, 1:2)*[CX';CY']; % tangential directions
     else
+        CX = cross(vr, [CN; 0]); CX = CX/norm(CX);
         CT_h = [CX'; -CX'];
         CT_h = CT_h(:, 1:2);
     end

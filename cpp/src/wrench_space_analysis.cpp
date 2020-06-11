@@ -1,5 +1,6 @@
 #include "wrench_space_analysis.h"
 #include "timer.h"
+#include "solvehfvc.h"
 
 #include <list>
 #include <string>
@@ -38,9 +39,13 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
     const MatrixXi &e_cs_modes, const std::vector<MatrixXi> &e_ss_modes,
     const MatrixXi &h_cs_modes, const std::vector<MatrixXi> &h_ss_modes,
     MatrixXd G, const VectorXd &b_G,
-    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal) {
+    const MatrixXi &e_cs_modes_goal, const std::vector<MatrixXi> &e_ss_modes_goal,
+    const MatrixXi &h_cs_modes_goal, const std::vector<MatrixXi> &h_ss_modes_goal) {
 
   std::cout << "[wrenchSpaceAnalysis] Calling..\n";
+  // std::cout << "G:\n" << G << std::endl;
+  // std::cout << "b_G:\n" << b_G << std::endl;
+  // getchar();
   // std::cout << "Jac_e: " << Jac_e.rows() << " x " << Jac_e.cols() << std::endl;
   // std::cout << "Jac_h: " << Jac_h.rows() << " x " << Jac_h.cols() << std::endl;
   // std::cout << "eCone_allFix: " << eCone_allFix.rows() << " x " << eCone_allFix.cols() << std::endl;
@@ -58,8 +63,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   Timer timer;
   timer.tic();
 
-  bool flag_given_goal_mode = false;
-  if (e_mode_goal.size() > 1 ) flag_given_goal_mode = true;
   bool flag_given_goal_velocity = false;
   if (b_G.size() > 0) flag_given_goal_velocity = true;
 
@@ -70,7 +73,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   vscale_inv_vec << 1., 1., 1., kCharacteristicLength, kCharacteristicLength, kCharacteristicLength;
   MatrixXd vscale = vscale_vec.asDiagonal();
   MatrixXd vscale_inv = vscale_inv_vec.asDiagonal();
-  MatrixXd gvscale(12, 12);
+  MatrixXd gvscale = MatrixXd::Zero(12, 12);
   gvscale.block<6, 6>(0, 0) = vscale;
   gvscale.block<6, 6>(6, 6) = vscale;
   // N_ * V_scaled = 0, N*V = 0,
@@ -83,32 +86,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   // for crashing check
   MatrixXd cone_allFix;
   Poly::coneIntersection(eCone_allFix, hCone_allFix, &cone_allFix);
-
-
-
-  int empty = 0;
-  int non_empty = 0;
-  Eigen::VectorXi e_ss_mode = Eigen::VectorXi::zeros(e_ss_modes[0].cols());
-  Eigen::VectorXi h_ss_mode = Eigen::VectorXi::zeros(h_ss_modes[0].cols());
-  for (int e_cs_i = 0; e_cs_i < NE_SSS_MODES; ++e_cs_i) {
-    e_sss_mode = e_sss_modes.middleRows(e_cs_i, 1).transpose();
-    for (int h_sss_i = 0; h_sss_i < NH_SSS_MODES; ++h_sss_i) {
-      h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
-      e_s_mode = e_s_modes[e_cs_i].middleRows(e_s_i, 1).transpose();
-      e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
-      h_s_mode = h_s_modes[h_sss_i].middleRows(h_s_i, 1).transpose();
-      h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
-      Poly::coneIntersection(e_cone, h_cone, &R);
-      if(R.rows() == 0) empty ++;
-      else non_empty ++;
-    }
-  }
-
-  std::cout << "\nEmpty: " << empty << std::endl;
-  std::cout << "Non-empty: " << non_empty << std::endl;
-  std::cout << "timer: All time = " << timer.toc() << "ms" << std::endl;
-
-
 
   Eigen::MatrixXi e_sss_modes, h_sss_modes;
   std::vector<Eigen::MatrixXi> e_s_modes, h_s_modes;
@@ -124,8 +101,70 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
     return;
   }
 
+  Eigen::MatrixXi e_sss_modes_goal, h_sss_modes_goal;
+  std::vector<Eigen::MatrixXi> e_s_modes_goal, h_s_modes_goal;
+
+  std::cout << "debug: e_cs_modes_goal.size(): " << e_cs_modes_goal.size() << std::endl;
+  std::cout << "debug: e_cs_modes_goal: " << e_cs_modes_goal << std::endl;
+  getchar();
+  if (e_cs_modes_goal.size() == 0 ) {
+    e_sss_modes_goal = e_sss_modes;
+    h_sss_modes_goal = h_sss_modes;
+    e_s_modes_goal = e_s_modes;
+    h_s_modes_goal = h_s_modes;
+  } else {
+    if (!modeCleaning(e_cs_modes_goal, e_ss_modes_goal, kNumSlidingPlanes, &e_sss_modes_goal, &e_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal e contacts." << std::endl;
+      return;
+    }
+    if (!modeCleaning(h_cs_modes_goal, h_ss_modes_goal, kNumSlidingPlanes, &h_sss_modes_goal, &h_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal h contacts." << std::endl;
+      return;
+    }
+  }
 
   std::cout << "timer: modeCleaning time = " << timer.toc() << "ms" << std::endl;
+
+
+
+  Eigen::MatrixXd N = getConstraintOfTheMode(Jac_e, Jac_h,
+      e_sss_modes.middleRows(0, 1).transpose(), h_sss_modes.middleRows(0, 1).transpose(),
+      e_s_modes[0].middleRows(0, 1).transpose(), h_s_modes[0].middleRows(0, 1).transpose(),
+      kNumSlidingPlanes);
+
+  Eigen::VectorXd F = Eigen::VectorXd::Zero(12);
+  int kDimActualized = 6;
+  int kDimUnActualized = 6;
+  int kNumSeeds = 5;
+  int kPrintLevel = 0;
+  HFVC action;
+
+  std::cout << "N:\n" << N << std::endl;
+  std::cout << "G:\n" << G << std::endl;
+  std::cout << "b_G:\n" << b_G << std::endl;
+  std::cout << "F:\n" << F << std::endl;
+
+  timer.tic();
+  for (int i = 0; i < 100; ++i) {
+    solvehfvc(N, G, b_G, F, kDimActualized, kDimUnActualized, kNumSeeds,
+      kPrintLevel, &action);
+  }
+  std::cout << "timer: HFVC time x 100 = " << timer.toc() << "ms" << std::endl;
+  std::cout << "solution:\n";
+  std::cout << "n_av: " << action.n_av << std::endl;
+  std::cout << "n_af: " << action.n_af << std::endl;
+  std::cout << "R_a:\n" << action.R_a << std::endl;
+  std::cout << "w_av:\n" << action.w_av << std::endl;
+
+  std::cout << "\n\nNew Algorithm\n";
+  timer.tic();
+  for (int i = 0; i < 100; ++i) {
+    solvehfvc_new(N, G, b_G, F, kDimActualized, kDimUnActualized, kNumSeeds,
+      kPrintLevel, &action);
+  }
+  std::cout << "timer: HFVC new time x 100 = " << timer.toc() << "ms" << std::endl;
+  return;
+
   /**
    * Preparation
    */
@@ -138,26 +177,39 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   Eigen::MatrixXd R;
 
   // check every s mode
-  // Eigen::VectorXi e_s_mode, h_s_mode;
-  // int empty = 0;
-  // int non_empty = 0;
-  // for (int e_sss_i = 0; e_sss_i < NE_SSS_MODES; ++e_sss_i) {
-  //   e_sss_mode = e_sss_modes.middleRows(e_sss_i, 1).transpose();
-  //   for (int h_sss_i = 0; h_sss_i < NH_SSS_MODES; ++h_sss_i) {
-  //     h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
-  //     for (int e_s_i = 0; e_s_i < e_s_modes[e_sss_i].rows(); ++e_s_i) {
-  //       e_s_mode = e_s_modes[e_sss_i].middleRows(e_s_i, 1).transpose();
-  //       e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
-  //       for (int h_s_i = 0; h_s_i < h_s_modes[h_sss_i].rows(); ++h_s_i) {
-  //          h_s_mode = h_s_modes[h_sss_i].middleRows(h_s_i, 1).transpose();
-  //         h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
-  //         Poly::coneIntersection(e_cone, h_cone, &R);
-  //         if(R.rows() == 0) empty ++;
-  //         else non_empty ++;
-  //       }
-  //     }
-  //   }
-  // }
+  Eigen::VectorXi e_s_mode, h_s_mode;
+  int empty = 0;
+  int non_empty = 0;
+  for (int e_sss_i = 0; e_sss_i < NE_SSS_MODES; ++e_sss_i) {
+    e_sss_mode = e_sss_modes.middleRows(e_sss_i, 1).transpose();
+    for (int h_sss_i = 0; h_sss_i < NH_SSS_MODES; ++h_sss_i) {
+      h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
+      for (int e_s_i = 0; e_s_i < e_s_modes[e_sss_i].rows(); ++e_s_i) {
+        e_s_mode = e_s_modes[e_sss_i].middleRows(e_s_i, 1).transpose();
+        e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
+        // std::cout << "\n\n\n";
+        // std::cout << "debug, cone_allFix: \n" << eCone_allFix << std::endl;
+        // std::cout << "debug, sss_mode: \n" << e_sss_mode << std::endl;
+        // std::cout << "debug, s_mode: \n" << e_s_mode << std::endl;
+        // std::cout << "debug, result cone: \n" << e_cone << std::endl;
+        // getchar();
+        for (int h_s_i = 0; h_s_i < h_s_modes[h_sss_i].rows(); ++h_s_i) {
+          h_s_mode = h_s_modes[h_sss_i].middleRows(h_s_i, 1).transpose();
+          h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
+          Poly::coneIntersection(e_cone, h_cone, &R);
+          // std::cout << "coneIntersection for " << e_sss_mode.transpose() << ", at time " << timer.toc() << "ms" << std::endl;
+          if(R.rows() == 0) empty ++;
+          else non_empty ++;
+        }
+      }
+    }
+  }
+
+  std::cout << "\nEmpty: " << empty << std::endl;
+  std::cout << "Non-empty: " << non_empty << std::endl;
+  std::cout << "timer: All time = " << timer.toc() << "ms" << std::endl;
+
+
 
   // // EH cone intersection
   // //   * Compute safety margins
@@ -535,7 +587,6 @@ bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_mode
 Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
     const Eigen::VectorXi &sss_mode, const Eigen::VectorXi &s_mode, int kNumSlidingPlanes) {
 
-  int number_of_edges = 0;
   int num_contacts = sss_mode.size();
   Eigen::VectorXi s_mode01 = s_mode;
   s_mode01.array() = (s_mode01.array() + 1)/2; // -1/1 -> 0/1
@@ -546,7 +597,7 @@ Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
     MatrixXd generators_add(0, 0);
     if (sss_mode[i] == -1) {
       // record all 2*kNumSlidingPlanes generators
-      generators_add = cone_allFix.middleRows(1, 2*kNumSlidingPlanes);
+      generators_add = cone_allFix.middleRows(id_start, 2*kNumSlidingPlanes);
     } else if (sss_mode[i] == 0) {
       // find two corresponding generators
       std::vector<double> v;
@@ -575,3 +626,64 @@ Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
   return MatrixXd::Map(generators.data(), 6, num_generators).transpose();
 }
 
+// for now, only implemented the bilateral part for hybrid servoing
+Eigen::MatrixXd getConstraintOfTheMode(
+    const Eigen::MatrixXd &J_e_AF, const Eigen::MatrixXd &J_h_AF,
+    const Eigen::VectorXi &sss_mode_e, const Eigen::VectorXi &sss_mode_h,
+    const Eigen::VectorXi &s_mode_e, const Eigen::VectorXi &s_mode_h,
+    int kNumSlidingPlanes) {
+  const int kNumEContacts = sss_mode_e.size();
+  const int kNumHContacts = sss_mode_h.size();
+  const int kDim = J_h_AF.cols();
+  assert(J_e_AF.cols() == kDim);
+
+  // count number of rows
+  // -1: sticking   0: sliding   1: separation
+  int NeRows = 0, NhRows = 0;
+  for (int i = 0; i < kNumEContacts; ++i) {
+    if (sss_mode_e[i] == -1) {
+      NeRows += 1 + kNumSlidingPlanes;
+    } else if (sss_mode_e[i] == 0) {
+      NeRows += 1;
+    }
+  }
+  for (int i = 0; i < kNumHContacts; ++i) {
+    if (sss_mode_h[i] == -1) {
+      NhRows += 1 + kNumSlidingPlanes;
+    } else if (sss_mode_h[i] == 0) {
+      NhRows += 1;
+    }
+  }
+  Eigen::MatrixXd N;
+  N = Eigen::MatrixXd::Zero(NeRows+NhRows, 2*kDim);
+  int n_count = 0;
+  for (int i = 0; i < kNumEContacts; ++i) {
+    // -1: sticking   0: sliding   1: separation
+    if (sss_mode_e[i] == 1) {
+      // separation
+      continue;
+    }
+    N.block(n_count++, 0, 1, kDim) = J_e_AF.middleRows(i, 1);
+    if (sss_mode_e[i] == -1) {
+      // sticking
+      N.block(n_count, 0, kNumSlidingPlanes, kDim) = J_e_AF.middleRows(kNumEContacts + i*kNumSlidingPlanes, kNumSlidingPlanes);
+      n_count += kNumSlidingPlanes;
+    }
+  }
+  for (int i = 0; i < kNumHContacts; ++i) {
+    // -1: sticking   0: sliding   1: separation
+    if (sss_mode_h[i] == 1) {
+      // separation
+      continue;
+    }
+    N.block(n_count, 0, 1, kDim) = -J_h_AF.middleRows(i, 1);
+    N.block(n_count++, kDim, 1, kDim) = J_h_AF.middleRows(i, 1);
+    if (sss_mode_h[i] == -1) {
+      // sticking
+      N.block(n_count, 0, kNumSlidingPlanes, kDim) = -J_h_AF.middleRows(kNumHContacts + i*kNumSlidingPlanes, kNumSlidingPlanes);
+      N.block(n_count, kDim, kNumSlidingPlanes, kDim) = J_h_AF.middleRows(kNumHContacts + i*kNumSlidingPlanes, kNumSlidingPlanes);
+      n_count += kNumSlidingPlanes;
+    }
+  }
+  return N;
+}
