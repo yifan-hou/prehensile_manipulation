@@ -1,12 +1,12 @@
 % J = [J_e, 0; -J_h, J_h]: 1 normal, kNumSlidingPlanes tangential; used by contact mode enumeration
 % J_e = [N_e; T_e]   N: normal, T: tangential
 % J_h = [N_h; T_h]
-% Each contact contributes 1 normal, kNumSlidingPlanes tangential constraints.
+% Each contact contributes 1 normal, 2 (1 for planar problem) tangential constraints.
 % eCone, hCone: each row is a wrench space generator created by an edge of a friction cone.
 %   3D: Each contact contributes 2d + 1 edges; the last one is a copy of the first one
 %   2D: Each contact contributes 2 edges (left, right)
 % If planar, kNumSlidingPlanes must = 1, the computation puts everything on XY plane
-function [N_e, T_e, N_h, T_h, eCone, hCone] = getWholeJacobian(CP_W_e, CN_W_e, ...
+function [N_e, T_e, N_h, T_h, eCone, eTCone, hCone hTCone] = getWholeJacobian(CP_W_e, CN_W_e, ...
         CP_H_h, CN_H_h, adj_WH, adj_HW, kNumSlidingPlanes, kFrictionE, kFrictionH)
 
 kDim = size(CP_W_e, 1);
@@ -25,20 +25,20 @@ Nh = size(CP_H_h, 2);
 
 N_e = zeros(Ne, kWrenchDim);
 N_h = zeros(Nh, kWrenchDim);
-T_e = zeros(Ne*kNumSlidingPlanes, kWrenchDim);
-T_h = zeros(Nh*kNumSlidingPlanes, kWrenchDim);
-
-% kd = kNumSlidingPlanes + 1;
-% J_e = zeros(kd*Ne, kWrenchDim);
-% J_h = zeros(kd*Nh, kWrenchDim);
 
 if kDim == 3
     kEdgesPerContact = 2*kNumSlidingPlanes+1;
+    T_e = zeros(Ne*2, kWrenchDim);
+    T_h = zeros(Nh*2, kWrenchDim);
 else
     kEdgesPerContact = 2;
+    T_e = zeros(Ne, kWrenchDim);
+    T_h = zeros(Nh, kWrenchDim);
 end
 eCone = zeros(kEdgesPerContact*Ne, kWrenchDim);
 hCone = zeros(kEdgesPerContact*Nh, kWrenchDim);
+eTCone = zeros(Ne*kNumSlidingPlanes, kWrenchDim);
+hTCone = zeros(Nh*kNumSlidingPlanes, kWrenchDim);
 z = [0 0 1]';
 
 % The following code generates a list of sliding modes. This list controls the
@@ -107,27 +107,31 @@ for i = 1:Ne
     N_e(i, :) = cadj;
 
     % contact tangential and friction cones
-    
     if kDim == 3
         CX = cross(vr, CN); CX = CX/norm(CX);
         CY = cross(CN, CX); CY = CY/norm(CY);
         CT_e = CT(:, 1:2)*[CX'; CY']; % tangential directions
+        CXY = [CX';CY'];
     else
         CX = cross(vr, [CN; 0]); CX = CX/norm(CX);
         CT_e = [CX'; -CX']; % left, right
         CT_e = CT_e(:, 1:2);
+        CXY = CX(1:2)';
     end
     CCone = (kFrictionE*CT_e + ones(kEdgesPerContact, 1)*CN')/mu_norm; % friction cone edges
 
     CT_e = CT_e(1:kNumSlidingPlanes, :);
     if kDim == 3
-        c_Wei = [CT_e, cross(ones(kNumSlidingPlanes, 1)*CP_W_e(:,i)', CT_e)];
+        c_Wei = [CXY, cross([1;1]*CP_W_e(:,i)', CXY)];
+        eTConei = [CT_e, cross(ones(kNumSlidingPlanes, 1)*CP_W_e(:,i)', CT_e)];
         eConei = [CCone, cross(ones(kEdgesPerContact, 1)*CP_W_e(:,i)', CCone)];
     else
-        c_Wei = [CT_e, cross2(CP_W_e(:,i)', CT_e)];
+        c_Wei = [CXY, cross2(CP_W_e(:,i)', CXY)];
+        eTConei = [CT_e, cross2(CP_W_e(:,i)', CT_e)];
         eConei = [CCone, cross2(ones(kEdgesPerContact, 1)*CP_W_e(:,i)', CCone)];
     end
-    T_e(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = c_Wei*adj_WH;
+    T_e(2*(i-1)+1:2*i, :) = c_Wei*adj_WH;
+    eTCone(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = eTConei*adj_WH;
     eCone((kEdgesPerContact)*(i-1)+1:(kEdgesPerContact)*i, :) = eConei*adj_WH;
 end
 
@@ -153,21 +157,26 @@ for i = 1:Nh
         CX = cross(vr, CN); CX = CX/norm(CX);
         CY = cross(CN, CX); CY = CY/norm(CY);
         CT_h = CT(:, 1:2)*[CX';CY']; % tangential directions
+        CXY = [CX';CY'];
     else
         CX = cross(vr, [CN; 0]); CX = CX/norm(CX);
         CT_h = [CX'; -CX'];
         CT_h = CT_h(:, 1:2);
+        CXY = CX(1:2)';
     end
     CCone = (kFrictionH*CT_h + ones(kEdgesPerContact, 1)*CN')/mu_norm; % friction cone edges
 
     CT_h = CT_h(1:kNumSlidingPlanes, :);
     if kDim == 3
-        c_Whi = [CT_h, cross(ones(kNumSlidingPlanes, 1)*CP_H_h(:,i)', CT_h)];
+        c_Whi = [CXY, cross([1;1]*CP_H_h(:,i)', CXY)];
+        hTConei = [CT_h, cross(ones(kNumSlidingPlanes, 1)*CP_H_h(:,i)', CT_h)];
         hConei = [CCone, cross(ones(kEdgesPerContact, 1)*CP_H_h(:,i)', CCone)];
     else
-        c_Whi = [CT_h, cross2(CP_H_h(:,i)', CT_h)];
+        c_Whi = [CXY, cross2(CP_H_h(:,i)', CXY)];
+        hTConei = [CT_h, cross2(CP_H_h(:,i)', CT_h)];
         hConei = [CCone, cross2(ones(kEdgesPerContact, 1)*CP_H_h(:,i)', CCone)];
     end
-    T_h(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = -c_Whi*adj_HW*adj_WH;
+    T_h(2*(i-1)+1:2*i, :) = -c_Whi*adj_HW*adj_WH;
+    hTCone(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = -hTConei*adj_HW*adj_WH;
     hCone((kEdgesPerContact)*(i-1)+1:(kEdgesPerContact)*i, :) = -hConei*adj_HW*adj_WH;
 end

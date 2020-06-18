@@ -197,6 +197,8 @@ Eigen::MatrixXd QRWrapper(const Eigen::MatrixXd &A, Eigen::HouseholderQR<Eigen::
 //  Secondly, if the null space has zero dimension, the output is NOT a zero
 //    dimensional matrix, but a n x 1 vector with all zeros.
 
+// todo: implement manual row reduction to find basis, instead of using QR
+// todo: test setThreshold() for decompositions
 bool solvehfvc_new(const MatrixXd &N,
   const MatrixXd &G, const VectorXd &b_G,
   const VectorXd &F,
@@ -274,18 +276,20 @@ bool solvehfvc_new(const MatrixXd &N,
   Eigen::MatrixXd C = lu.kernel().transpose();
   Eigen::VectorXd b_C = C*v_star;
 
-  // get the force-controlled directions
+  // Get the force-controlled directions
+  // and get orthogonal
   assert(C.rows() > 0);
-  if (C.rows() == kDimActualized) {
-    action->R_a = C.rightCols(kDimActualized);
-  } else {
-    Eigen::MatrixXd C_actualized = C.rightCols(kDimActualized);
-    lu.compute(C_actualized);
-    Eigen::MatrixXd force_control_directions = lu.kernel();
-    action->R_a = MatrixXd::Zero(kDimActualized, kDimActualized);
-    action->R_a << force_control_directions.transpose(), C_actualized;
-  }
+  Eigen::MatrixXd C_actualized = C.rightCols(kDimActualized);
+  // lu.compute(C_actualized);
+  Eigen::CompleteOrthogonalDecomposition<Eigen::MatrixXd> cod(C_actualized.transpose());
+  assert(cod.rank() == C.rows());
+  Eigen::MatrixXd image = cod.matrixQ();
+  C_actualized = image.leftCols(C.rows()).transpose();
+  Eigen::MatrixXd force_control_directions = image.rightCols(image.cols() - C.rows()).transpose();
 
+  // R_a is a unitary matrix, R_a^T * R_a = I
+  action->R_a = MatrixXd::Zero(kDimActualized, kDimActualized);
+  action->R_a << force_control_directions, C_actualized;
   action->n_av   = C.rows();
   action->n_af   = kDimActualized - C.rows();
   action->w_av   = b_C;
@@ -295,9 +299,9 @@ bool solvehfvc_new(const MatrixXd &N,
   /**
    * Check the solution
    */
-  std::cout << "Velocity Command:" << std::endl;
-  std::cout << "  C:\n" << C << std::endl;
-  std::cout << "  b_C:\n" << b_C << std::endl;
+  // std::cout << "Velocity Command:" << std::endl;
+  // std::cout << "  C:\n" << C << std::endl;
+  // std::cout << "  b_C:\n" << b_C << std::endl;
 
   // MatrixXd NC(N_reg.rows()+C.rows(), N_reg.cols());
   // NC << N_reg, C;

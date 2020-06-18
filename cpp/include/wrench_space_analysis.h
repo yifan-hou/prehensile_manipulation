@@ -7,16 +7,16 @@
 bool modeCleaning(const Eigen::MatrixXi &cs_modes, const std::vector<Eigen::MatrixXi> &ss_modes, int kNumSlidingPlanes,
     Eigen::MatrixXi *sss_modes, std::vector<Eigen::MatrixXi> *s_modes);
 
+// sss mode:  -1: sticking   0: sliding   1: separation
 // return: each row is a generator
 Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
     const Eigen::VectorXi &sss_mode, const Eigen::VectorXi &s_mode, int kNumSlidingPlanes);
 
-Eigen::MatrixXd getConstraintOfTheMode(
+void getConstraintOfTheMode(
     const Eigen::MatrixXd &J_e_AF, const Eigen::MatrixXd &J_h_AF,
     const Eigen::VectorXi &sss_mode_e, const Eigen::VectorXi &sss_mode_h,
     const Eigen::VectorXi &s_mode_e, const Eigen::VectorXi &s_mode_h,
-    int kNumSlidingPlanes);
-
+    Eigen::MatrixXd *N, Eigen::MatrixXd *Nu, Eigen::MatrixXd *T);
 
 void wrenchSpaceAnalysis(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,

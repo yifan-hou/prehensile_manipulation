@@ -11,17 +11,18 @@ int main() {
 // A << 4, 2, 1, 4, 5,
 //      4, 2, 1, 4, 5,
 //      4, 2, 1, 4, 5;
-MatrixXd A(MatrixXd::Random(4,3));
+// MatrixXd A(MatrixXd::Random(4,3));
+MatrixXd A(MatrixXd::Random(17,12));
 A.setRandom();
-// A.middleCols(12, 1) = A.middleCols(11, 1);
+A.middleCols(11, 1) = A.middleCols(10, 1);
 std::cout << "A:\n" << A << std::endl;
 
-VectorXd b(4, 1);
+VectorXd b(17, 1);
 b.setRandom();
 std::cout << "b:\n" << b << std::endl;
 // FullPivLU
+std::cout << "\n\nFullPivLU test";
 Eigen::FullPivLU<MatrixXd> lu_full(A);
-std::cout << "FullPivLU" << std::endl;
 std::cout << "  col space:\n" << lu_full.image(A) << std::endl;
 std::cout << "  kernel:\n" << lu_full.kernel() << std::endl;
 std::cout << "  kernel'*kernel:\n" << lu_full.kernel().transpose() * lu_full.kernel() << std::endl;
@@ -31,16 +32,27 @@ std::cout << "  A*sol - b:\n" << A*sol - b << std::endl;
 
 
 // QR
+std::cout << "\n\nQR test";
 HouseholderQR<MatrixXd> qr(A);
 MatrixXd Q = qr.householderQ();
 std::cout << "Q:\n" << Q << "\n";
 std::cout << "Q^T * A:\n" << Q.transpose() * A << "\n";
 std::cout << "qr.matrixQR():\n" << qr.matrixQR() << "\n";
 
-// see how Identity works
-MatrixXd identity(MatrixXd::Identity(5,3));
-std::cout << "identity:" << identity << "\n";
-
+// Orthogonal decomposition
+std::cout << "\n\nCompleteOrthogonalDecomposition test";
+Eigen::CompleteOrthogonalDecomposition<Eigen::MatrixXd> cod(A);
+Eigen::MatrixXd image = cod.matrixQ();
+std::cout << "  image:\n" << image << std::endl;
+std::cout << "  image'*image:\n" << image.transpose() * image << std::endl;
+std::cout << "  image'*A:\n" << image.transpose() * A << std::endl;
+std::cout << "  ||image'*image - I||:\n" << (image.transpose() * image - MatrixXd::Identity(image.rows(), image.rows())).norm() << std::endl;
+std::cout << "  image'*A, norm of rows:\n";
+Eigen::MatrixXd Aproj = image.transpose() * A;
+for (int i = 0; i < Aproj.rows(); ++i) {
+    std::cout << i << ":\t" << Aproj.middleRows(i, 1).norm() << std::endl;
+}
+std::cout << std::endl;
 
 return 0;
 }
