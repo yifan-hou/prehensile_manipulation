@@ -122,14 +122,15 @@ std::vector<MatrixXi> modeCleaning_test(const MatrixXi &cs_modes, const std::vec
 void wrenchSpaceAnalysis_wrapper(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,
     const Eigen::VectorXd &F_G,
-    const double kContactForce, const double kCharacteristicLength, const int kNumSlidingPlanes,
+    const double kContactForce, const double kFrictionE, const double kFrictionH,
+    const double kCharacteristicLength, const int kNumSlidingPlanes,
     const Eigen::MatrixXi &e_cs_modes, const std::vector<Eigen::MatrixXi> &e_ss_modes,
     const Eigen::MatrixXi &h_cs_modes, const std::vector<Eigen::MatrixXi> &h_ss_modes,
     Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
     const Eigen::MatrixXi &e_cs_modes_goal, const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
     const Eigen::MatrixXi &h_cs_modes_goal, const std::vector<Eigen::MatrixXi> &h_ss_modes_goal) {
   wrenchSpaceAnalysis(Jac_e, Jac_h, eCone_allFix, hCone_allFix,
-      F_G, kContactForce, kCharacteristicLength, kNumSlidingPlanes,
+      F_G, kContactForce, kFrictionE, kFrictionH, kCharacteristicLength, kNumSlidingPlanes,
       e_cs_modes, e_ss_modes, h_cs_modes, h_ss_modes, G, b_G,
       e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal);
   std::cout << "[wrapper] Finished!\n";

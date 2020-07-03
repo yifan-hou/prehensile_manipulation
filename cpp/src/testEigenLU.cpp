@@ -54,5 +54,23 @@ for (int i = 0; i < Aproj.rows(); ++i) {
 }
 std::cout << std::endl;
 
+// test threshold in rank()
+Eigen::MatrixXd B(2,3);
+B << 1, 0, 0,
+     1, 1e-15, 0;
+lu_full.compute(B);
+std::cout << "B:\n" << B << std::endl;
+std::cout << "lu rank: " << lu_full.rank() << std::endl;
+lu_full.setThreshold(1e-8);
+std::cout << "lu rank 2: " << lu_full.rank() << std::endl;
+Eigen::ColPivHouseholderQR<MatrixXd> qr_col;
+qr_col.compute(B);
+std::cout << "qr rank: " << qr_col.rank() << std::endl;
+qr_col.setThreshold(1e-8);
+qr_col.compute(B);
+std::cout << "qr rank 2: " << qr_col.rank() << std::endl;
+cod.compute(B);
+std::cout << "cod rank: " << cod.rank() << std::endl;
+
 return 0;
 }

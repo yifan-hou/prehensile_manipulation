@@ -191,11 +191,13 @@ Eigen::MatrixXd QRWrapper(const Eigen::MatrixXd &A, Eigen::HouseholderQR<Eigen::
   return qr->householderQ() * thinQ;
 }
 
-//  There are two things to care about Eigen::FullPivLU.
+//  There are three things to care about Eigen::FullPivLU.
 //  Firstly, if the matrix to be decomposed is empty or all zero, the kernel()
 //    method will throw a run time error.
 //  Secondly, if the null space has zero dimension, the output is NOT a zero
 //    dimensional matrix, but a n x 1 vector with all zeros.
+//  Thirdly, if the input is almost all zero, the rank computation will be too sensitive.
+//    e.g. the rank for [0, 0, 1e-15] will be 1, not zero.
 
 // todo: implement manual row reduction to find basis, instead of using QR
 // todo: test setThreshold() for decompositions

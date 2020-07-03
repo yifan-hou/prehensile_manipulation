@@ -5,6 +5,54 @@
 
 namespace Poly {
 
+double angBTVec(const Eigen::VectorXd &x, const Eigen::VectorXd &b);
+
+/**
+ * Distance from a point p to the line {kn|k\in R}
+ *
+ * @param[in]  p     a point in N dimensional space
+ * @param[in]  n     a ray in N dimensional space
+ *
+ * @return     Distance from p to the line of n. Value is negative if p.dot(n) is negative
+ */
+double distP2Line(const Eigen::VectorXd &p, const Eigen::VectorXd &n);
+
+/**
+ * Project a point to a line
+ *
+ * @param[in]  p     a point
+ * @param[in]  n     Direction vector of the line, don't have to be unit
+ *
+ * @return     The projection.
+ */
+Eigen::VectorXd projectP2Line(const Eigen::VectorXd &p, const Eigen::VectorXd &n);
+
+/**
+* Compute the projection of a point p onto a hyperplane defined by
+*      ax = b
+*
+* @param[in]  p     a point in n-D space
+* @param[in]  a     a co-vector in n-D space
+* @param[in]  b     a scalar
+*
+* @return     A point on the hyperplane
+*/
+Eigen::VectorXd projectP2Hyperplane(const Eigen::VectorXd &p, const Eigen::VectorXd &a, double b);
+
+/**
+ * Compute the angular distance between a ray and a cone. Both the ray and the
+ * cone start from the origin (are homogeneous). The vector must not be in the
+ * relative interior of the cone.
+ *
+ * @param[in]  p     a non-zero point on the ray
+ * @param[in]  A     Hyperplane representation of the cone: Ax <= 0
+ * @param[in]  R     Vertex representation of the cone, each row of R is a
+ *                   generator
+ *
+ * @return     The angle
+ */
+double distRay2ConeFromOutside(const Eigen::VectorXd &p, const Eigen::MatrixXd &A, const Eigen::MatrixXd &R);
+
 /**
  * Vertex enumeration. Given a polyhedron (A, b):
  *      {x: A*x <= b},
@@ -38,6 +86,19 @@ bool vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen
  * @return     True if no error occurs.
  */
 bool facetEnumeration(const Eigen::MatrixXd &R, Eigen::MatrixXd *A, Eigen::VectorXd *b);
+
+/**
+ * Facet enumeration for a homogeneous cone. Given a polyhedron M:
+ *      {y: y = M'*x, x >= 0}
+ * Find its inequality representation (A):
+ *      {x: A*x <= 0},
+ *
+ * @param[in]  M     Each row represents a generator
+ * @param      A     Pointer of output A, each row represents an inequality.
+ *
+ * @return     True if no error occurs.
+ */
+bool coneFacetEnumeration(const Eigen::MatrixXd &M, Eigen::MatrixXd *A);
 
 /**
  * Compute the intersection of two polyhedra. Both input and output variables

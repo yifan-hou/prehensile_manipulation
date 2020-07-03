@@ -21,6 +21,57 @@ using orgQhull::QhullPoint;
 using orgQhull::QhullVertexList;
 using orgQhull::QhullVertexListIterator;
 
+
+
+double Poly::angBTVec(const Eigen::VectorXd &x, const Eigen::VectorXd &b) {
+  return acos(x.normalized().dot(b.normalized()));
+}
+
+double Poly::distP2Line(const Eigen::VectorXd &p, const Eigen::VectorXd &n) {
+  double k = p.dot(n)/n.dot(n);
+  double dist = (p - k*n).norm();
+  return (k > 0) ? dist:-dist;
+}
+
+Eigen::VectorXd Poly::projectP2Line(const Eigen::VectorXd &p, const Eigen::VectorXd &n) {
+  double k = p.dot(n)/n.dot(n);
+  return k*n;
+}
+
+Eigen::VectorXd Poly::projectP2Hyperplane(const Eigen::VectorXd &p, const Eigen::VectorXd &a, double b) {
+  double a_norm = a.norm();
+  assert(a_norm > 1e-9);
+  return p - (a.dot(p) - b)/a_norm/a_norm*a;
+}
+
+double Poly::distRay2ConeFromOutside(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
+    const Eigen::MatrixXd &R) {
+  /**
+   * 1. Project to each facet, check if the projection is in the cone
+   */
+  Eigen::VectorXd proj_on_face;
+  for (int r = 0; r < A.rows(); ++r) {
+    if ((A.middleRows(r, 1)*p)(0) < 0) continue;
+    proj_on_face = projectP2Hyperplane(p, A.middleRows(r, 1).transpose(), 0);
+    if ((A*proj_on_face).maxCoeff() <= 1e-10) {
+      return angBTVec(proj_on_face, p);
+    }
+  }
+  // if not returned yet, the projection is not on any facet
+  /**
+   * 2. Project p to each generator
+   */
+  double min_dist = 999999.9;
+  for (int r = 0; r < R.rows(); ++r) {
+    double ang = angBTVec(R.middleRows(r, 1).transpose(), p);
+    if (ang < min_dist) min_dist = ang;
+  }
+  assert(min_dist < 10);
+  return min_dist;
+}
+
+
+
 bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen::MatrixXd *R) {
   /**
    * cddlib initialization
@@ -173,6 +224,15 @@ bool Poly::facetEnumeration(const Eigen::MatrixXd &R, Eigen::MatrixXd *A, Eigen:
   return true;
 }
 
+bool Poly::coneFacetEnumeration(const Eigen::MatrixXd &M, Eigen::MatrixXd *A) {
+  Eigen::MatrixXd R(M.rows(), M.cols() + 1);
+  R << Eigen::VectorXd::Zero(M.rows()), M;
+  Eigen::VectorXd b;
+  bool success = facetEnumeration(R, A, &b);
+  assert(b.norm() < 1e-10);
+  return success;
+}
+
 bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Eigen::MatrixXd *R) {
   /*
     A = [facetEnumeration(R1); facetEnumeration(R2)];
@@ -196,6 +256,8 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
   facetEnumeration(R2, &A2, &b2);
 
   // stitch
+  // std::cout << "[debug] A1: " << A1.rows() << " x " << A1.cols() << std::endl;
+  // std::cout << "[debug] A2: " << A2.rows() << " x " << A2.cols() << std::endl;
   Eigen::MatrixXd A(A1.rows() + A2.rows(), A1.cols());
   Eigen::VectorXd b(b1.size() + b2.size());
   A << A1, A2;

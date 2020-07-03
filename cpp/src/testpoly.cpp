@@ -8,6 +8,32 @@ Eigen::IOFormat CleanFmt(4, 0, ", ", "\n", "[", "]");
 
 int main(int argc, char *argv[]) {
   std::cout << "############################################\n";
+  std::cout << "    Distance to cone\n";
+  std::cout << "############################################\n";
+  Eigen::VectorXd p(3);
+  p << -1, 0, 2;
+  Eigen::VectorXd plane_a(3);
+  plane_a << 1, 0, 0;
+  double plane_b = 2;
+  Eigen::VectorXd p_proj = Poly::projectP2Hyperplane(p, plane_a, plane_b);
+  std::cout << "p: " << p.transpose() << std::endl;
+  std::cout << "a: " << plane_a.transpose() << std::endl;
+  std::cout << "p_proj: " << p_proj.transpose() << std::endl;
+
+  std::cout << std::endl;
+  p << -1, -1, -1;
+  Eigen::MatrixXd cone_A(3, 3), cone_R(3, 3);
+  cone_A << -1, 0, 0,
+             0, -1, 0,
+             0,  0, -1;
+  cone_R << 1, 0, 0,
+            0, 1, 0,
+            0, 0, 1;
+  std::cout << "p: " << p.transpose() << std::endl;
+  double angle = Poly::distRay2ConeFromOutside(p, cone_A, cone_R);
+  std::cout << "angle: " << angle << std::endl;
+
+  std::cout << "############################################\n";
   std::cout << "    Basic vertex and facet enumeration\n";
   std::cout << "############################################\n";
 
