@@ -52,8 +52,8 @@ target_link_libraries(qhulltest ${qhullLibs})
 add_executable(polytest src/testpoly.cpp)
 target_link_libraries(polytest polylib)
 
-pybind11_add_module(example src/testPybind.cpp)
-target_link_libraries(example PRIVATE sharedgraspinglib)
+pybind11_add_module(wrenchStampingLib src/testPybind.cpp)
+target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib)
 
 add_executable(lutest src/testEigenLU.cpp)
 # add_executable(cddtest src/testcdd.cpp)

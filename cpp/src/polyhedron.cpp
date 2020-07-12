@@ -233,6 +233,14 @@ bool Poly::coneFacetEnumeration(const Eigen::MatrixXd &M, Eigen::MatrixXd *A) {
   return success;
 }
 
+bool Poly::polytopeFacetEnumeration(const Eigen::MatrixXd &M, Eigen::MatrixXd *A,
+    Eigen::VectorXd *b) {
+  Eigen::MatrixXd R(M.rows(), M.cols() + 1);
+  R << Eigen::VectorXd::Ones(M.rows()), M;
+  bool success = facetEnumeration(R, A, b);
+  return success;
+}
+
 bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Eigen::MatrixXd *R) {
   /*
     A = [facetEnumeration(R1); facetEnumeration(R2)];

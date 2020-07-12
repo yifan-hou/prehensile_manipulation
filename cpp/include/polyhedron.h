@@ -1,7 +1,7 @@
 #include <vector>
 #include <Eigen/Dense>
 
-#define KCONVHULL_ROUND 1
+#define KCONVHULL_ROUND 3
 
 namespace Poly {
 
@@ -99,6 +99,20 @@ bool facetEnumeration(const Eigen::MatrixXd &R, Eigen::MatrixXd *A, Eigen::Vecto
  * @return     True if no error occurs.
  */
 bool coneFacetEnumeration(const Eigen::MatrixXd &M, Eigen::MatrixXd *A);
+
+/**
+ * Facet enumeration for a polytope M:
+ *      {y: y = M'*x, 0 <= x <= 1}
+ * Find its inequality representation (A, b):
+ *      {x: A*x <= b},
+ *
+ * @param[in]  M     Each row represents a vertex
+ * @param      A     Pointer of output A, each row represents an inequality.
+ * @param      b     Pointer of output b, each row represents an inequality.
+ *
+ * @return     True if no error occurs.
+ */
+bool polytopeFacetEnumeration(const Eigen::MatrixXd &M, Eigen::MatrixXd *A, Eigen::VectorXd *b);
 
 /**
  * Compute the intersection of two polyhedra. Both input and output variables

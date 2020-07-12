@@ -47,11 +47,8 @@ eh_modes = [];
 margins = [];
 
 eh_cones = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-cone_e = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-cone_h = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 Jacs = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 Jacus = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-Jacues = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 
 eh_cone_feasible_mode_count = 0;
 goal_id = 0;
