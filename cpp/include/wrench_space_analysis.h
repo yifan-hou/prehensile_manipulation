@@ -17,14 +17,14 @@
 //  A, b: additional force constraint
 //  G, b_G: goal velocity description
 //  e_mode_goal, h_mode_goal: a particular goal mode
-void wrenchSpaceAnalysis_2d(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
+double wrenchSpaceAnalysis_2d(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,
     const Eigen::VectorXd &F_G,
     const double kContactForce, const double kFrictionE, const double kFrictionH,
-    const double kCharacteristicLength, const int kNumSlidingPlanes,
+    const double kCharacteristicLength,
     Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
     const Eigen::MatrixXi &e_modes, const Eigen::MatrixXi &h_modes,
-    const Eigen::MatrixXi &e_modes_goal, const Eigen::MatrixXi &h_modes_goal);
+    const Eigen::VectorXi &e_modes_goal, const Eigen::VectorXi &h_modes_goal);
 
 // Geometrical parameters:
 //  Jac_e, Jac_h
@@ -66,6 +66,10 @@ Eigen::MatrixXd getConeOfTheMode_2d(const Eigen::MatrixXd &cone_allFix,
 Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
     const Eigen::VectorXi &sss_mode, int kNumSlidingPlanes);
 
+void getConstraintOfTheMode_2d(
+    const Eigen::MatrixXd &J_e_AF, const Eigen::MatrixXd &J_h_AF,
+    const Eigen::VectorXi &mode_e, const Eigen::VectorXi &mode_h,
+    Eigen::MatrixXd *N, Eigen::MatrixXd *Nu);
 void getConstraintOfTheMode(
     const Eigen::MatrixXd &J_e_AF, const Eigen::MatrixXd &J_h_AF,
     const Eigen::VectorXi &sss_mode_e, const Eigen::VectorXi &sss_mode_h,

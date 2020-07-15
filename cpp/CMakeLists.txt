@@ -52,7 +52,7 @@ target_link_libraries(qhulltest ${qhullLibs})
 add_executable(polytest src/testpoly.cpp)
 target_link_libraries(polytest polylib)
 
-pybind11_add_module(wrenchStampingLib src/testPybind.cpp)
+pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
 target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib)
 
 add_executable(lutest src/testEigenLU.cpp)

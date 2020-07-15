@@ -1,6 +1,7 @@
 #include "polyhedron.h"
 #include "setoper.h"
 #include "cdd.h"
+#include "eiquadprog.hpp"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,6 +69,33 @@ double Poly::distRay2ConeFromOutside(const Eigen::VectorXd &p, const Eigen::Matr
   }
   assert(min_dist < 10);
   return min_dist;
+}
+
+double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
+    const Eigen::VectorXd &b, const Eigen::VectorXd &x0) {
+  // prepare the QP
+  //  min 0.5 * x G0 x + g0 x
+  //  s.t.
+  //     CE^T x + ce0 = 0
+  //     CI^T x + ci0 >= 0
+  // Input:
+  //  min ||x-p||^2
+  //  s.t.
+  //     Ax <= b
+  // Reformulate as:
+  //  min 0.5 * x I x -p^T x
+  //  s.t.
+  //    -A x + b >= 0
+  int kDim = p.rows();
+  // solve the QP
+  Eigen::VectorXd x = x0;
+  Eigen::MatrixXd G0 = Eigen::MatrixXd::Identity(kDim, kDim);
+  Eigen::VectorXd g0 = -p.transpose();
+  double cost = solve_quadprog(G0, g0,
+      Eigen::MatrixXd(kDim, 0), Eigen::VectorXd(0), // no equality constraints
+      -A.transpose(), b, x);
+  std::cout << "Debug: x: " << x.transpose() << std::endl;
+  return (x - p).norm();
 }
 
 
@@ -270,7 +298,6 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
   Eigen::VectorXd b(b1.size() + b2.size());
   A << A1, A2;
   b << b1, b2;
-  vertexEnumeration(A, b, R);
   // get generators back
   return vertexEnumeration(A, b, R);
 }

@@ -163,7 +163,6 @@ for m = 1:eh_cone_feasible_mode_count
     fprintf("=======================\n");
     fprintf("=== Mode Filtering ===\n");
     fprintf("=======================\n");
-
     % How to filter out modes:
     % 1. If NC degenerates, mark this mode as incompatible;
     % 2. If nominal velocity under NC exists, and it cause the contact point to

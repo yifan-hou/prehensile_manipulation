@@ -34,6 +34,24 @@ int main(int argc, char *argv[]) {
   std::cout << "angle: " << angle << std::endl;
 
   std::cout << "############################################\n";
+  std::cout << "    Distance to polyhedron\n";
+  std::cout << "############################################\n";
+  Eigen::VectorXd p2(3);
+  p2 << -1, -1, -1;
+  Eigen::MatrixXd A2(3,3);
+  A2 << 1, 0, 0,
+        0, 1, 0,
+        0, 0, 1;
+  Eigen::VectorXd b2(3);
+  b2 << 0, 0, 0;
+  std::cout << "p: " << p2.transpose() << std::endl;
+  double dist = Poly::distP2Polyhedron(p2, A2, b2, Eigen::VectorXd::Random(3));
+  std::cout << "dist: " << dist << std::endl;
+
+  
+  return 1;
+
+  std::cout << "############################################\n";
   std::cout << "    Basic vertex and facet enumeration\n";
   std::cout << "############################################\n";
 
@@ -301,6 +319,7 @@ int main(int argc, char *argv[]) {
   std::cout << "Minkowski Sum of poly123 and poly4:\n";
   Poly::minkowskiSum(results_123, mink_poly4,  &results_1234);
   std::cout << "rows: " << results_1234.rows() << std::endl;
+
 
 
   std::cout << "\nDone." << std::endl;

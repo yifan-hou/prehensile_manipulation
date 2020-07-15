@@ -203,16 +203,13 @@ Eigen::MatrixXd QRWrapper(const Eigen::MatrixXd &A, Eigen::HouseholderQR<Eigen::
 // todo: test setThreshold() for decompositions
 bool solvehfvc_new(const MatrixXd &N,
   const MatrixXd &G, const VectorXd &b_G,
-  const VectorXd &F,
   const int kDimActualized, const int kDimUnActualized,
-  const int kNumSeeds, const int kPrintLevel,
   HFVC *action) {
   /* Size checking */
   const int kDimGeneralized = kDimActualized + kDimUnActualized;
   assert(N.cols() == kDimGeneralized);
   assert(G.rows() == b_G.rows());
   assert(G.cols() == kDimGeneralized);
-  assert(F.rows() == kDimGeneralized);
   assert(b_G.norm() > TOL);
   Eigen::HouseholderQR<Eigen::MatrixXd> qr;
   Eigen::FullPivLU<MatrixXd> lu;

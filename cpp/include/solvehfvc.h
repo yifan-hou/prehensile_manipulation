@@ -80,7 +80,5 @@ bool solvehfvc(const Eigen::MatrixXd &N,
 
 bool solvehfvc_new(const Eigen::MatrixXd &N,
   const Eigen::MatrixXd &G, const Eigen::VectorXd &b_G,
-  const Eigen::VectorXd &F,
   const int kDimActualized, const int kDimUnActualized,
-  const int kNumSeeds, const int kPrintLevel,
   HFVC *action);

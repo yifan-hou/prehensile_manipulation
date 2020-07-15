@@ -53,6 +53,9 @@ Eigen::VectorXd projectP2Hyperplane(const Eigen::VectorXd &p, const Eigen::Vecto
  */
 double distRay2ConeFromOutside(const Eigen::VectorXd &p, const Eigen::MatrixXd &A, const Eigen::MatrixXd &R);
 
+double distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
+    const Eigen::VectorXd &b, const Eigen::VectorXd &x0);
+
 /**
  * Vertex enumeration. Given a polyhedron (A, b):
  *      {x: A*x <= b},
