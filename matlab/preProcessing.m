@@ -16,7 +16,12 @@ end
         CP_H_h, CN_H_h, adj_WH, adj_HW, kNumSlidingPlanes, kFrictionE, kFrictionH);
 
 % gravity
-z = [0 0 -1]';
-W_G = [z; cross(CP_W_G, z)];
+if (kNumSlidingPlanes == 1)
+    z = [0 -1]';
+    W_G = [z; cross2(CP_W_G', z')];
+else
+    z = [0 0 -1]';
+    W_G = [z; cross(CP_W_G, z)];
+end
 F_G = kObjWeight*(W_G')*adj_WH;
 F_G = F_G'; % reshape to column vector

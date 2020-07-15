@@ -101,7 +101,7 @@ for i = 1:Ne
     if kDim == 3
         c_Wei = [CN', cross(CP_W_e(:,i), CN)'];
     else
-        c_Wei = [CN', cross2(CP_W_e(:,i), CN)'];
+        c_Wei = [CN', cross2(CP_W_e(:,i)', CN')'];
     end
     cadj = c_Wei*adj_WH;
     N_e(i, :) = cadj;
@@ -125,12 +125,14 @@ for i = 1:Ne
         c_Wei = [CXY, cross([1;1]*CP_W_e(:,i)', CXY)];
         eTConei = [CT_e, cross(ones(kNumSlidingPlanes, 1)*CP_W_e(:,i)', CT_e)];
         eConei = [CCone, cross(ones(kEdgesPerContact, 1)*CP_W_e(:,i)', CCone)];
+        T_e(2*(i-1)+1:2*i, :) = c_Wei*adj_WH;
     else
         c_Wei = [CXY, cross2(CP_W_e(:,i)', CXY)];
         eTConei = [CT_e, cross2(CP_W_e(:,i)', CT_e)];
         eConei = [CCone, cross2(ones(kEdgesPerContact, 1)*CP_W_e(:,i)', CCone)];
+        T_e(i, :) = c_Wei*adj_WH;
     end
-    T_e(2*(i-1)+1:2*i, :) = c_Wei*adj_WH;
+    
     eTCone(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = eTConei*adj_WH;
     eCone((kEdgesPerContact)*(i-1)+1:(kEdgesPerContact)*i, :) = eConei*adj_WH;
 end
@@ -147,7 +149,7 @@ for i = 1:Nh
     if kDim == 3
         c_Whi = [CN', cross(CP_H_h(:,i), CN)'];
     else
-        c_Whi = [CN', cross2(CP_H_h(:,i), CN)'];
+        c_Whi = [CN', cross2(CP_H_h(:,i)', CN')'];
     end
     cadj = c_Whi*adj_HW*adj_WH;
     N_h(i, :) = -cadj;
@@ -171,12 +173,14 @@ for i = 1:Nh
         c_Whi = [CXY, cross([1;1]*CP_H_h(:,i)', CXY)];
         hTConei = [CT_h, cross(ones(kNumSlidingPlanes, 1)*CP_H_h(:,i)', CT_h)];
         hConei = [CCone, cross(ones(kEdgesPerContact, 1)*CP_H_h(:,i)', CCone)];
+        T_h(2*(i-1)+1:2*i, :) = -c_Whi*adj_HW*adj_WH;
     else
         c_Whi = [CXY, cross2(CP_H_h(:,i)', CXY)];
         hTConei = [CT_h, cross2(CP_H_h(:,i)', CT_h)];
         hConei = [CCone, cross2(ones(kEdgesPerContact, 1)*CP_H_h(:,i)', CCone)];
+        T_h(i, :) = -c_Whi*adj_HW*adj_WH;
     end
-    T_h(2*(i-1)+1:2*i, :) = -c_Whi*adj_HW*adj_WH;
+    
     hTCone(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = -hTConei*adj_HW*adj_WH;
     hCone((kEdgesPerContact)*(i-1)+1:(kEdgesPerContact)*i, :) = -hConei*adj_HW*adj_WH;
 end

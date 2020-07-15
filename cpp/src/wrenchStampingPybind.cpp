@@ -155,6 +155,6 @@ PYBIND11_MODULE(wrenchStampingLib, m) {
 
     m.def("modeCleaning", &modeCleaning_test, "Test mode cleaning");
     m.def("wrenchSpaceAnalysis", &wrenchSpaceAnalysis_wrapper, "Test mode cleaning");
-    m.def("wrenchSpaceAnalysis2D", &wrenchSpaceAnalysis_2d_wrapper, "Test mode cleaning");
+    m.def("wrenchSpaceAnalysis_2d", &wrenchSpaceAnalysis_2d_wrapper, "Test mode cleaning");
 }
 
