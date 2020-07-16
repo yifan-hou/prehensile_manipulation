@@ -23,6 +23,8 @@ INCLUDE_DIRECTORIES(${qhullDir}/src)
 LINK_DIRECTORIES(${qhullDir}/build)
 SET(qhullLibs qhullcpp qhull_r)
 
+# Robot utilities
+find_library(RobotUtilLib Utilities HINTS /usr/local/lib/RobotUtilities)
 
 
 
@@ -38,7 +40,7 @@ add_library(timer src/timer.cpp)
 add_library(hfvc src/solvehfvc.cpp)
 
 add_library(polylib src/polyhedron.cpp)
-target_link_libraries(polylib ${CDDLIB} ${qhullLibs})
+target_link_libraries(polylib ${CDDLIB} ${qhullLibs} ${RobotUtilLib})
 
 add_library(sharedgraspinglib src/wrench_space_analysis.cpp)
 target_link_libraries(sharedgraspinglib polylib timer hfvc)

@@ -14,6 +14,7 @@ addpath ../utilities/
 kFrictionH = 0.7;
 kFrictionE = 0.3;
 kForceMagnitude = 15;
+kObjWeight = 10; % newton
 
 %%
 %% Geometrical Problem definition
@@ -53,8 +54,8 @@ p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad)]/2 + kH*[-sin(angle_rad); cos
 %% Geometrical Pre-processing
 %%
 kNumSlidingPlanes = 1; % for 2D problem
-[J_e, J_h, T_e, T_h, eCone_allFix, hCone_allFix] = preProcessing(...
-        kFrictionE, kFrictionH, kNumSlidingPlanes, CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH);
+[J_e, T_e, J_h, T_h, eCone_allFix,eTCone_allFix, hCone_allFix, hTCone_allFix, F_G] = preProcessing(...
+        kFrictionE, kFrictionH, kNumSlidingPlanes, kObjWeight, CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH,p_W_G);
 
 % mode enumeration
 [e_modes, h_modes] = sharedGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h);
@@ -121,7 +122,6 @@ toc
 %         CP_W_e(1:2,:), CN_W_e(1:2,:), CP_H_h(1:2,:), CN_H_h(1:2,:), R_WH(1:2,1:2), p_WH(1:2), e_mode, h_mode);
 %
 %
-% kObjWeight = 10; % newton
 % kContactForce = 30;
 % tic
 % for i = 1:10

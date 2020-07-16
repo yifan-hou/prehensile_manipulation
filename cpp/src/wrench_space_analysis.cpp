@@ -27,22 +27,22 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     const MatrixXi &e_modes, const MatrixXi &h_modes,
     const VectorXi &e_mode_goal, const VectorXi &h_mode_goal) {
   std::cout << "[wrenchSpaceAnalysis_2d] Calling..\n";
-  std::cout << "Jac_e: " << Jac_e << std::endl;
-  std::cout << "Jac_h: " << Jac_h << std::endl;
-  std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
-  std::cout << "hCone_allFix_r: " << hCone_allFix_r << std::endl;
-  std::cout << "F_G: " << F_G << std::endl;
-  std::cout << "kContactForce: " << kContactForce << std::endl;
-  std::cout << "kFrictionE: " << kFrictionE << std::endl;
-  std::cout << "kFrictionH: " << kFrictionH << std::endl;
-  std::cout << "kCharacteristicLength: " << kCharacteristicLength << std::endl;
-  std::cout << "G: " << G << std::endl;
-  std::cout << "b_G: " << b_G << std::endl;
-  std::cout << "e_modes: " << e_modes << std::endl;
-  std::cout << "h_modes: " << h_modes << std::endl;
-  std::cout << "e_mode_goal: " << e_mode_goal << std::endl;
-  std::cout << "h_mode_goal: " << h_mode_goal << std::endl;
-  getchar();
+  // std::cout << "Jac_e: " << Jac_e << std::endl;
+  // std::cout << "Jac_h: " << Jac_h << std::endl;
+  // std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
+  // std::cout << "hCone_allFix_r: " << hCone_allFix_r << std::endl;
+  // std::cout << "F_G: " << F_G << std::endl;
+  // std::cout << "kContactForce: " << kContactForce << std::endl;
+  // std::cout << "kFrictionE: " << kFrictionE << std::endl;
+  // std::cout << "kFrictionH: " << kFrictionH << std::endl;
+  // std::cout << "kCharacteristicLength: " << kCharacteristicLength << std::endl;
+  // std::cout << "G: " << G << std::endl;
+  // std::cout << "b_G: " << b_G << std::endl;
+  // std::cout << "e_modes: " << e_modes << std::endl;
+  // std::cout << "h_modes: " << h_modes << std::endl;
+  // std::cout << "e_mode_goal: " << e_mode_goal << std::endl;
+  // std::cout << "h_mode_goal: " << h_mode_goal << std::endl;
+  // getchar();
   Timer timer;
   timer.tic();
 
@@ -132,8 +132,9 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   MatrixXd N, Nu;
   for (int ii = 0; ii < e_modes.rows(); ++ii) {
     e_mode_ii = e_modes.middleRows(ii, 1).transpose();
-    e_cone_ii = getConeOfTheMode_2d(eCone_allFix_r, e_mode_ii);
+    e_cone_ii = kContactForce * getConeOfTheMode_2d(eCone_allFix_r, e_mode_ii);
     Poly::minkowskiSumOfVectors(e_cone_ii, &e_polytope_ii);
+
     // gravity offset
     Poly::offsetPolytope(&e_polytope_ii, F_G);
 
@@ -149,12 +150,20 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
     for (int jj = 0; jj < h_modes.rows(); ++jj) {
       h_mode_jj = h_modes.middleRows(jj, 1).transpose();
-      h_cone_jj = getConeOfTheMode_2d(hCone_allFix_r, h_mode_jj);
+      h_cone_jj = - kContactForce * getConeOfTheMode_2d(hCone_allFix_r, h_mode_jj);
       Poly::minkowskiSumOfVectors(h_cone_jj, &h_polytope_jj);
+
+      std::cout << "  ii:" << ii << ", jj:" << jj << ", e mode:" << e_mode_ii.transpose() << ", h mode:" << h_mode_jj.transpose();
+      // std::cout << "e_cone_ii:\n" << e_cone_ii << "\nh_cone_jj:\n" << h_cone_jj << std::endl;
 
       Poly::minkowskiSum(e_polytope_ii, h_polytope_jj, &polytope_ij);
       Poly::polytopeFacetEnumeration(polytope_ij, &polytope_ij_A, &polytope_ij_b);
-      if (polytope_ij_b.minCoeff() <= 1e-5 ) continue;
+
+
+      if (polytope_ij_b.minCoeff() <= 1e-5 ) {
+        std::cout << " F-Infeasible." << std::endl;
+        continue;
+      }
       // The cone is non-empty.
       // compute the stability margin
       // margin = min(b./normByRow(A));
@@ -165,6 +174,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
         double margin_new = polytope_ij_b(i)/A_row_norm;
         if (margin_new < margin) margin = margin_new;
       }
+      std::cout << " margin: " << margin;
 
       // check if this is a goal mode
       if (flag_given_goal_mode && is_goal_e) {
@@ -175,8 +185,12 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
             break;
           }
         }
-        if (is_goal_h) goal_id = margins.size();
+        if (is_goal_h) {
+          std::cout << " (Goal)";
+          goal_id = margins.size();
+        }
       }
+      std::cout << std::endl;
 
       // store the results
       margins.push_back(margin);

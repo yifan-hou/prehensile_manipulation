@@ -2,6 +2,7 @@
 #include "setoper.h"
 #include "cdd.h"
 #include "eiquadprog.hpp"
+#include "RobotUtilities/utilities.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -339,22 +340,14 @@ Eigen::MatrixXd Poly::convhull(const Eigen::MatrixXd &points) {
   int num_points = points.rows();
   int dim = points.cols();
   // check dimensions
-  Eigen::FullPivLU<Eigen::MatrixXd> lu_decomp(points.transpose());
-  // lu_decomp.setThreshold(LU_THRESHOLD);
-
-  int rank = lu_decomp.rank();
+  Eigen::MatrixXd points_reduced = points;
+  int rank = RUT::rowSpace(&points_reduced);
+  Eigen::MatrixXd basis = points_reduced.topRows(rank).transpose();
 
   Eigen::MatrixXd data;
-  Eigen::MatrixXd basis;
   if (rank == dim) {
     data = points.transpose();
   } else {
-    // lu_decomp.image(points): its columns form a basis of the column-space of points'
-    basis = lu_decomp.image(points.transpose());
-    for (int i = 0; i < basis.cols(); i++) {
-        float bck_col_norm = basis.col(i).norm();
-        basis.col(i) /= bck_col_norm;
-    }
     data = (points * basis).transpose();
   }
   Qhull q("triangle", rank, num_points, data.data(), "");
@@ -364,9 +357,9 @@ Eigen::MatrixXd Poly::convhull(const Eigen::MatrixXd &points) {
   Eigen::MatrixXd results(num_points_on_hull, rank);
   int row = 0;
   for (QhullVertexListIterator i = vertices; i.hasNext(); ) {
-    double *data = i.next().point().coordinates();
+    double *result = i.next().point().coordinates();
     for (int j = 0; j < rank; ++j)
-      results(row, j) = data[j];
+      results(row, j) = result[j];
     row ++;
   }
   if (rank == dim) return results;
@@ -378,7 +371,6 @@ bool Poly::convhull(const std::vector<double> &vectors, int dim, int num,
   Eigen::MatrixXd vec_mat(dim, num);
   vec_mat = Eigen::MatrixXd::Map(vectors.data(), vec_mat.rows(), vec_mat.cols()).transpose();
   Eigen::MatrixXd result_eigen = convhull(vec_mat);
-
   results->resize(result_eigen.rows()*dim);
   for (int i = 0; i < result_eigen.rows(); ++i)
     for (int j = 0; j < dim; ++j) (*results)[i*dim + j] = result_eigen(i, j);
@@ -413,7 +405,7 @@ bool Poly::minkowskiSumOfVectors(const Eigen::MatrixXd &vectors, Eigen::MatrixXd
      * add the new vector vectors(vid, :) to msum
      */
     int msum_num_now = msum.size()/dim;
-    std::cout << "msum_num_now: " << msum_num_now << std::endl;
+    // std::cout << "msum_num_now: " << msum_num_now << std::endl;
     // self copy
     msum.insert(msum.end(), msum.begin(), msum.end());
     // add the new vector to the copy
@@ -424,11 +416,9 @@ bool Poly::minkowskiSumOfVectors(const Eigen::MatrixXd &vectors, Eigen::MatrixXd
      * Call convhull to reduce dimension
      */
     if (vid % KCONVHULL_ROUND == 0) {
-
-      std::cout << "calling convhull:\n ";
       convhull(msum, dim, 2*msum_num_now, &temp);
-      std::cout << "call convhull, " << 2*msum_num_now << " to " << temp.size()/dim << std::endl;
       msum = temp;
+      // std::cout << "call convhull, " << 2*msum_num_now << " to " << temp.size()/dim << std::endl;
     }
   }
   // Call Convhull one last time

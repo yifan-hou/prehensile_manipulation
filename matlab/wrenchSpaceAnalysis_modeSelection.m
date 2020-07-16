@@ -79,11 +79,11 @@ for i = 1:size(e_modes, 2)
         % compute velocity Jacobian
         [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Normal_e, Normal_h, Tangent_e, Tangent_h);
 
-        % figure(1);clf(1);hold on;
+        figure(1);clf(1);hold on;
         % printModes([e_modes(:, i); h_modes(:, j)]);
         % fprintf('Margin: %f\n', margin_);
-        % drawCone(Je_','g', true);
-        % drawCone(Jh_','b', true);
+        drawCone(Je_','g', true);
+        drawCone(Jh_','b', true);
 
         eh_modes = [eh_modes [e_modes(:, i); h_modes(:, j)]];
         margins = [margins margin_];
