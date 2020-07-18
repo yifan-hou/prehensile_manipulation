@@ -95,10 +95,64 @@ double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A
   double cost = solve_quadprog(G0, g0,
       Eigen::MatrixXd(kDim, 0), Eigen::VectorXd(0), // no equality constraints
       -A.transpose(), b, x);
-  std::cout << "Debug: x: " << x.transpose() << std::endl;
+  // std::cout << "Debug: x: " << x.transpose() << std::endl;
   return (x - p).norm();
 }
 
+Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
+    const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard, int runup) {
+  // https://www.mathworks.com/matlabcentral/fileexchange/34208-uniform-distribution-over-a-convex-polytope
+  int dim = x0.rows();
+  Eigen::MatrixXd X = Eigen::MatrixXd::Zero(N+runup+discard, dim);
+
+  int n = 0; // num generated so far
+  Eigen::VectorXd x = x0;
+  Eigen::VectorXd M = Eigen::VectorXd::Zero(dim); // Incremental mean.
+  Eigen::VectorXd u; // direction
+  Eigen::VectorXd v, z, c; // temp
+  while (n < N+runup+discard) {
+      // test whether in runup or not
+      if (n < runup) {
+        // same as hitandrun
+        u = Eigen::VectorXd::Random(dim).normalized();
+      } else {
+        // choose a previous point at random
+        v = X.middleRows(RUT::randi(n), 1).transpose();
+        // line sampling direction is from v to sample mean
+        u = (v-M).normalized();
+      }
+      // proceed as in hit and run
+      z = A*u;
+      c = (b - A*x).cwiseQuotient(z);
+      // std::cout << "\n(b-Ax) " << (b - A*x).transpose() << std::endl;
+      // std::cout << "z " << z.transpose() << std::endl;
+      // std::cout << "c " << c.transpose() << std::endl;
+
+      // tmin = max(c(z<0));
+      // tmax = min(c(z>0));
+      double tmin = 99999999, tmax = - 99999999;
+      for (int i = 0; i < z.rows(); ++i) {
+        if (z(i) > 0) {
+          if (c(i) < tmin) tmin = c(i);
+        } else {
+          if (c(i) > tmax) tmax = c(i);
+        }
+      }
+      // Choose a random point on that line segment
+      double distance = tmin+(tmax-tmin)*RUT::rand();
+      // std::cout << "debug: tmin: " << tmin << ", tmax: " << tmax  << ", distance: " << distance << std::endl;
+      // std::cout << "debug: x: " << x.transpose() << std::endl;
+      // Eigen::VectorXd tempresult = A*x - b;
+      // if (tempresult.maxCoeff() > 0) std::cout << "debug: INFEASIBLE!!!!!!!! x0 out of polytope!!" << std::endl;
+      x = x + distance*u;
+      X.middleRows(n,1) = x.transpose();
+      n++;
+
+      // Incremental mean and covariance updates
+      M = M + (x - M)/n;     // sample mean
+  }
+  return X.bottomRows(N);
+}
 
 
 bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen::MatrixXd *R) {
@@ -327,6 +381,33 @@ bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2
 
   return true;
 }
+
+bool Poly::polytopeIntersection(const Eigen::MatrixXd &P1, const Eigen::MatrixXd &P2, Eigen::MatrixXd *P) {
+  if ((P1.rows() == 0) || (P2.rows() == 0)) {
+    *P = Eigen::MatrixXd(0, 0);
+    return true;
+  }
+  if ((P1.cols() == 0) || (P2.cols() == 0)) {
+    std::cerr << "[polytopeIntersection] error: input has zero cols." << std::endl;
+    assert(0);
+    return false;
+  }
+  Eigen::MatrixXd R1(P1.rows(), P1.cols() + 1);
+  Eigen::MatrixXd R2(P2.rows(), P2.cols() + 1);
+  R1 << Eigen::VectorXd::Ones(P1.rows()), P1;
+  R2 << Eigen::VectorXd::Ones(P2.rows()), P2;
+
+  Eigen::MatrixXd R;
+  if (!intersection(R1, R2, &R)) return false;
+  *P = R.rightCols(R.cols()-1);
+  if (P->norm() > 1e-10)
+    assert((R.leftCols<1>() - Eigen::VectorXd::Ones(R.rows())).norm() < 1e-10);
+  else
+    *P = Eigen::MatrixXd(0, 0);
+
+  return true;
+}
+
 
 bool Poly::offsetPolytope(Eigen::MatrixXd *polytope, const Eigen::VectorXd &offset) {
   assert(offset.size() == polytope->cols());

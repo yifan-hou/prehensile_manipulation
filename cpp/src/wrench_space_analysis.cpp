@@ -126,9 +126,10 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
   VectorXi e_mode_ii, h_mode_jj;
   MatrixXd e_cone_ii, e_polytope_ii, h_cone_jj, h_polytope_jj;
-  MatrixXd polytope_ij;
-  MatrixXd polytope_ij_A;
-  VectorXd polytope_ij_b;
+  MatrixXd polytope_ij_sum;
+  MatrixXd polytope_ij_minus;
+  MatrixXd polytope_ij_sum_A;
+  VectorXd polytope_ij_sum_b;
   MatrixXd N, Nu;
   for (int ii = 0; ii < e_modes.rows(); ++ii) {
     e_mode_ii = e_modes.middleRows(ii, 1).transpose();
@@ -156,11 +157,11 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       std::cout << "  ii:" << ii << ", jj:" << jj << ", e mode:" << e_mode_ii.transpose() << ", h mode:" << h_mode_jj.transpose();
       // std::cout << "e_cone_ii:\n" << e_cone_ii << "\nh_cone_jj:\n" << h_cone_jj << std::endl;
 
-      Poly::minkowskiSum(e_polytope_ii, h_polytope_jj, &polytope_ij);
-      Poly::polytopeFacetEnumeration(polytope_ij, &polytope_ij_A, &polytope_ij_b);
+      Poly::minkowskiSum(e_polytope_ii, h_polytope_jj, &polytope_ij_sum);
+      Poly::polytopeFacetEnumeration(polytope_ij_sum, &polytope_ij_sum_A, &polytope_ij_sum_b);
 
 
-      if (polytope_ij_b.minCoeff() <= 1e-5 ) {
+      if (polytope_ij_sum_b.minCoeff() <= 1e-5 ) {
         std::cout << " F-Infeasible." << std::endl;
         continue;
       }
@@ -168,13 +169,16 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       // compute the stability margin
       // margin = min(b./normByRow(A));
       double margin = 9999;
-      for (int i = 0; i < polytope_ij_b.rows(); ++i) {
-        double A_row_norm = polytope_ij_A.middleRows(i, 1).norm();
+      for (int i = 0; i < polytope_ij_sum_b.rows(); ++i) {
+        double A_row_norm = polytope_ij_sum_A.middleRows(i, 1).norm();
         assert(A_row_norm > 1e-7);
-        double margin_new = polytope_ij_b(i)/A_row_norm;
+        double margin_new = polytope_ij_sum_b(i)/A_row_norm;
         if (margin_new < margin) margin = margin_new;
       }
       std::cout << " margin: " << margin;
+
+      // compute the polytope of the mode (intersection, not minkowski sum)
+      Poly::polytopeIntersection(e_polytope_ii, h_polytope_jj, &polytope_ij_minus);
 
       // check if this is a goal mode
       if (flag_given_goal_mode && is_goal_e) {
@@ -194,7 +198,8 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
       // store the results
       margins.push_back(margin);
-      polytope_of_the_modes.push_back(polytope_ij);
+      polytope_of_the_modes.push_back(polytope_ij_sum);
+      // polytope_of_the_modes.push_back(polytope_ij_minus);
 
       getConstraintOfTheMode_2d(Jac_e, Jac_h, e_mode_ii, h_mode_jj, &N, &Nu);
 
@@ -277,9 +282,11 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
   std::cout << "[WrenchStamping] 4. Compute force control and control-stability-margin." << std::endl;
   std::vector<MatrixXd> polytopes_projection_r;
-  MatrixXd polytope_projection_goal_r;
   std::vector<MatrixXd> pps_A; // A x <= b
   std::vector<VectorXd> pps_b; // A x <= b
+  MatrixXd pp_goal_A;
+  VectorXd pp_goal_b;
+  VectorXd pp_goal_point; // an inner point
   MatrixXd polytope_projection, pp_A;
   VectorXd pp_b;
   std::cout << "[WrenchStamping]  4.1 Compute the projection of the polytopes." << std::endl;
@@ -287,7 +294,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     std::cout << "[WrenchStamping]    Polytope " << c << ": " << eh_modes[feasible_ids[c]].transpose() << ": ";
     // projection
     polytope_projection = polytope_of_the_modes[feasible_ids[c]] * F_control_directions_r.transpose();
-    polytope_projection.rowwise().normalize();
     // get the inequality representations for the cone projections
     if(!Poly::polytopeFacetEnumeration(polytope_projection, &pp_A, &pp_b)) {
       std::cerr << "Error: polytopeFacetEnumeration return error." << std::endl;
@@ -296,35 +302,49 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     }
     std::cout << polytope_projection.rows() << " vertices.";
 
+    // std::cout << "F_control_directions_r:\n" << F_control_directions_r << std::endl;
+    // std::cout << "polytope_of_the_modes[feasible_ids[c]]:\n" << polytope_of_the_modes[feasible_ids[c]] << std::endl;
+    // std::cout << "polytope_projection:\n" << polytope_projection << std::endl;
+    // std::cout << " A rows: " << pp_A.rows() << std::endl;
+    // getchar();
+    // return -1;
+
     if (goal_id == feasible_ids[c]) {
-      std::cout << " (id: Goal)" << std::endl;
-      polytope_projection_goal_r = polytope_projection;
+      std::cout << " (id: Goal) ";
+      pp_goal_A = pp_A;
+      pp_goal_b = pp_b;
+      std::cout <<  "pp_goal_A:\n" << pp_goal_A << std::endl;
+      std::cout <<  "pp_goal_b:\n" << pp_goal_b << std::endl;
+      pp_goal_point = (MatrixXd::Ones(1, polytope_projection.rows()) * polytope_projection).transpose() / polytope_projection.rows();
+      assert(("Assertion fail: goal polytope projection is empty", polytope_projection.norm() > 1e-5));
+      assert(("Assertion fail: goal polytope projection degenerates", polytope_projection.rows() >= action.n_af)); // ideally we should check its rank
     } else {
       polytopes_projection_r.push_back(polytope_projection);
       pps_A.push_back(pp_A);
       pps_b.push_back(pp_b);
-      std::cout << " (id:" << pps_A.size() - 1 << ") ";;
-      std::cout << " A rows: " << pp_A.rows() << std::endl;
+      std::cout << " (id:" << pps_A.size() - 1 << ") ";
     }
+    std::cout << " A rows: " << pp_A.rows() << std::endl;
   }
-  assert(("Assertion fail: goal polytope projection is empty", polytope_projection_goal_r.norm() > 1e-5));
-  assert(("Assertion fail: goal polytope projection degenerates", polytope_projection_goal_r.rows() >= action.n_af)); // ideally we should check its rank
 
   std::cout << "[WrenchStamping]  4.2 Sample wrenches and find feasible ones." << std::endl;
   // sample wrenches in the projection of the goal polytope
-  int ng = polytope_projection_goal_r.rows();
   int ns = 0;
   if (action.n_af == 1) ns = 5;
-  else if (action.n_af == 2) ns = 10;
-  else ns = 20;
-  MatrixXd rand_weights = MatrixXd::Random(ns, ng) + MatrixXd::Ones(ns, ng);
-  VectorXd rand_weights_row_sum = rand_weights.rowwise().sum();
+  else if (action.n_af == 2) ns = 20;
+  else ns = 50;
+
+  int discard = 10;
+  int runup = 20;
+  MatrixXd wrench_samples = Poly::hitAndRunSampleInPolytope(pp_goal_A, pp_goal_b,
+      pp_goal_point, ns, discard, runup);
+
   VectorXd wrench_sample, wrench_best;
   double control_stability_margin = -1;
   for (int s = 0; s < ns; ++s) { // make sure they sum to one
     // create the sample
-    rand_weights.middleRows(s, 1) /= rand_weights_row_sum(s);
-    wrench_sample = (rand_weights.middleRows(s, 1) * polytope_projection_goal_r).normalized().transpose();
+    wrench_sample = wrench_samples.middleRows(s, 1).transpose();
+    std::cout << "wrench_sample: " << wrench_sample.transpose() << std::endl;
     std::cout << "[WrenchStamping]    Sample #" << s << ": ";
     // check if the sample is within any other polytopes
     bool infeasible_sample = false;
@@ -767,7 +787,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         }
         // projection
         cone_projection = cone_of_the_mode * F_control_directions_r.transpose();
-        cone_projection.rowwise().normalize();
+        // cone_projection.rowwise().normalize();
         // get the inequality representations for the cone projections
         if(!Poly::coneFacetEnumeration(cone_projection, &cp_A_temp)) {
           std::cerr << "coneFacetEnumeration return error." << std::endl;

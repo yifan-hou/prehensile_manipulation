@@ -57,6 +57,20 @@ double distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
     const Eigen::VectorXd &b, const Eigen::VectorXd &x0);
 
 /**
+ * Hit and Run sampling in a polytope. It converges to a uniform sampling
+ *
+ * @param[in]  A        Polytope description, Ax <= b.
+ * @param[in]  b        Polytope description, Ax <= b.
+ * @param[in]  x0       A point inside of the polytope
+ * @param[in]  No       Number of samples to output.
+ * @param[in]  discard  The number of first discard samples are discarded
+ *
+ * @return     { Return the samples }
+ */
+Eigen::MatrixXd hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
+        const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard = 10, int runup = 10);
+
+/**
  * Vertex enumeration. Given a polyhedron (A, b):
  *      {x: A*x <= b},
  * Find its generator representation R = [m M]:
@@ -139,6 +153,15 @@ bool intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Eigen::M
  * @return     True if no error occurs.
  */
 bool coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2, Eigen::MatrixXd *C);
+/**
+ * Compute the intersection of two polytopes. Both input and output
+ * variables are generator representations: P
+ *      {y: y = P'*x, x \in (0, 1)}
+ *
+ * @return     True if no error occurs.
+ */
+bool polytopeIntersection(const Eigen::MatrixXd &P1, const Eigen::MatrixXd &P2, Eigen::MatrixXd *P);
+
 
 /**
  * Offset a polytope by a vector.
