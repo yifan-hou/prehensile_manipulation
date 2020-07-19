@@ -383,22 +383,30 @@ bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2
 }
 
 bool Poly::polytopeIntersection(const Eigen::MatrixXd &P1, const Eigen::MatrixXd &P2, Eigen::MatrixXd *P) {
+  // std::cout << "[polytopeIntersection] debug 1" << std::endl;
+  // std::cout << "[polytopeIntersection] P1\n" << P1 << std::endl;
+  // std::cout << "[polytopeIntersection] P2\n" << P2 << std::endl;
   if ((P1.rows() == 0) || (P2.rows() == 0)) {
     *P = Eigen::MatrixXd(0, 0);
     return true;
   }
+  // std::cout << "[polytopeIntersection] debug 2" << std::endl;
   if ((P1.cols() == 0) || (P2.cols() == 0)) {
     std::cerr << "[polytopeIntersection] error: input has zero cols." << std::endl;
     assert(0);
     return false;
   }
+  // std::cout << "[polytopeIntersection] debug 3" << std::endl;
   Eigen::MatrixXd R1(P1.rows(), P1.cols() + 1);
   Eigen::MatrixXd R2(P2.rows(), P2.cols() + 1);
   R1 << Eigen::VectorXd::Ones(P1.rows()), P1;
   R2 << Eigen::VectorXd::Ones(P2.rows()), P2;
 
+  // std::cout << "[polytopeIntersection] R1\n" << R1 << std::endl;
+  // std::cout << "[polytopeIntersection] R2\n" << R2 << std::endl;
   Eigen::MatrixXd R;
   if (!intersection(R1, R2, &R)) return false;
+  // std::cout << "[polytopeIntersection] R\n" << R << std::endl;
   *P = R.rightCols(R.cols()-1);
   if (P->norm() > 1e-10)
     assert((R.leftCols<1>() - Eigen::VectorXd::Ones(R.rows())).norm() < 1e-10);

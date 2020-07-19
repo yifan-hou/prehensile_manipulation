@@ -178,7 +178,10 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       std::cout << " margin: " << margin;
 
       // compute the polytope of the mode (intersection, not minkowski sum)
-      Poly::polytopeIntersection(e_polytope_ii, h_polytope_jj, &polytope_ij_minus);
+      if (!Poly::polytopeIntersection(e_polytope_ii, -h_polytope_jj, &polytope_ij_minus)) {
+        std::cerr << "Intersection is not found!!\n";
+        return -1;
+      }
 
       // check if this is a goal mode
       if (flag_given_goal_mode && is_goal_e) {
@@ -198,8 +201,12 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
       // store the results
       margins.push_back(margin);
-      polytope_of_the_modes.push_back(polytope_ij_sum);
-      // polytope_of_the_modes.push_back(polytope_ij_minus);
+      // polytope_of_the_modes.push_back(polytope_ij_sum);
+      polytope_of_the_modes.push_back(polytope_ij_minus);
+      // std::cout << "debug: margin: " << margin << std::endl;
+      // std::cout << "debug: polytope_ij_minus: " << polytope_ij_minus << std::endl;
+      // getchar();
+      // return 1;
 
       getConstraintOfTheMode_2d(Jac_e, Jac_h, e_mode_ii, h_mode_jj, &N, &Nu);
 
@@ -293,6 +300,9 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   for (int c = 0; c < feasible_ids.size(); ++c) {
     std::cout << "[WrenchStamping]    Polytope " << c << ": " << eh_modes[feasible_ids[c]].transpose() << ": ";
     // projection
+    std::cout << "[debug] c: " << c << ", feasible_ids[c]: " << feasible_ids[c] << std::endl;
+    std::cout << "[debug] polytope_of_the_modes:\n" << polytope_of_the_modes[feasible_ids[c]] << std::endl;
+    std::cout << "[debug] F_control_directions_r:\n" << F_control_directions_r << std::endl;
     polytope_projection = polytope_of_the_modes[feasible_ids[c]] * F_control_directions_r.transpose();
     // get the inequality representations for the cone projections
     if(!Poly::polytopeFacetEnumeration(polytope_projection, &pp_A, &pp_b)) {
@@ -313,8 +323,8 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       std::cout << " (id: Goal) ";
       pp_goal_A = pp_A;
       pp_goal_b = pp_b;
-      std::cout <<  "pp_goal_A:\n" << pp_goal_A << std::endl;
-      std::cout <<  "pp_goal_b:\n" << pp_goal_b << std::endl;
+      // std::cout <<  "pp_goal_A:\n" << pp_goal_A << std::endl;
+      // std::cout <<  "pp_goal_b:\n" << pp_goal_b << std::endl;
       pp_goal_point = (MatrixXd::Ones(1, polytope_projection.rows()) * polytope_projection).transpose() / polytope_projection.rows();
       assert(("Assertion fail: goal polytope projection is empty", polytope_projection.norm() > 1e-5));
       assert(("Assertion fail: goal polytope projection degenerates", polytope_projection.rows() >= action.n_af)); // ideally we should check its rank
@@ -335,7 +345,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   else ns = 50;
 
   int discard = 10;
-  int runup = 20;
+  int runup = 10;
   MatrixXd wrench_samples = Poly::hitAndRunSampleInPolytope(pp_goal_A, pp_goal_b,
       pp_goal_point, ns, discard, runup);
 
@@ -344,7 +354,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   for (int s = 0; s < ns; ++s) { // make sure they sum to one
     // create the sample
     wrench_sample = wrench_samples.middleRows(s, 1).transpose();
-    std::cout << "wrench_sample: " << wrench_sample.transpose() << std::endl;
+    // std::cout << "wrench_sample: " << wrench_sample.transpose() << std::endl;
     std::cout << "[WrenchStamping]    Sample #" << s << ": ";
     // check if the sample is within any other polytopes
     bool infeasible_sample = false;
@@ -381,6 +391,18 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   // scale back so the control constraints work on normal units
   action.R_a.topRows(action.n_af) = action.R_a.topRows(action.n_af) * Kf;
   action.R_a.bottomRows(action.n_av) = action.R_a.bottomRows(action.n_av) * Kv;
+  // print the results
+  Eigen::MatrixXd R_a_inv = action.R_a.inverse();
+  Eigen::VectorXd V = Eigen::VectorXd::Zero(kDimActualized);
+  V.tail(action.n_av) = action.w_av;
+  Eigen::VectorXd V_T = R_a_inv*V;
+  Eigen::VectorXd F = Eigen::VectorXd::Zero(kDimActualized);
+  F.head(action.n_af) = action.eta_af;
+  Eigen::VectorXd F_T = R_a_inv*F;
+  std::cout << " 5. Results:" << std::endl;
+  std::cout << "   R_a:\n" << action.R_a << std::endl;
+  std::cout << "   V_T:" << V_T.transpose() << std::endl;
+  std::cout << "   F_T:" << F_T.transpose() << std::endl;
   return control_stability_margin;
 }
 
