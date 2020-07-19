@@ -45,6 +45,11 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   // getchar();
   Timer timer;
   timer.tic();
+  double time_stats_initialization;
+  double time_stats_force_margin;
+  double time_stats_hybrid_servoing;
+  double time_stats_crashing_check;
+  double time_stats_velocity_loops;
 
   bool flag_given_goal_velocity = false;
   if (b_G.size() > 0) flag_given_goal_velocity = true;
@@ -64,15 +69,17 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   //    N*V=0 -> N*Kv_inv*V_scaled = 0, so  N_scaled = N*Kv_inv
   //    J'*tau=f -> J'*tau = Kf_inv*f_scaled -> (J*Kf)'*tau = f_scaled, so  J_scaled = J*Kf
   // For hfvc computed in scaled space, we have
-  //    Rv_scaled*V_scaled = omega_scaled
-  //    Rf_scaled*f_scaled = eta_scaled
-  // We can transform these back to constraints on v, f:
-  //    Rv_scaled*Kv*V = omega_scaled
-  //    Rf_scaled*Kf*f = eta_scaled
+  //    R_scaled*V_scaled = omega_scaled
+  //    R_scaled^T*eta_scaled = f_scaled
+  // To retrieve the control, transform these back to constraints on v, f:
+  //    R_scaled*Kv*V = omega_scaled
+  //    R_scaled^T*eta_scaled = Kf*f -> (R_scaled*Kf_inv)^T * eta_scaled = f
+  //        ->  (R_scaled*Kf_inv*K)^T * eta_scaled/K = f
+  // Note R_scaled*Kf_inv*K = R_scaled*Kv, so the two agrees
   // So, in our output,
-  //    Rv = Rv_scaled*Kv,   omega = omega_scaled
-  //    Rf = Rf_scaled*Kf,   eta = eta_scaled
-  // And R = [Rv; Rf]
+  //    R = R_scaled*Kv
+  //    omega = omega_scaled
+  //    eta = eta_scaled/K
   Vector3d kv_vec, kv_inv_vec, kf_vec;
   double scale = 1./kCharacteristicLength;
   kv_vec << scale, scale, 1;
@@ -112,6 +119,8 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   Nt << Jac_e.bottomRows(kNumEContacts), Eigen::MatrixXd::Zero(kNumEContacts, kDim),
         -Jac_h.bottomRows(kNumHContacts), Jac_h.bottomRows(kNumHContacts);
 
+  time_stats_initialization = timer.toc();
+  timer.tic();
   /**
    * Filter out modes with empty Wrench Cones
    * Compute geometrical stability margin
@@ -123,6 +132,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   std::vector<MatrixXd> N_of_the_modes;
   std::vector<MatrixXd> Nu_of_the_modes;
   int goal_id = -1;
+  double geometrical_stability_margin = 0;
 
   VectorXi e_mode_ii, h_mode_jj;
   MatrixXd e_cone_ii, e_polytope_ii, h_cone_jj, h_polytope_jj;
@@ -155,7 +165,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       Poly::minkowskiSumOfVectors(h_cone_jj, &h_polytope_jj);
 
       std::cout << "  ii:" << ii << ", jj:" << jj << ", e mode:" << e_mode_ii.transpose() << ", h mode:" << h_mode_jj.transpose();
-      // std::cout << "e_cone_ii:\n" << e_cone_ii << "\nh_cone_jj:\n" << h_cone_jj << std::endl;
 
       Poly::minkowskiSum(e_polytope_ii, h_polytope_jj, &polytope_ij_sum);
       Poly::polytopeFacetEnumeration(polytope_ij_sum, &polytope_ij_sum_A, &polytope_ij_sum_b);
@@ -195,6 +204,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
         if (is_goal_h) {
           std::cout << " (Goal)";
           goal_id = margins.size();
+          geometrical_stability_margin = margin;
         }
       }
       std::cout << std::endl;
@@ -203,10 +213,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       margins.push_back(margin);
       // polytope_of_the_modes.push_back(polytope_ij_sum);
       polytope_of_the_modes.push_back(polytope_ij_minus);
-      // std::cout << "debug: margin: " << margin << std::endl;
-      // std::cout << "debug: polytope_ij_minus: " << polytope_ij_minus << std::endl;
-      // getchar();
-      // return 1;
 
       getConstraintOfTheMode_2d(Jac_e, Jac_h, e_mode_ii, h_mode_jj, &N, &Nu);
 
@@ -220,6 +226,9 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     }
   }
   assert(goal_id >= 0);
+
+  time_stats_force_margin = timer.toc();
+  timer.tic();
 
   std::cout << "[WrenchStamping] 2. HFVC" << std::endl;
   int kDimActualized = 3;
@@ -244,6 +253,9 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
   MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
 
+  time_stats_hybrid_servoing = timer.toc();
+  timer.tic();
+
   // Crashing check
   MatrixXd R;
   // std::cout << "[debug] cone_allFix_r: " << cone_allFix_r.rows() << " x " << cone_allFix_r.cols() << std::endl;
@@ -253,6 +265,9 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     std::cout << "[WrenchStamping]    Crashing." << std::endl;
     return -1;
   }
+
+  time_stats_crashing_check = timer.toc();
+  timer.tic();
 
   std::cout << "[WrenchStamping] 3. Begin Velocity loop." << std::endl;
   std::vector<int> feasible_ids;
@@ -300,9 +315,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   for (int c = 0; c < feasible_ids.size(); ++c) {
     std::cout << "[WrenchStamping]    Polytope " << c << ": " << eh_modes[feasible_ids[c]].transpose() << ": ";
     // projection
-    std::cout << "[debug] c: " << c << ", feasible_ids[c]: " << feasible_ids[c] << std::endl;
-    std::cout << "[debug] polytope_of_the_modes:\n" << polytope_of_the_modes[feasible_ids[c]] << std::endl;
-    std::cout << "[debug] F_control_directions_r:\n" << F_control_directions_r << std::endl;
     polytope_projection = polytope_of_the_modes[feasible_ids[c]] * F_control_directions_r.transpose();
     // get the inequality representations for the cone projections
     if(!Poly::polytopeFacetEnumeration(polytope_projection, &pp_A, &pp_b)) {
@@ -387,23 +399,46 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   }
   std::cout << "[WrenchStamping] 4. Force control: " << wrench_best.transpose() << std::endl;
   // now we have the control stability margin
-  action.eta_af = -kContactForce*wrench_best; // the minus sign comes from force balance
+  action.eta_af = -wrench_best; // the minus sign comes from force balance
+  // before scaling
+  // R_scaled^T*eta_scaled = Kf*f
+  // Eigen::VectorXd f0 = action.R_a.topRows(action.n_af).transpose() * action.eta_af;
+  // Eigen::VectorXd F_T = Kf.inverse() * f0;
+
   // scale back so the control constraints work on normal units
-  action.R_a.topRows(action.n_af) = action.R_a.topRows(action.n_af) * Kf;
-  action.R_a.bottomRows(action.n_av) = action.R_a.bottomRows(action.n_av) * Kv;
+  //   R = R_scaled*Kv
+  //   omega = omega_scaled
+  //   eta = eta_scaled/K
+  action.R_a *= Kv;
+  action.eta_af /= scale;
   // print the results
   Eigen::MatrixXd R_a_inv = action.R_a.inverse();
   Eigen::VectorXd V = Eigen::VectorXd::Zero(kDimActualized);
   V.tail(action.n_av) = action.w_av;
   Eigen::VectorXd V_T = R_a_inv*V;
-  Eigen::VectorXd F = Eigen::VectorXd::Zero(kDimActualized);
-  F.head(action.n_af) = action.eta_af;
-  Eigen::VectorXd F_T = R_a_inv*F;
+  //        ->  (Rv)^T * eta_scaled = f
+  Eigen::VectorXd F_T = action.R_a.topRows(action.n_af).transpose() * action.eta_af;
+
   std::cout << " 5. Results:" << std::endl;
+  std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
+  std::cout << "   control_stability_margin: " << control_stability_margin << std::endl;
   std::cout << "   R_a:\n" << action.R_a << std::endl;
+  std::cout << "   w_av:\n" << action.w_av << std::endl;
+  std::cout << "   eta_af:\n" << action.eta_af << std::endl;
   std::cout << "   V_T:" << V_T.transpose() << std::endl;
   std::cout << "   F_T:" << F_T.transpose() << std::endl;
-  return control_stability_margin;
+
+  time_stats_velocity_loops = timer.toc();
+  std::cout << "Timing statistics:\n";
+  std::cout << "  time_stats_initialization: " << time_stats_initialization << " ms\n";
+  std::cout << "  time_stats_force_margin: " << time_stats_force_margin << " ms\n";
+  std::cout << "  time_stats_hybrid_servoing: " << time_stats_hybrid_servoing << " ms\n";
+  std::cout << "  time_stats_crashing_check: " << time_stats_crashing_check << " ms\n";
+  std::cout << "  time_stats_velocity_loops: " << time_stats_velocity_loops << " ms\n";
+  std::cout << "  Total: " << time_stats_initialization + time_stats_force_margin
+      + time_stats_hybrid_servoing + time_stats_crashing_check
+      + time_stats_velocity_loops << " ms\n";
+  return std::min(control_stability_margin, geometrical_stability_margin);
 }
 
 
