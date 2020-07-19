@@ -25,8 +25,10 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     const double kCharacteristicLength,
     MatrixXd G, const VectorXd &b_G,
     const MatrixXi &e_modes, const MatrixXi &h_modes,
-    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal) {
-  std::cout << "[wrenchSpaceAnalysis_2d] Calling..\n";
+    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal,
+    int print_level) {
+  if (print_level > 0)
+    std::cout << "[wrenchSpaceAnalysis_2d] Calling..\n";
   // std::cout << "Jac_e: " << Jac_e << std::endl;
   // std::cout << "Jac_h: " << Jac_h << std::endl;
   // std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
@@ -125,7 +127,8 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
    * Filter out modes with empty Wrench Cones
    * Compute geometrical stability margin
    */
-  std::cout << "[WrenchStamping] 1. Wrench cone filtering" << std::endl;
+  if (print_level > 0)
+    std::cout << "[WrenchStamping] 1. Wrench cone filtering" << std::endl;
   std::vector<VectorXi> eh_modes;
   std::vector<double> margins;
   std::vector<MatrixXd> polytope_of_the_modes;
@@ -164,14 +167,15 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       h_cone_jj = - kContactForce * getConeOfTheMode_2d(hCone_allFix_r, h_mode_jj);
       Poly::minkowskiSumOfVectors(h_cone_jj, &h_polytope_jj);
 
-      std::cout << "  ii:" << ii << ", jj:" << jj << ", e mode:" << e_mode_ii.transpose() << ", h mode:" << h_mode_jj.transpose();
+      if (print_level > 0)
+        std::cout << "  ii:" << ii << ", jj:" << jj << ", e mode:" << e_mode_ii.transpose() << ", h mode:" << h_mode_jj.transpose();
 
       Poly::minkowskiSum(e_polytope_ii, h_polytope_jj, &polytope_ij_sum);
       Poly::polytopeFacetEnumeration(polytope_ij_sum, &polytope_ij_sum_A, &polytope_ij_sum_b);
 
 
       if (polytope_ij_sum_b.minCoeff() <= 1e-5 ) {
-        std::cout << " F-Infeasible." << std::endl;
+        if (print_level > 0) std::cout << " F-Infeasible." << std::endl;
         continue;
       }
       // The cone is non-empty.
@@ -184,7 +188,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
         double margin_new = polytope_ij_sum_b(i)/A_row_norm;
         if (margin_new < margin) margin = margin_new;
       }
-      std::cout << " margin: " << margin;
+      if (print_level > 0) std::cout << " margin: " << margin;
 
       // compute the polytope of the mode (intersection, not minkowski sum)
       if (!Poly::polytopeIntersection(e_polytope_ii, -h_polytope_jj, &polytope_ij_minus)) {
@@ -202,12 +206,12 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
           }
         }
         if (is_goal_h) {
-          std::cout << " (Goal)";
+          if (print_level > 0) std::cout << " (Goal)";
           goal_id = margins.size();
           geometrical_stability_margin = margin;
         }
       }
-      std::cout << std::endl;
+      if (print_level > 0) std::cout << std::endl;
 
       // store the results
       margins.push_back(margin);
@@ -230,7 +234,8 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   time_stats_force_margin = timer.toc();
   timer.tic();
 
-  std::cout << "[WrenchStamping] 2. HFVC" << std::endl;
+  if (print_level > 0)
+    std::cout << "[WrenchStamping] 2. HFVC" << std::endl;
   int kDimActualized = 3;
   int kDimUnActualized = 3;
   HFVC action;
@@ -269,12 +274,15 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   time_stats_crashing_check = timer.toc();
   timer.tic();
 
-  std::cout << "[WrenchStamping] 3. Begin Velocity loop." << std::endl;
+  if (print_level > 0)  std::cout << "[WrenchStamping] 3. Begin Velocity loop." << std::endl;
   std::vector<int> feasible_ids;
   for (int id = 0; id < margins.size(); ++id) {
-    std::cout << "[WrenchStamping]    Checking id: " << id;
-    std::cout << " : " << eh_modes[id].transpose();
-    if (id == goal_id) std::cout << " (Goal)";
+    if (print_level > 0) {
+      std::cout << "[WrenchStamping]    Checking id: " << id;
+      std::cout << " : " << eh_modes[id].transpose();
+      if (id == goal_id) std::cout << " (Goal)";
+    }
+
     MatrixXd N = N_of_the_modes[id];
     MatrixXd Nu = Nu_of_the_modes[id]; // Nu*v >= 0
 
@@ -294,15 +302,16 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
         std::cout << " Goal is infeasible. Return." << std::endl;
         return -1;
       }
-      std::cout << " infeasible." << std::endl;
+      if (print_level > 0) std::cout << " infeasible." << std::endl;
       continue; // otherwise, just discard this mode
     }
     // this mode is feasible. store its polytope
     feasible_ids.push_back(id);
-    std::cout << " stored." << std::endl;
+    if (print_level > 0) std::cout << " stored." << std::endl;
   }
 
-  std::cout << "[WrenchStamping] 4. Compute force control and control-stability-margin." << std::endl;
+  if (print_level > 0)
+    std::cout << "[WrenchStamping] 4. Compute force control and control-stability-margin." << std::endl;
   std::vector<MatrixXd> polytopes_projection_r;
   std::vector<MatrixXd> pps_A; // A x <= b
   std::vector<VectorXd> pps_b; // A x <= b
@@ -311,9 +320,11 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   VectorXd pp_goal_point; // an inner point
   MatrixXd polytope_projection, pp_A;
   VectorXd pp_b;
-  std::cout << "[WrenchStamping]  4.1 Compute the projection of the polytopes." << std::endl;
+  if (print_level > 0)
+    std::cout << "[WrenchStamping]  4.1 Compute the projection of the polytopes." << std::endl;
   for (int c = 0; c < feasible_ids.size(); ++c) {
-    std::cout << "[WrenchStamping]    Polytope " << c << ": " << eh_modes[feasible_ids[c]].transpose() << ": ";
+    if (print_level > 0)
+      std::cout << "[WrenchStamping]    Polytope " << c << ": " << eh_modes[feasible_ids[c]].transpose() << ": ";
     // projection
     polytope_projection = polytope_of_the_modes[feasible_ids[c]] * F_control_directions_r.transpose();
     // get the inequality representations for the cone projections
@@ -322,7 +333,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       std::cout << "[debug] polytope_projection: " << polytope_projection << std::endl;
       exit(1);
     }
-    std::cout << polytope_projection.rows() << " vertices.";
+    if (print_level > 0) std::cout << polytope_projection.rows() << " vertices.";
 
     // std::cout << "F_control_directions_r:\n" << F_control_directions_r << std::endl;
     // std::cout << "polytope_of_the_modes[feasible_ids[c]]:\n" << polytope_of_the_modes[feasible_ids[c]] << std::endl;
@@ -332,7 +343,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     // return -1;
 
     if (goal_id == feasible_ids[c]) {
-      std::cout << " (id: Goal) ";
+      if (print_level > 0) std::cout << " (id: Goal) ";
       pp_goal_A = pp_A;
       pp_goal_b = pp_b;
       // std::cout <<  "pp_goal_A:\n" << pp_goal_A << std::endl;
@@ -344,12 +355,12 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       polytopes_projection_r.push_back(polytope_projection);
       pps_A.push_back(pp_A);
       pps_b.push_back(pp_b);
-      std::cout << " (id:" << pps_A.size() - 1 << ") ";
+      if (print_level > 0) std::cout << " (id:" << pps_A.size() - 1 << ") ";
     }
-    std::cout << " A rows: " << pp_A.rows() << std::endl;
+    if (print_level > 0) std::cout << " A rows: " << pp_A.rows() << std::endl;
   }
-
-  std::cout << "[WrenchStamping]  4.2 Sample wrenches and find feasible ones." << std::endl;
+  if (print_level > 0)
+    std::cout << "[WrenchStamping]  4.2 Sample wrenches and find feasible ones." << std::endl;
   // sample wrenches in the projection of the goal polytope
   int ns = 0;
   if (action.n_af == 1) ns = 5;
@@ -366,15 +377,15 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   for (int s = 0; s < ns; ++s) { // make sure they sum to one
     // create the sample
     wrench_sample = wrench_samples.middleRows(s, 1).transpose();
-    // std::cout << "wrench_sample: " << wrench_sample.transpose() << std::endl;
-    std::cout << "[WrenchStamping]    Sample #" << s << ": ";
+    if (print_level > 0)
+      std::cout << "[WrenchStamping]    Sample #" << s << ": ";
     // check if the sample is within any other polytopes
     bool infeasible_sample = false;
     for (int i = 0; i < pps_A.size(); ++i) {
       VectorXd Ax = pps_A[i]*wrench_sample - pps_b[i];
       if (Ax.maxCoeff() <= 0) {
         // the sample is within another polytope
-        std::cout << i << "th polytope infeasible." << std::endl;
+        if (print_level > 0) std::cout << i << "th polytope infeasible." << std::endl;
         infeasible_sample = true;
         break;
       }
@@ -391,13 +402,14 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       control_stability_margin = min_dist;
       wrench_best = wrench_sample;
     }
-    std::cout << "min_dist:" << min_dist << std::endl;
+    if (print_level > 0) std::cout << "min_dist:" << min_dist << std::endl;
   }
   if (control_stability_margin < 0) {
     std::cout << "[WrenchStamping] 4. Force control has no solution." << std::endl;
     return -1;
   }
-  std::cout << "[WrenchStamping] 4. Force control: " << wrench_best.transpose() << std::endl;
+  if (print_level > 0)
+    std::cout << "[WrenchStamping] 4. Force control: " << wrench_best.transpose() << std::endl;
   // now we have the control stability margin
   action.eta_af = -wrench_best; // the minus sign comes from force balance
   // before scaling
@@ -419,25 +431,27 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   //        ->  (Rv)^T * eta_scaled = f
   Eigen::VectorXd F_T = action.R_a.topRows(action.n_af).transpose() * action.eta_af;
 
-  std::cout << " 5. Results:" << std::endl;
-  std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
-  std::cout << "   control_stability_margin: " << control_stability_margin << std::endl;
-  std::cout << "   R_a:\n" << action.R_a << std::endl;
-  std::cout << "   w_av:\n" << action.w_av << std::endl;
-  std::cout << "   eta_af:\n" << action.eta_af << std::endl;
-  std::cout << "   V_T:" << V_T.transpose() << std::endl;
-  std::cout << "   F_T:" << F_T.transpose() << std::endl;
+  if (print_level > 0) {
+    std::cout << " 5. Results:" << std::endl;
+    std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
+    std::cout << "   control_stability_margin: " << control_stability_margin << std::endl;
+    std::cout << "   R_a:\n" << action.R_a << std::endl;
+    std::cout << "   w_av:\n" << action.w_av << std::endl;
+    std::cout << "   eta_af:\n" << action.eta_af << std::endl;
+    std::cout << "   V_T:" << V_T.transpose() << std::endl;
+    std::cout << "   F_T:" << F_T.transpose() << std::endl;
 
-  time_stats_velocity_loops = timer.toc();
-  std::cout << "Timing statistics:\n";
-  std::cout << "  time_stats_initialization: " << time_stats_initialization << " ms\n";
-  std::cout << "  time_stats_force_margin: " << time_stats_force_margin << " ms\n";
-  std::cout << "  time_stats_hybrid_servoing: " << time_stats_hybrid_servoing << " ms\n";
-  std::cout << "  time_stats_crashing_check: " << time_stats_crashing_check << " ms\n";
-  std::cout << "  time_stats_velocity_loops: " << time_stats_velocity_loops << " ms\n";
-  std::cout << "  Total: " << time_stats_initialization + time_stats_force_margin
-      + time_stats_hybrid_servoing + time_stats_crashing_check
-      + time_stats_velocity_loops << " ms\n";
+    time_stats_velocity_loops = timer.toc();
+    std::cout << "Timing statistics:\n";
+    std::cout << "  time_stats_initialization: " << time_stats_initialization << " ms\n";
+    std::cout << "  time_stats_force_margin: " << time_stats_force_margin << " ms\n";
+    std::cout << "  time_stats_hybrid_servoing: " << time_stats_hybrid_servoing << " ms\n";
+    std::cout << "  time_stats_crashing_check: " << time_stats_crashing_check << " ms\n";
+    std::cout << "  time_stats_velocity_loops: " << time_stats_velocity_loops << " ms\n";
+    std::cout << "  Total: " << time_stats_initialization + time_stats_force_margin
+        + time_stats_hybrid_servoing + time_stats_crashing_check
+        + time_stats_velocity_loops << " ms\n";
+  }
   return std::min(control_stability_margin, geometrical_stability_margin);
 }
 

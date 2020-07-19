@@ -136,18 +136,20 @@ void wrenchSpaceAnalysis_wrapper(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
   std::cout << "[wrapper] Finished!\n";
 }
 
-void wrenchSpaceAnalysis_2d_wrapper(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
+double wrenchSpaceAnalysis_2d_wrapper(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,
     const Eigen::VectorXd &F_G,
     const double kContactForce, const double kFrictionE, const double kFrictionH,
     const double kCharacteristicLength,
     Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
     const Eigen::MatrixXi &e_modes, const Eigen::MatrixXi &h_modes,
-    const Eigen::VectorXi &e_modes_goal, const Eigen::VectorXi &h_modes_goal) {
-  wrenchSpaceAnalysis_2d(Jac_e, Jac_h, eCone_allFix, hCone_allFix, F_G,
+    const Eigen::VectorXi &e_modes_goal, const Eigen::VectorXi &h_modes_goal,
+    int print_level) {
+  double margin = wrenchSpaceAnalysis_2d(Jac_e, Jac_h, eCone_allFix, hCone_allFix, F_G,
       kContactForce, kFrictionE, kFrictionH, kCharacteristicLength,
-      G, b_G, e_modes, h_modes, e_modes_goal, h_modes_goal);
+      G, b_G, e_modes, h_modes, e_modes_goal, h_modes_goal, print_level);
   std::cout << "[wrapper] Finished!\n";
+  return margin;
 }
 
 PYBIND11_MODULE(wrenchStampingLib, m) {

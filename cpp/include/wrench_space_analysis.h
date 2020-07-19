@@ -24,7 +24,8 @@ double wrenchSpaceAnalysis_2d(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     const double kCharacteristicLength,
     Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
     const Eigen::MatrixXi &e_modes, const Eigen::MatrixXi &h_modes,
-    const Eigen::VectorXi &e_modes_goal, const Eigen::VectorXi &h_modes_goal);
+    const Eigen::VectorXi &e_modes_goal, const Eigen::VectorXi &h_modes_goal,
+    int print_level);
 
 // Geometrical parameters:
 //  Jac_e, Jac_h
