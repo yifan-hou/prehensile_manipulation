@@ -21,6 +21,15 @@ https://github.com/cddlib/cddlib#build-the-latest-released-version
 https://github.com/yifan-hou/cpplibrary
 
 ## Pybind11
+```
+git clone git@github.com:pybind/pybind11.git
+cd pybind11
+mkdir build
+cd build
+cmake ..
+make check -j 4
+sudo make install
+```
 
 # Build
 Inside the cpp folder,
