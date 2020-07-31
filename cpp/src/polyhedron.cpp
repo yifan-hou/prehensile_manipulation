@@ -72,6 +72,10 @@ double Poly::distRay2ConeFromOutside(const Eigen::VectorXd &p, const Eigen::Matr
   return min_dist;
 }
 
+// Input:
+//  min ||x-p||^2
+//  s.t.
+//     Ax <= b
 double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
     const Eigen::VectorXd &b, const Eigen::VectorXd &x0) {
   // prepare the QP
@@ -79,10 +83,6 @@ double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A
   //  s.t.
   //     CE^T x + ce0 = 0
   //     CI^T x + ci0 >= 0
-  // Input:
-  //  min ||x-p||^2
-  //  s.t.
-  //     Ax <= b
   // Reformulate as:
   //  min 0.5 * x I x -p^T x
   //  s.t.
@@ -100,10 +100,22 @@ double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A
 }
 
 Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
-    const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard, int runup) {
+    const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard, int runup, double max_radius) {
   // https://www.mathworks.com/matlabcentral/fileexchange/34208-uniform-distribution-over-a-convex-polytope
   int dim = x0.rows();
   Eigen::MatrixXd X = Eigen::MatrixXd::Zero(N+runup+discard, dim);
+  if ((A*x0 - b).maxCoeff() > 0) {
+    std::cout << "[hitAndRunSampleInPolytope] x0 is outside of Ax<b" << std::endl;
+    exit(1);
+  }
+  if ((max_radius > 0) && (x0.norm() > max_radius)) {
+    std::cout << "[hitAndRunSampleInPolytope] x0 is outside of max_radius" << std::endl;
+    exit(1);
+  }
+  // std::cout << "x0: " << x0.transpose() << std::endl;
+  // std::cout << "A: " << A << std::endl;
+  // std::cout << "b: " << b << std::endl;
+  // std::cout << "Ax0 - b: " << A*x0 - b << std::endl;
 
   int n = 0; // num generated so far
   Eigen::VectorXd x = x0;
@@ -130,7 +142,16 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
 
       // tmin = max(c(z<0));
       // tmax = min(c(z>0));
-      double tmin = 99999999, tmax = - 99999999;
+      double tmin = 9999999;
+      double tmax = -9999999;
+      if (max_radius > 0) {
+        double a = u.dot(u);
+        double bb = 2.0*x.dot(u);
+        double c = x.dot(x) - max_radius*max_radius;
+        double delta = sqrt(bb*bb - 4.0*a*c);
+        tmin = (-bb + delta)/2/a;
+        tmax = (-bb - delta)/2/a;
+      }
       for (int i = 0; i < z.rows(); ++i) {
         if (z(i) > 0) {
           if (c(i) < tmin) tmin = c(i);
@@ -139,12 +160,18 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
         }
       }
       // Choose a random point on that line segment
+
       double distance = tmin+(tmax-tmin)*RUT::rand();
       // std::cout << "debug: tmin: " << tmin << ", tmax: " << tmax  << ", distance: " << distance << std::endl;
-      // std::cout << "debug: x: " << x.transpose() << std::endl;
-      // Eigen::VectorXd tempresult = A*x - b;
-      // if (tempresult.maxCoeff() > 0) std::cout << "debug: INFEASIBLE!!!!!!!! x0 out of polytope!!" << std::endl;
       x = x + distance*u;
+      if (max_radius > 0) {
+        // std::cout << "x.norm(): " << x.norm() << ", max_radius: " << max_radius << std::endl;
+        if(x.norm() >= max_radius) {
+          std::cout << "[hitAndRunSampleInPolytope] assertion failed." << std::endl;
+          getchar();
+          exit(1);
+        }
+      }
       X.middleRows(n,1) = x.transpose();
       n++;
 
@@ -374,10 +401,12 @@ bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2
   Eigen::MatrixXd R;
   if (!intersection(R1, R2, &R)) return false;
   *C = R.rightCols(R.cols()-1);
-  if (C->norm() > 1e-10)
+  if (C->norm() > 1e-10) {
     assert(R.leftCols<1>().norm() < 1e-10);
-  else
+    C->rowwise().normalize();
+  } else {
     *C = Eigen::MatrixXd(0, 0);
+  }
 
   return true;
 }

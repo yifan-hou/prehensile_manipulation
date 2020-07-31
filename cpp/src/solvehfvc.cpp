@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "eiquadprog.hpp"
+#include "RobotUtilities/utilities.h"
 
 #define TOL 1e-9
 
@@ -294,6 +295,98 @@ bool solvehfvc_new(const MatrixXd &N,
   action->w_av   = b_C;
   action->C      = C;
   action->b_C    = b_C;
+
+  /**
+   * Check the solution
+   */
+  // std::cout << "Velocity Command:" << std::endl;
+  // std::cout << "  C:\n" << C << std::endl;
+  // std::cout << "  b_C:\n" << b_C << std::endl;
+
+  // MatrixXd NC(N_reg.rows()+C.rows(), N_reg.cols());
+  // NC << N_reg, C;
+  // VectorXd b_NC = VectorXd::Zero(N_reg.rows() + b_C.rows());
+  // b_NC.tail(b_C.rows()) = b_C;
+
+  // lu.compute(NC);
+  // Eigen::MatrixXd sol_homo = lu.kernel();
+  // Eigen::VectorXd sol_sp = lu.solve(b_NC);
+  // std::cout << "NC solution:" << std::endl;
+  // std::cout << "  sol_sp:\n" << sol_sp << std::endl;
+  // std::cout << "  sol_homo:\n" << sol_homo << std::endl;
+  // std::cout << "  NG*sol_sp:\n" << NG*sol_sp << std::endl;
+  // std::cout << "  NG*sol_homo:\n" << NG*sol_homo << std::endl;
+
+  return true;
+}
+
+bool solvehfvc_newer(const MatrixXd &N,
+  const MatrixXd &G, const VectorXd &b_G,
+  const int kDimActualized, const int kDimUnActualized,
+  HFVC *action) {
+  /* Size checking */
+  const int kDimGeneralized = kDimActualized + kDimUnActualized;
+  assert(N.cols() == kDimGeneralized);
+  assert(G.rows() == b_G.rows());
+  assert(G.cols() == kDimGeneralized);
+  assert(b_G.norm() > TOL);
+  Eigen::FullPivLU<MatrixXd> lu;
+
+
+  /**
+   * Step one: get null space of N
+   */
+  MatrixXd N_reg = N;
+  MatrixXd null_space_N_r;
+  int rank_N = RUT::nullSpace(&N_reg, &null_space_N_r);
+
+  /**
+   * Step two: project to controllable subspace, get C
+   */
+  MatrixXd actuated_subspace =
+      MatrixXd::Identity(kDimGeneralized, kDimGeneralized).bottomRows(kDimActualized);
+  MatrixXd C = null_space_N_r * actuated_subspace.transpose() * actuated_subspace;
+  assert(C.leftCols(kDimUnActualized).norm() < 1e-10);
+  MatrixXd Rv = C.rightCols(kDimActualized);
+  MatrixXd Rf;
+  int rank_C = RUT::nullSpace(&Rv, &Rf);
+  assert(rank_C == C.rows());
+  C.rightCols(kDimActualized) = Rv;
+
+  /**
+   * Step three: get rowspace of NC
+   * Check if rowspace of G belongs to rowspace of NC
+   */
+  MatrixXd NC(N.rows()+C.rows(), N.cols());
+  NC << N, C;
+  int rank_NC = RUT::rowSpace(&NC); // todo: maybe we don't need this?
+  assert(rank_NC = rank_N + rank_C);
+  MatrixXd NCG(NC.rows()+G.rows(), N.cols());
+  NCG << NC, G;
+  int rank_NCG = RUT::rowSpace(&NCG);
+  if (rank_NCG > rank_NC) return false;
+
+  /**
+   * Step four: find a solution to NG
+   */
+  MatrixXd NG(N.rows()+G.rows(), N.cols());
+  NG << N, G;
+  VectorXd b_NG = VectorXd::Zero(N.rows() + b_G.rows());
+  b_NG.tail(b_G.rows()) = b_G;
+  lu.compute(NG);
+  Eigen::VectorXd v_star = lu.solve(b_NG);
+  // check if no solution
+  if ((NG*v_star - b_NG).norm() > TOL) return false;
+  VectorXd b_C = C*v_star;
+
+  // Get the force-controlled directions
+  action->R_a = MatrixXd::Zero(kDimActualized, kDimActualized);
+  action->R_a << Rf, Rv;
+  action->n_av  = Rv.rows();
+  action->n_af  = Rf.rows();
+  action->w_av  = b_C;
+  action->C     = C;
+  action->b_C   = b_C;
 
   /**
    * Check the solution

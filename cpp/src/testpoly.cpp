@@ -48,8 +48,23 @@ int main(int argc, char *argv[]) {
   double dist = Poly::distP2Polyhedron(p2, A2, b2, Eigen::VectorXd::Random(3));
   std::cout << "dist: " << dist << std::endl;
 
-  
-  return 1;
+  std::cout << "############################################\n";
+  std::cout << "    Hit and run Sampling\n";
+  std::cout << "############################################\n";
+  Eigen::MatrixXd A3(4,2);
+  Eigen::VectorXd b3(4);
+  A3 << 1, 0,
+        -1, 0,
+        0, 1,
+        0, -1;
+  b3 << 10, 10, 10, 10;
+  Eigen::VectorXd x3 = Eigen::VectorXd::Zero(2);
+  Eigen::MatrixXd samples = Poly::hitAndRunSampleInPolytope(A3, b3, x3, 20, 10, 10, 5);
+  std::cout << "samples: \n" << samples << std::endl;
+  std::cout << "norms: \n" << samples.rowwise().norm() << std::endl;
+
+  return 0;
+
 
   std::cout << "############################################\n";
   std::cout << "    Basic vertex and facet enumeration\n";

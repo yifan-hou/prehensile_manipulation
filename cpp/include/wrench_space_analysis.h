@@ -1,5 +1,28 @@
-#include <vector>
+// scaling for generalized velocity
+// Scaling is essentially changing units. For example, if we change m to mm, then
+// Translational velocity: 1 -> 1000 (m/s -> mm/s)
+// Rotational velocity: 1 -> 1 (rad/s -> rad/s)
+// Force: 1 -> 1 (N -> N)
+// Torque: 1 -> 1000 (N*m -> N*mm)
+// Define Kv = diag(1000,1000,1000,1,1,1), Kf=diag(1,1,1,1000,1000,1000)
+// Then we have
+//    V_scaled = Kv*V, f_scaled = Kf*f
+//    N*V=0 -> N*Kv_inv*V_scaled = 0, so  N_scaled = N*Kv_inv
+//    J'*tau=f -> J'*tau = Kf_inv*f_scaled -> (J*Kf)'*tau = f_scaled, so  J_scaled = J*Kf
+// For hfvc computed in scaled space, we have
+//    R_scaled*V_scaled = omega_scaled
+//    R_scaled^T*eta_scaled = f_scaled
+// To retrieve the control, transform these back to constraints on v, f:
+//    R_scaled*Kv*V = omega_scaled
+//    R_scaled^T*eta_scaled = Kf*f -> (R_scaled*Kf_inv)^T * eta_scaled = f
+//        ->  (R_scaled*Kf_inv*K)^T * eta_scaled/K = f
+// Note R_scaled*Kf_inv*K = R_scaled*Kv, so the two agrees
+// So, in our output,
+//    R = R_scaled*Kv
+//    omega = omega_scaled
+//    eta = eta_scaled/K
 
+#include <vector>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
@@ -50,7 +73,8 @@ void wrenchSpaceAnalysis(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     const Eigen::MatrixXi &h_cs_modes, const std::vector<Eigen::MatrixXi> &h_ss_modes,
     Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
     const Eigen::MatrixXi &e_cs_modes_goal, const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
-    const Eigen::MatrixXi &h_cs_modes_goal, const std::vector<Eigen::MatrixXi> &h_ss_modes_goal);
+    const Eigen::MatrixXi &h_cs_modes_goal, const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
+    int print_level);
 
 
 bool modeCleaning(const Eigen::MatrixXi &cs_modes, const std::vector<Eigen::MatrixXi> &ss_modes, int kNumSlidingPlanes,

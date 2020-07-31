@@ -68,7 +68,7 @@ double distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
  * @return     { Return the samples }
  */
 Eigen::MatrixXd hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
-        const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard = 10, int runup = 10);
+        const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard = 10, int runup = 10, double max_radius = -1);
 
 /**
  * Vertex enumeration. Given a polyhedron (A, b):

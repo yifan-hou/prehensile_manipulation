@@ -128,11 +128,12 @@ void wrenchSpaceAnalysis_wrapper(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     const Eigen::MatrixXi &h_cs_modes, const std::vector<Eigen::MatrixXi> &h_ss_modes,
     Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
     const Eigen::MatrixXi &e_cs_modes_goal, const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
-    const Eigen::MatrixXi &h_cs_modes_goal, const std::vector<Eigen::MatrixXi> &h_ss_modes_goal) {
+    const Eigen::MatrixXi &h_cs_modes_goal, const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
+    int print_level) {
   wrenchSpaceAnalysis(Jac_e, Jac_h, eCone_allFix, hCone_allFix,
       F_G, kContactForce, kFrictionE, kFrictionH, kCharacteristicLength, kNumSlidingPlanes,
       e_cs_modes, e_ss_modes, h_cs_modes, h_ss_modes, G, b_G,
-      e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal);
+      e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal, print_level);
   std::cout << "[wrapper] Finished!\n";
 }
 
