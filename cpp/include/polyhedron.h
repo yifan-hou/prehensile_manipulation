@@ -2,6 +2,7 @@
 #include <Eigen/Dense>
 
 #define KCONVHULL_ROUND 3
+#define PPL_MULTIPLIER_BEFORE_ROUNDING 10000 // floating point will get round to integer after multiplied with this number
 
 namespace Poly {
 
@@ -81,7 +82,7 @@ Eigen::MatrixXd hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
  *       A = [0 1 0; 1 0 0]; b = [0; 1];
  *       R = VertexEnumeration(A, b, &R);
  *
- * @param[in]  A     Each row represents an inequality.
+ * @param[in]  A     Each row represents an inequality. It's good for numerical stability to normalize these rows
  * @param[in]  b     Each row represents an inequality.
  * @param      R     Pointer to output R, each row of R represents a generator.
  *

@@ -1,6 +1,19 @@
 # Install
 
 # Dependencies
+
+## PPL
+Download from https://www.bugseng.com/ppl-download
+Extract somewhere,
+```
+cd ppl-1.2
+./configure
+make
+sudo make install
+```
+I got some errors when calling "sudo make install", but that turned out to be fine.
+To see usage of PPL, look at ppl-1.2/demos/ppl_lcdd and ppl-1.2/tests/Polyhedron
+
 ## qhull:
 Pull from https://github.com/qhull/qhull
 Then simply
@@ -10,11 +23,6 @@ cmake ..
 make
 sudo make install
 ```
-
-## CDDLIB
-Installation:
-https://github.com/cddlib/cddlib#build-the-latest-released-version
-
 ## CPPLibrary
 https://github.com/yifan-hou/cpplibrary
 
@@ -45,7 +53,6 @@ git clone git@github.com:yifan-hou/matlablibrary.git
 ```
 add to path
 
-
 # Build
 Inside the cpp folder,
 ```
@@ -55,6 +62,12 @@ cmake ..
 make
 ```
 A python library is now in build/ folder.
+## Potential errors and fixes
+If you get linking error about GMP, you need to install
+```
+sudo apt install libgmp-dev
+```
+
 
 # Run
 1. First, launch Matlab, change matlab directory to prehensile_manipulation/matlab.

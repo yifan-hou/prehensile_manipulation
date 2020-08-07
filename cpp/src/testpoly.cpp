@@ -7,79 +7,92 @@ Eigen::IOFormat CleanFmt(4, 0, ", ", "\n", "[", "]");
 #include <string>
 
 int main(int argc, char *argv[]) {
-  std::cout << "############################################\n";
-  std::cout << "    Distance to cone\n";
-  std::cout << "############################################\n";
-  Eigen::VectorXd p(3);
-  p << -1, 0, 2;
-  Eigen::VectorXd plane_a(3);
-  plane_a << 1, 0, 0;
-  double plane_b = 2;
-  Eigen::VectorXd p_proj = Poly::projectP2Hyperplane(p, plane_a, plane_b);
-  std::cout << "p: " << p.transpose() << std::endl;
-  std::cout << "a: " << plane_a.transpose() << std::endl;
-  std::cout << "p_proj: " << p_proj.transpose() << std::endl;
+  // std::cout << "############################################\n";
+  // std::cout << "    Distance to cone\n";
+  // std::cout << "############################################\n";
+  // Eigen::VectorXd p(3);
+  // p << -1, 0, 2;
+  // Eigen::VectorXd plane_a(3);
+  // plane_a << 1, 0, 0;
+  // double plane_b = 2;
+  // Eigen::VectorXd p_proj = Poly::projectP2Hyperplane(p, plane_a, plane_b);
+  // std::cout << "p: " << p.transpose() << std::endl;
+  // std::cout << "a: " << plane_a.transpose() << std::endl;
+  // std::cout << "p_proj: " << p_proj.transpose() << std::endl;
 
-  std::cout << std::endl;
-  p << -1, -1, -1;
-  Eigen::MatrixXd cone_A(3, 3), cone_R(3, 3);
-  cone_A << -1, 0, 0,
-             0, -1, 0,
-             0,  0, -1;
-  cone_R << 1, 0, 0,
-            0, 1, 0,
-            0, 0, 1;
-  std::cout << "p: " << p.transpose() << std::endl;
-  double angle = Poly::distRay2ConeFromOutside(p, cone_A, cone_R);
-  std::cout << "angle: " << angle << std::endl;
+  // std::cout << std::endl;
+  // p << -1, -1, -1;
+  // Eigen::MatrixXd cone_A(3, 3), cone_R(3, 3);
+  // cone_A << -1, 0, 0,
+  //            0, -1, 0,
+  //            0,  0, -1;
+  // cone_R << 1, 0, 0,
+  //           0, 1, 0,
+  //           0, 0, 1;
+  // std::cout << "p: " << p.transpose() << std::endl;
+  // double angle = Poly::distRay2ConeFromOutside(p, cone_A, cone_R);
+  // std::cout << "angle: " << angle << std::endl;
 
-  std::cout << "############################################\n";
-  std::cout << "    Distance to polyhedron\n";
-  std::cout << "############################################\n";
-  Eigen::VectorXd p2(3);
-  p2 << -1, -1, -1;
-  Eigen::MatrixXd A2(3,3);
-  A2 << 1, 0, 0,
-        0, 1, 0,
-        0, 0, 1;
-  Eigen::VectorXd b2(3);
-  b2 << 0, 0, 0;
-  std::cout << "p: " << p2.transpose() << std::endl;
-  double dist = Poly::distP2Polyhedron(p2, A2, b2, Eigen::VectorXd::Random(3));
-  std::cout << "dist: " << dist << std::endl;
+  // std::cout << "############################################\n";
+  // std::cout << "    Distance to polyhedron\n";
+  // std::cout << "############################################\n";
+  // Eigen::VectorXd p2(3);
+  // p2 << -1, -1, -1;
+  // Eigen::MatrixXd A2(3,3);
+  // A2 << 1, 0, 0,
+  //       0, 1, 0,
+  //       0, 0, 1;
+  // Eigen::VectorXd b2(3);
+  // b2 << 0, 0, 0;
+  // std::cout << "p: " << p2.transpose() << std::endl;
+  // double dist = Poly::distP2Polyhedron(p2, A2, b2, Eigen::VectorXd::Random(3));
+  // std::cout << "dist: " << dist << std::endl;
 
-  std::cout << "############################################\n";
-  std::cout << "    Hit and run Sampling\n";
-  std::cout << "############################################\n";
-  Eigen::MatrixXd A3(4,2);
-  Eigen::VectorXd b3(4);
-  A3 << 1, 0,
-        -1, 0,
-        0, 1,
-        0, -1;
-  b3 << 10, 10, 10, 10;
-  Eigen::VectorXd x3 = Eigen::VectorXd::Zero(2);
-  Eigen::MatrixXd samples = Poly::hitAndRunSampleInPolytope(A3, b3, x3, 20, 10, 10, 5);
-  std::cout << "samples: \n" << samples << std::endl;
-  std::cout << "norms: \n" << samples.rowwise().norm() << std::endl;
-
-  return 0;
+  // std::cout << "############################################\n";
+  // std::cout << "    Hit and run Sampling\n";
+  // std::cout << "############################################\n";
+  // Eigen::MatrixXd A3(4,2);
+  // Eigen::VectorXd b3(4);
+  // A3 << 1, 0,
+  //       -1, 0,
+  //       0, 1,
+  //       0, -1;
+  // b3 << 10, 10, 10, 10;
+  // Eigen::VectorXd x3 = Eigen::VectorXd::Zero(2);
+  // Eigen::MatrixXd samples = Poly::hitAndRunSampleInPolytope(A3, b3, x3, 20, 10, 10, 5);
+  // std::cout << "samples: \n" << samples << std::endl;
+  // std::cout << "norms: \n" << samples.rowwise().norm() << std::endl;
 
 
-  std::cout << "############################################\n";
-  std::cout << "    Basic vertex and facet enumeration\n";
-  std::cout << "############################################\n";
+
+  // std::cout << "############################################\n";
+  // std::cout << "    Basic vertex and facet enumeration\n";
+  // std::cout << "############################################\n";
 
   Eigen::MatrixXd A1;
   Eigen::VectorXd b1;
-  Eigen::MatrixXd Rhigh(1, 3);
-  Rhigh << 0, 1, 0;
+  Eigen::MatrixXd Rhigh(3, 4);
+  Rhigh <<  0,   0.2135,   0.7118, -4.46067, // original, error
+            0,  -0.2135,   0.7118,    -5.03,
+            0,   0.2016,   0.6721,     4.75,
+            0,  -0.2016,   0.6721,    4.212;
+  // Rhigh << 0,       0.5,         1, -0.456101, // ok
+  //          0,      -0.5,         1, -0.514315,
+  //          0,  0.472131,  0.944226,  0.485685,
+  //          0, -0.472131,  0.944226,  0.430675;
+  // Rhigh << 0,      50000,        100000,  -45610,
+  //          0,     -50000,        100000,  -51431,
+  //          0,      47213,        94423,    48569,
+  //          0,     -47213,        94423,    43067;
+
   if (!Poly::facetEnumeration(Rhigh, &A1, &b1)) return -1;
 
   std::cout << "Facet Enumeration:\n";
   std::cout << "R:\n" << Rhigh.format(CleanFmt) << std::endl;
   std::cout << "A:\n" << A1.format(CleanFmt) << std::endl;
   std::cout << "b:\n" << b1.format(CleanFmt) << std::endl;
+  return 0;
+
 
   Eigen::MatrixXd A(1, 3);
   A << 0,  0, 1;

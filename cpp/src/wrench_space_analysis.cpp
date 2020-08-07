@@ -83,7 +83,12 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
   // for crashing check
   MatrixXd cone_allFix_r;
+  std::cout << "debug" << std::endl;
+  std::cout << "eCone_allFix_r:\n" << eCone_allFix_r << std::endl;
+  std::cout << "hCone_allFix_r:\n" << hCone_allFix_r << std::endl;
   Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r);
+  std::cout << "debug 4" << std::endl;
+  exit(-1);
 
   // divide the big matrices
   // Jn: nContacts x 6,  Nn: nContacts x 12,  Jacobian for the normals
@@ -217,7 +222,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   int kDimActualized = 3;
   int kDimUnActualized = 3;
   HFVC action;
-  if (!solvehfvc_new(N_of_the_modes[goal_id], G, b_G, kDimActualized, kDimUnActualized, &action)) {
+  if (!solvehfvc_newer(N_of_the_modes[goal_id], G, b_G, kDimActualized, kDimUnActualized, &action)) {
     std::cout << "[WrenchStamping]    HFVC has no solution." << std::endl;
     return -1;
   }
@@ -631,7 +636,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
           e_sss_mode_goal, h_sss_mode_goal,
           &N, &Nu);
 
-      if (!solvehfvc_new(N, G, b_G, kDimActualized, kDimUnActualized, &action)) {
+      if (!solvehfvc_newer(N, G, b_G, kDimActualized, kDimUnActualized, &action)) {
         std::cout << "[WrenchStamping]    HFVC has no solution." << std::endl;
         continue;
       }

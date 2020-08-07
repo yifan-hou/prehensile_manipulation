@@ -357,13 +357,15 @@ bool solvehfvc_newer(const MatrixXd &N,
    * Step three: get rowspace of NC
    * Check if rowspace of G belongs to rowspace of NC
    */
-  MatrixXd NC(N.rows()+C.rows(), N.cols());
-  NC << N, C;
-  int rank_NC = RUT::rowSpace(&NC); // todo: maybe we don't need this?
-  assert(rank_NC = rank_N + rank_C);
-  MatrixXd NCG(NC.rows()+G.rows(), N.cols());
-  NCG << NC, G;
+  // MatrixXd NC(N.rows()+C.rows(), N.cols());
+  // NC << N, C;
+  // int rank_NC = RUT::rowSpace(&NC); // todo: maybe we don't need this?
+  // assert(rank_NC = rank_N + rank_C);
+  // MatrixXd NCG(NC.rows()+G.rows(), N.cols());
+  MatrixXd NCG(N.rows() + C.rows() + G.rows(), N.cols());
+  NCG << N, C, G;
   int rank_NCG = RUT::rowSpace(&NCG);
+  int rank_NC = rank_N + rank_C;
   if (rank_NCG > rank_NC) return false;
 
   /**

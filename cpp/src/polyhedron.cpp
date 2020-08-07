@@ -1,6 +1,8 @@
 #include "polyhedron.h"
-#include "setoper.h"
-#include "cdd.h"
+// #include "setoper.h"
+// #include "cdd.h"
+#include <ppl.hh> // use PPL instead of CDD
+
 #include "eiquadprog.hpp"
 #include "RobotUtilities/utilities.h"
 
@@ -23,6 +25,52 @@ using orgQhull::QhullPoint;
 using orgQhull::QhullVertexList;
 using orgQhull::QhullVertexListIterator;
 
+namespace PPL = Parma_Polyhedra_Library;
+
+
+
+// PPL utilities
+void print_constraints(const PPL::Constraint_System& cs,
+                       const std::string& intro, std::ostream& s) {
+  if (!intro.empty())
+    s << intro << "\n";
+  PPL::Constraint_System::const_iterator i = cs.begin();
+  PPL::Constraint_System::const_iterator cs_end = cs.end();
+  bool printed_something = i != cs_end;
+  while (i != cs_end) {
+    using PPL::IO_Operators::operator<<;
+    s << *i++;
+    if (i != cs_end)
+      s << ",\n";
+  }
+  s << (printed_something ? "." : "true.") << std::endl;
+}
+
+void print_constraints(const PPL::Polyhedron& ph,
+                       const std::string& intro, std::ostream& s) {
+  print_constraints(ph.constraints(), intro, s);
+}
+
+void print_generators(const PPL::Generator_System& gs,
+                      const std::string& intro, std::ostream& s) {
+  if (!intro.empty())
+    s << intro << "\n";
+  PPL::Generator_System::const_iterator i = gs.begin();
+  PPL::Generator_System::const_iterator gs_end = gs.end();
+  bool printed_something = i != gs_end;
+  while (i != gs_end) {
+    using PPL::IO_Operators::operator<<;
+    s << *i++;
+    if (i != gs_end)
+      s << ",\n";
+  }
+  s << (printed_something ? "." : "false.") << std::endl;
+}
+
+void print_generators(const PPL::Polyhedron& ph,
+                      const std::string& intro, std::ostream& s) {
+  print_generators(ph.generators(), intro, s);
+}
 
 
 double Poly::angBTVec(const Eigen::VectorXd &x, const Eigen::VectorXd &b) {
@@ -184,153 +232,202 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
 
 bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen::MatrixXd *R) {
   /**
-   * cddlib initialization
+   * Convert the inputs to integers
    */
-  dd_PolyhedraPtr poly;
-  dd_MatrixPtr A_, G_;
-  dd_rowrange m;
-  dd_colrange d;
-  dd_ErrorType err;
-  dd_set_global_constants();  /* First, this must be called to use cddlib. */
+  Eigen::MatrixXi A_int = (A*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
+  Eigen::VectorXi b_int = (b*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
 
   /**
-   * Eigen to cdd format conversion
+   * Eigen to PPL format conversion
    */
-  Eigen::MatrixXd A_eigen(A.rows(), A.cols() + 1);
-  A_eigen.leftCols<1>() = b;
-  A_eigen.rightCols(A.cols()) = -A;
+  PPL::Constraint_System cs;
+  int nrows = A_int.rows();
+  int dim = A_int.cols();
+  for (int i = 0; i < nrows; ++i) {
+    PPL::Linear_Expression e;
+    for (unsigned j = dim; j > 0; j--) {
+      e += A_int(i,j-1) * PPL::Variable(j-1);
+    }
+    e -= b(i);
+    cs.insert(e <= 0);
+  }
+  PPL::C_Polyhedron ph(cs);
 
-  m = A_eigen.rows();
-  d = A_eigen.cols();
-  A_ = dd_CreateMatrix(m, d);
-  for (int i = 0; i < m; ++i)
-    for (int j = 0; j < d; ++j)
-      dd_set_d(A_->matrix[i][j], A_eigen(i, j));
   /**
    * Call vertex enumeration from cddlib
    */
-  A_->representation = dd_Inequality;
-  poly=dd_DDMatrix2Poly(A_, &err);  /* compute the second (generator) representation */
-  if (err!=dd_NoError) {
-    dd_WriteErrorMessages(stdout,err);
-    dd_free_global_constants();
-    return false;
-  }
-  G_=dd_CopyGenerators(poly);
-
-  // printf("\nInput is H-representation:\n");
-  // dd_WriteMatrix(stdout,A_);  printf("\n");
-  // dd_WriteMatrix(stdout,G_);
+  ph.minimized_generators(); // V to H
 
   /**
    * Read results to Eigen format
    */
-  // get linearity
-  int lin_num = set_card(G_->linset);
-  std::vector<int> lin_elements;
-  if (lin_num > 0){
-    for (long elem=1;elem<=G_->linset[0];elem++) {
-      if (set_member(elem,G_->linset)) lin_elements.push_back(int(elem));
+  PPL::Generator_System gs = ph.generators();
+  std::vector<double> R_vec;
+  std::vector<int> t_vec;
+  std::vector<double> R_row;
+  std::vector<int> t_row;
+  PPL::Generator_System::const_iterator ig = gs.begin();
+  PPL::Generator_System::const_iterator gs_end = gs.end();
+
+  while (ig != gs_end) {
+    R_row.resize(dim);
+    t_row.resize(1);
+    t_row[0] = 0;
+    if (ig->is_point()) {
+      t_row[0] = 1;
+      mpz_class divisor = ig->divisor();
+      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
+        mpq_class q(ig->coefficient(PPL::Variable(j)), divisor);
+        R_row[j] = q.get_d();
+      }
+    } else if (ig->is_ray() || ig->is_line()) {
+      mpz_class max = abs(ig->coefficient(PPL::Variable(0)));
+      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
+        if (cmp(max, abs(ig->coefficient(PPL::Variable(j)))) < 0)
+          max = abs(ig->coefficient(PPL::Variable(j)));
+      }
+      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
+        R_row[j] = mpq_class(ig->coefficient(PPL::Variable(j)), max).get_d();
+      }
+    } else {
+      std::cout << "[vertexEnumeration] A Closure point! Not implemented yet, should be the same as point. Make sure you know why there is a Closure point\n";
+      exit(1);
     }
-  }
-  int Grow = G_->rowsize;
-  int Gcol = G_->colsize;
-  *R = Eigen::MatrixXd(Grow + lin_num, Gcol);
-  for (int i = 0; i < Grow; ++i)
-    for (int j = 0; j < Gcol; ++j)
-      (*R)(i,j) = dd_get_d(G_->matrix[i][j]);
-  for (int i = 0; i < lin_num; ++i) {
-    R->middleRows<1>(Grow + i) = -R->middleRows<1>(lin_elements[i]-1);
+
+    if (ig->is_line()) {
+      R_row.resize(2*dim);
+      for (int ii = 0; ii < dim; ++ii)
+        R_row[dim + ii] = -R_row[ii];
+      t_row.assign(2, 0);
+    }
+
+    for (int ii = 0; ii < R_row.size(); ++ii)
+      R_vec.push_back(R_row[ii]);
+    for (int ii = 0; ii < t_row.size(); ++ii)
+      t_vec.push_back(t_row[ii]);
+    ig++;
   }
 
-  /**
-   * cddlib clean up
-   */
-  dd_FreeMatrix(A_);
-  dd_FreeMatrix(G_);
-  dd_FreePolyhedra(poly);
+  int num_generators = R_vec.size()/dim;
+  Eigen::MatrixXd R_ = Eigen::MatrixXd::Map(R_vec.data(), dim, num_generators).transpose();
+  Eigen::VectorXi t_ = Eigen::VectorXi::Map(t_vec.data(), t_vec.size());
 
-  if (err!=dd_NoError) {
-    dd_WriteErrorMessages(stdout,err);
-    dd_free_global_constants();
-    return false;
-  }
+  *R = Eigen::MatrixXd(R_.rows(), R_.cols() + 1);
+  R->leftCols(1) = t_.cast<double>();
+  R->rightCols(R_.cols()) = R_;
   return true;
 }
 
-bool Poly::facetEnumeration(const Eigen::MatrixXd &R, Eigen::MatrixXd *A, Eigen::VectorXd *b) {
+bool Poly::facetEnumeration(const Eigen::MatrixXd &R_input, Eigen::MatrixXd *A, Eigen::VectorXd *b) {
   /**
-   * cddlib initialization
+   * Scale input matrix to make it numerically more stable
    */
-  dd_PolyhedraPtr poly;
-  dd_MatrixPtr R_, A_;
-  dd_rowrange m;
-  dd_colrange d;
-  dd_ErrorType err;
-  dd_set_global_constants();  /* First, this must be called to use cddlib. */
+  // Eigen::MatrixXd S = Eigen::MatrixXd::Identity(R_input.cols(), R_input.cols());
+  // double inf_value = 0;
+  // if (R_input.leftCols(1).minCoeff() > 0.1) {
+  //   // no rays
+  //   inf_value = std::numeric_limits<double>::infinity();
+  // }
+  // for (int i = 1; i < R_input.cols(); ++i) {
+  //   double max = -inf_value;
+  //   double min = inf_value;
+  //   for (int j = 0; j < R_input.rows(); ++j) {
+  //     if (R_input(j, i) > max) max = R_input(j, i);
+  //     if (R_input(j, i) < min) min = R_input(j, i);
+  //   }
+  //   double range = max - min;
+  //   if ( range > 1e-8) {
+  //     S(i,i) = 1.0/range;
+  //   }
+  // }
 
   /**
-   * Eigen to cdd format conversion
+   * Convert the inputs to integers
    */
-  m = R.rows();
-  d = R.cols();
-  R_ = dd_CreateMatrix(m, d);
-  for (int i = 0; i < m; ++i)
-    for (int j = 0; j < d; ++j)
-      dd_set_d(R_->matrix[i][j], R(i, j));
-  /**
-   * Call face enumeration from cddlib
-   */
-  R_->representation = dd_Generator;
-  poly=dd_DDMatrix2Poly(R_, &err);  /* compute the second (Inequality) representation */
-  if (err!=dd_NoError) {
-    dd_WriteErrorMessages(stdout,err);
-    dd_free_global_constants();
-    return false;
-  }
-  A_=dd_CopyInequalities(poly);
-  // std::cout << "A_: " << std::endl;
-  // dd_WriteMatrix(stdout,A_);
+  Eigen::MatrixXi R_int = (R_input*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
+  R_int.leftCols(1) = R_input.leftCols(1).cast<int>();
 
   /**
-   * Read results to Eigen format
+   * Convert input to PPL format
    */
-  // get linearity number
-  int lin_num = set_card(A_->linset);
-  // read id of linearity rows
-  std::vector<int> lin_elements;
-  if (lin_num > 0){
-    for (long elem=1;elem<=A_->linset[0];elem++) {
-      if (set_member(elem,A_->linset)) lin_elements.push_back(int(elem));
+  int nrows = R_int.rows();
+  int dim = R_int.cols() - 1;
+  PPL::Constraint_System cs;
+  PPL::Generator_System gs;
+
+  bool has_a_point = false;
+  for (int i = 0; i < nrows; ++i) {
+    PPL::Linear_Expression e;
+    for (unsigned j = dim; j > 0; j--) {
+      e += R_int(i,j) * PPL::Variable(j-1);
+    }
+    if (R_int(i,0) == 1) {
+      // a vertex
+      has_a_point = true;
+      gs.insert(point(e, PPL_MULTIPLIER_BEFORE_ROUNDING));
+    } else {
+      gs.insert(ray(e));
     }
   }
-  // read id of linearity rows
-  int Arow = A_->rowsize;
-  int Acol = A_->colsize;
-  *A = Eigen::MatrixXd(Arow + lin_num, Acol-1);
-  *b = Eigen::VectorXd(Arow + lin_num);
-  for (int i = 0; i < Arow; ++i) {
-    (*b)(i) = dd_get_d(A_->matrix[i][0]);
-    for (int j = 1; j < Acol; ++j)
-      (*A)(i,j-1) = -dd_get_d(A_->matrix[i][j]);
-  }
-  for (int i = 0; i < lin_num; ++i) {
-    A->middleRows<1>(Arow + i) = -A->middleRows<1>(lin_elements[i]-1);
-    b->segment<1>(Arow + i) = -b->segment<1>(lin_elements[i]-1);
+
+  // Every non-empty generator system must have at least one point.
+  if (nrows > 0 && !has_a_point) {
+    gs.insert(PPL::point());
   }
 
-  /**
-   * cddlib clean up
-   */
-  dd_FreeMatrix(R_);
-  dd_FreeMatrix(A_);
-  dd_FreePolyhedra(poly);
+  PPL::C_Polyhedron ph(gs);
+  print_generators(ph, "*** ph generators ***", std::cout);
 
-  if (err!=dd_NoError) {
-    dd_WriteErrorMessages(stdout,err);
-    dd_free_global_constants();
-    return false;
+  ph.minimized_constraints(); // V to H
+  print_constraints(ph, "*** ph constraints ***", std::cout);
+
+  cs = ph.constraints();
+
+  // convert constraints to Eigen Matrix format
+  // from Ax + b >= 0
+  // to   Ax < b
+  std::vector<double> A_vec;
+  std::vector<double> b_vec;
+  std::vector<double> A_row;
+  std::vector<double> b_row;
+  PPL::Constraint_System::const_iterator ic = cs.begin();
+  PPL::Constraint_System::const_iterator cs_end = cs.end();
+
+  while (ic != cs_end) {
+    A_row.resize(dim);
+    b_row.resize(1);
+
+    mpz_class b = ic->inhomogeneous_term();
+    mpz_class max = abs(b);
+    for (PPL::dimension_type j = ic->space_dimension(); j-- > 0; ) {
+      if (cmp(max, abs(ic->coefficient(PPL::Variable(j)))) < 0) {
+        max = abs(ic->coefficient(PPL::Variable(j)));
+      }
+    }
+
+    for (PPL::dimension_type j = ic->space_dimension(); j-- > 0; ) {
+      A_row[j] = - mpq_class(ic->coefficient(PPL::Variable(j)), max).get_d();
+    }
+    b_row[0] = mpq_class(b, max).get_d();
+
+    if (ic->is_equality()) {
+      A_row.resize(2*dim);
+      for (int ii = 0; ii < dim; ++ii)
+        A_row[dim + ii] = -A_row[ii];
+      b_row.push_back(-b_row[0]);
+    }
+
+    for (int ii = 0; ii < A_row.size(); ++ii)
+      A_vec.push_back(A_row[ii]);
+    for (int ii = 0; ii < b_row.size(); ++ii)
+      b_vec.push_back(b_row[ii]);
+    ic++;
   }
+
+  int num_generators = A_vec.size()/dim;
+  *A = Eigen::MatrixXd::Map(A_vec.data(), dim, num_generators).transpose();
+  *b = Eigen::VectorXd::Map(b_vec.data(), b_vec.size());
+
   return true;
 }
 
@@ -356,6 +453,7 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
     A = [facetEnumeration(R1); facetEnumeration(R2)];
     R = vertexEnumeration(A);
    */
+  std::cout << "[intersection] debug 0" << std::endl;
   if ((R1.rows() == 0)||(R2.rows() == 0)) {
     *R = Eigen::MatrixXd(0, 0);
     return true;
@@ -370,8 +468,16 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
 
   Eigen::MatrixXd A1, A2;
   Eigen::VectorXd b1, b2;
+  std::cout << "[intersection] debug 1" << std::endl;
   facetEnumeration(R1, &A1, &b1);
+  std::cout << "[intersection] debug 2" << std::endl;
+  std::cout << "R1:\n" << R1 << std::endl;
   facetEnumeration(R2, &A2, &b2);
+  std::cout << "[intersection] debug 3" << std::endl;
+  std::cout << "A1:\n" << A1 << std::endl;
+  std::cout << "A2:\n" << A2 << std::endl;
+  std::cout << "b1:\n" << b1 << std::endl;
+  std::cout << "b2:\n" << b2 << std::endl;
 
   // stitch
   // std::cout << "[debug] A1: " << A1.rows() << " x " << A1.cols() << std::endl;
@@ -381,6 +487,9 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
   A << A1, A2;
   b << b1, b2;
   // get generators back
+  std::cout << "[intersection] debug 4" << std::endl;
+  std::cout << "A:\n" << A << std::endl;
+  std::cout << "b:\n" << b << std::endl;
   return vertexEnumeration(A, b, R);
 }
 
@@ -399,7 +508,9 @@ bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2
   R2 << Eigen::VectorXd::Zero(C2.rows()), C2;
 
   Eigen::MatrixXd R;
+  std::cout << "[coneIntersection] debug 1" << std::endl;
   if (!intersection(R1, R2, &R)) return false;
+  std::cout << "[coneIntersection] debug 2" << std::endl;
   *C = R.rightCols(R.cols()-1);
   if (C->norm() > 1e-10) {
     assert(R.leftCols<1>().norm() < 1e-10);
@@ -407,6 +518,7 @@ bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2
   } else {
     *C = Eigen::MatrixXd(0, 0);
   }
+  std::cout << "[coneIntersection] debug 3" << std::endl;
 
   return true;
 }
