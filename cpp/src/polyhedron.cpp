@@ -159,10 +159,6 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
     std::cout << "[hitAndRunSampleInPolytope] x0 is outside of max_radius" << std::endl;
     exit(1);
   }
-  // std::cout << "x0: " << x0.transpose() << std::endl;
-  // std::cout << "A: " << A << std::endl;
-  // std::cout << "b: " << b << std::endl;
-  // std::cout << "Ax0 - b: " << A*x0 - b << std::endl;
 
   int n = 0; // num generated so far
   Eigen::VectorXd x = x0;
@@ -183,9 +179,6 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
       // proceed as in hit and run
       z = A*u;
       c = (b - A*x).cwiseQuotient(z);
-      // std::cout << "\n(b-Ax) " << (b - A*x).transpose() << std::endl;
-      // std::cout << "z " << z.transpose() << std::endl;
-      // std::cout << "c " << c.transpose() << std::endl;
 
       // tmin = max(c(z<0));
       // tmax = min(c(z>0));
@@ -238,14 +231,6 @@ bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   Eigen::VectorXi b_int = (b*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
   Eigen::MatrixXi Ae_int = (Ae*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
   Eigen::VectorXi be_int = (be*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
-  // std::cout << "debug: A:\n" << A << std::endl;
-  // std::cout << "debug: A_int:\n" << A_int << std::endl;
-  // std::cout << "debug: b:\n" << b << std::endl;
-  // std::cout << "debug: b_int:\n" << b_int << std::endl;
-  // std::cout << "debug: Ae:\n" << Ae << std::endl;
-  // std::cout << "debug: Ae_int:\n" << Ae_int << std::endl;
-  // std::cout << "debug: be:\n" << be << std::endl;
-  // std::cout << "debug: be_int:\n" << be_int << std::endl;
   /**
    * Eigen to PPL format conversion
    */

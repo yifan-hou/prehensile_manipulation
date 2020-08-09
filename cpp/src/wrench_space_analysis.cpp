@@ -239,11 +239,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
   MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
 
-  std::cout << "action.R_a:\n" << action.R_a << std::endl;
-  std::cout << "action.n_av:\n" << action.n_av << std::endl;
-  std::cout << "action.C:\n" << action.C << std::endl;
-  std::cout << "action.b_C:\n" << action.b_C << std::endl;
-
   time_stats_hybrid_servoing = timer.toc();
   timer.tic();
 
@@ -276,37 +271,13 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     Eigen::VectorXd b_NC = Eigen::VectorXd::Zero(NC.rows());
     b_NC.tail(action.b_C.rows()) = action.b_C;
     Eigen::VectorXd b_Nu = Eigen::VectorXd(Nu.rows());
-    // std::cout << "N:\n" << N << std::endl;
-    // std::cout << "C:\n" << action.C << std::endl;
-    // std::cout << "b_C:\n" << action.b_C << std::endl;
-    // std::cout << "Nu:\n" << Nu << std::endl;
-    // std::cout << "NC:\n" << NC << std::endl;
-    // std::cout << "b_NC:\n" << b_NC << std::endl;
     if(!Poly::vertexEnumeration(-Nu, b_Nu, NC, b_NC, &R)) {
       std::cerr << "Error: vertexEnumeration returns error." << std::endl;
       return -1;
     }
-    // char c = getchar();
-    // if (c == 'l') {
-    //   std::cout << "N:\n" << N << std::endl;
-    //   std::cout << "C:\n" << action.C << std::endl;
-    //   std::cout << "b_C:\n" << action.b_C << std::endl;
-    //   std::cout << "Nu:\n" << Nu << std::endl;
-    //   std::cout << "R:\n" << R << std::endl;
-    //   std::cout << "NC:\n" << NC << std::endl;
-    //   std::cout << "b_NC:\n" << b_NC << std::endl;
-    //   getchar();
-    // }
-    // if (!a_solution_exists) {
     if (R.rows() == 0) {
       // no solution
       if (id == goal_id) {
-        // std::cout << "N:\n" << N << std::endl;
-        // std::cout << "Nu:\n" << Nu << std::endl;
-        // std::cout << "action.C:\n" << action.C << std::endl;
-        // std::cout << "action.b_C:\n" << action.b_C << std::endl;
-        // std::cout << "NCNu:\n" << NCNu << std::endl;
-        // std::cout << "b_NCNu:\n" << b_NCNu << std::endl;
         std::cout << " Goal is infeasible. Return." << std::endl;
         return -1;
       }
