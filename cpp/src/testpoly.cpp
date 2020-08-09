@@ -7,6 +7,9 @@ Eigen::IOFormat CleanFmt(4, 0, ", ", "\n", "[", "]");
 #include <string>
 
 int main(int argc, char *argv[]) {
+  Eigen::VectorXd emptyV(0);
+  Eigen::MatrixXd emptyM(0,0);
+
   // std::cout << "############################################\n";
   // std::cout << "    Distance to cone\n";
   // std::cout << "############################################\n";
@@ -69,13 +72,13 @@ int main(int argc, char *argv[]) {
   // std::cout << "    Basic vertex and facet enumeration\n";
   // std::cout << "############################################\n";
 
-  Eigen::MatrixXd A1;
-  Eigen::VectorXd b1;
-  Eigen::MatrixXd Rhigh(3, 4);
-  Rhigh <<  0,   0.2135,   0.7118, -4.46067, // original, error
-            0,  -0.2135,   0.7118,    -5.03,
-            0,   0.2016,   0.6721,     4.75,
-            0,  -0.2016,   0.6721,    4.212;
+  // Eigen::MatrixXd A1;
+  // Eigen::VectorXd b1;
+  // Eigen::MatrixXd Rhigh(4, 4);
+  // Rhigh <<  0,   0.2135,   0.7118, -4.46067, // original, error
+  //           0,  -0.2135,   0.7118,    -5.03,
+  //           0,   0.2016,   0.6721,     4.75,
+  //           0,  -0.2016,   0.6721,    4.212;
   // Rhigh << 0,       0.5,         1, -0.456101, // ok
   //          0,      -0.5,         1, -0.514315,
   //          0,  0.472131,  0.944226,  0.485685,
@@ -84,20 +87,35 @@ int main(int argc, char *argv[]) {
   //          0,     -50000,        100000,  -51431,
   //          0,      47213,        94423,    48569,
   //          0,     -47213,        94423,    43067;
+  // if (!Poly::facetEnumeration(Rhigh, &A1, &b1)) return -1;
 
-  if (!Poly::facetEnumeration(Rhigh, &A1, &b1)) return -1;
-
-  std::cout << "Facet Enumeration:\n";
-  std::cout << "R:\n" << Rhigh.format(CleanFmt) << std::endl;
-  std::cout << "A:\n" << A1.format(CleanFmt) << std::endl;
-  std::cout << "b:\n" << b1.format(CleanFmt) << std::endl;
-  return 0;
+  // std::cout << "Facet Enumeration:\n";
+  // std::cout << "R:\n" << Rhigh.format(CleanFmt) << std::endl;
+  // std::cout << "A:\n" << A1.format(CleanFmt) << std::endl;
+  // std::cout << "b:\n" << b1.format(CleanFmt) << std::endl;
 
 
-  Eigen::MatrixXd A(1, 3);
-  A << 0,  0, 1;
-  Eigen::VectorXd b(1);
-  b << 0;
+  Eigen::MatrixXd A(15, 6), Ae;
+  Eigen::VectorXd b(15);
+
+  A    <<  0,       0.15,    0.02175,          0,          0,          0,
+   -0.149999,          0, -0.0434999,          0,          0,          0,
+           0,       0.15, -0.0217499,          0,          0,          0,
+   -0.149999,          0, -0.0434999,          0,          0,          0,
+          -0,  -0.149999, -0.0217499,          0,       0.15,    0.02175,
+        0.15,         -0,         -0,  -0.149999,          0,          0,
+          -0,  -0.149999, -0.0217499,         -0,         -0,         -0,
+        0.15,         -0,     0.0435,         -0,         -0,         -0,
+          -0,  -0.149999,    0.02175,         -0,         -0,         -0,
+        0.15,         -0,     0.0435,         -0,         -0,         -0,
+           0,       0.15,    0.02175,         -0,  -0.149999, -0.0217499,
+   -0.149999,          0,          0,       0.15,         -0,         -0,
+           0,       0.15, -0.0217499,         -0,  -0.149999,    0.02175,
+           0,          0,          0,  -0.275862,   0.137932,    0.95125,
+          -0,         -0,         -0,   0.275863,  -0.137931,  -0.951249;
+  b = Eigen::VectorXd::Zero(15);
+  b(13) = 0.105125;
+  b(14) = -0.105124;
 
   Eigen::MatrixXd R;
   if (!Poly::vertexEnumeration(A, b, &R)) return -1;
@@ -106,7 +124,31 @@ int main(int argc, char *argv[]) {
   std::cout << "A:\n" << A.format(CleanFmt) << std::endl;
   std::cout << "b:\n" << b.format(CleanFmt) << std::endl;
   std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
+  return 0;
+  // if (!Poly::facetEnumeration(R, &A, &b)) return -1;
 
+  // std::cout << "Facet Enumeration:\n";
+  // std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
+  // std::cout << "A:\n" << A.format(CleanFmt) << std::endl;
+  // std::cout << "b:\n" << b.format(CleanFmt) << std::endl;
+
+  // if (!Poly::vertexEnumeration(A, b, &R)) return -1;
+
+  // std::cout << "Vertex Enumeration:\n";
+  // std::cout << "A:\n" << A.format(CleanFmt) << std::endl;
+  // std::cout << "b:\n" << b.format(CleanFmt) << std::endl;
+  // std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
+
+  R = Eigen::MatrixXd(4, 4);
+  R << 1,       0,      1,        0,
+       1,       0,     -1,        0,
+       1,       0.0001,      0,        1,
+       1,       0,      0,        -1;
+
+  // R << 1,       0,      -10,        0,
+  //      1, 2.49061, -1.69659,  1.73601,
+  //      1,   1.281,  -5.7292, -26.7639,
+  //      1, 1.20961, -5.96739,  28.5001;
   if (!Poly::facetEnumeration(R, &A, &b)) return -1;
 
   std::cout << "Facet Enumeration:\n";
@@ -186,35 +228,54 @@ int main(int argc, char *argv[]) {
 
   Eigen::MatrixXd R1(2, 3);
   Eigen::MatrixXd R2(2, 3);
+  // // R1 << 0, 1, 0,
+  // //       0, 0, 1;
+  // // R2 << 0, 1, 1,
+  // //       0, -1, 1;
   // R1 << 0, 1, 0,
   //       0, 0, 1;
-  // R2 << 0, 1, 1,
-  //       0, -1, 1;
-  R1 << 0, 1, 0,
-        0, 0, 1;
-  R2 << 0, -1, -1,
-        0, -1, 0;
+  // R2 << 0, -1, -1,
+  //       0, -1, 0;
+  // if (!Poly::intersection(R1, R2, &R)) return -1;
+  // std::cout << "Intersection:\n";
+  // std::cout << "R1:\n" << R1.format(CleanFmt) << std::endl;
+  // std::cout << "R2:\n" << R2.format(CleanFmt) << std::endl;
+  // std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
+
+  // R1 = Eigen::MatrixXd(4, 3);
+  // R2 = Eigen::MatrixXd(4, 3);
+  // R1 << 1, 0, 0,
+  //       1, 0, 1,
+  //       1, 1, 0,
+  //       1, 1, 1,
+  // R2 << 1, 0.5, 0.5,
+  //       1, -0.5, 0.5,
+  //       1, 0.5, -0.5,
+  //       1, -0.5, -0.5;
+  // if (!Poly::intersection(R1, R2, &R)) return -1;
+  // std::cout << "Intersection:\n";
+  // std::cout << "R1:\n" << R1.format(CleanFmt) << std::endl;
+  // std::cout << "R2:\n" << R2.format(CleanFmt) << std::endl;
+  // std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
+
+  R1 = Eigen::MatrixXd(4, 4);
+  R2 = Eigen::MatrixXd(4, 4);
+  R1 << 1,       0,      -10,        0,
+        1, 2.49061, -1.69659,  1.73601,
+        1,   1.281,  -5.7292, -26.7639,
+        1, 1.20961, -5.96739,  28.5001;
+
+  R2 << 1,      -3.7452,  -4.6818,   -1.552,
+       1,       3.7452,  -4.6818, -11.5399,
+       1,           -0,       -0,       -0,
+       1, -8.16374e-15,  -9.3636, -13.0919;
   if (!Poly::intersection(R1, R2, &R)) return -1;
   std::cout << "Intersection:\n";
   std::cout << "R1:\n" << R1.format(CleanFmt) << std::endl;
   std::cout << "R2:\n" << R2.format(CleanFmt) << std::endl;
   std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
 
-  R1 = Eigen::MatrixXd(4, 3);
-  R2 = Eigen::MatrixXd(4, 3);
-  R1 << 1, 0, 0,
-        1, 0, 1,
-        1, 1, 0,
-        1, 1, 1,
-  R2 << 1, 0.5, 0.5,
-        1, -0.5, 0.5,
-        1, 0.5, -0.5,
-        1, -0.5, -0.5;
-  if (!Poly::intersection(R1, R2, &R)) return -1;
-  std::cout << "Intersection:\n";
-  std::cout << "R1:\n" << R1.format(CleanFmt) << std::endl;
-  std::cout << "R2:\n" << R2.format(CleanFmt) << std::endl;
-  std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
+  return 0;
 
   std::cout << "############################################\n";
   std::cout << "    coneIntersection\n";
@@ -254,6 +315,7 @@ int main(int argc, char *argv[]) {
   std::cout << "C2:\n" << C6.format(CleanFmt) << std::endl;
   std::cout << "C:\n" << C.format(CleanFmt) << std::endl;
 
+  return 0;
   std::cout << "############################################\n";
   std::cout << "    offsetPolytope\n";
   std::cout << "############################################\n";

@@ -143,7 +143,6 @@ double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A
   double cost = solve_quadprog(G0, g0,
       Eigen::MatrixXd(kDim, 0), Eigen::VectorXd(0), // no equality constraints
       -A.transpose(), b, x);
-  // std::cout << "Debug: x: " << x.transpose() << std::endl;
   return (x - p).norm();
 }
 
@@ -230,34 +229,69 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
 }
 
 
-bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen::MatrixXd *R) {
+bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,  Eigen::MatrixXd *R) {
   /**
    * Convert the inputs to integers
    */
   Eigen::MatrixXi A_int = (A*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
   Eigen::VectorXi b_int = (b*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
-
+  Eigen::MatrixXi Ae_int = (Ae*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
+  Eigen::VectorXi be_int = (be*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
+  // std::cout << "debug: A:\n" << A << std::endl;
+  // std::cout << "debug: A_int:\n" << A_int << std::endl;
+  // std::cout << "debug: b:\n" << b << std::endl;
+  // std::cout << "debug: b_int:\n" << b_int << std::endl;
+  // std::cout << "debug: Ae:\n" << Ae << std::endl;
+  // std::cout << "debug: Ae_int:\n" << Ae_int << std::endl;
+  // std::cout << "debug: be:\n" << be << std::endl;
+  // std::cout << "debug: be_int:\n" << be_int << std::endl;
   /**
    * Eigen to PPL format conversion
    */
   PPL::Constraint_System cs;
+  int dim;
+  int dim1 = 0, dim2 = 0;
+
   int nrows = A_int.rows();
-  int dim = A_int.cols();
-  for (int i = 0; i < nrows; ++i) {
-    PPL::Linear_Expression e;
-    for (unsigned j = dim; j > 0; j--) {
-      e += A_int(i,j-1) * PPL::Variable(j-1);
+  if (nrows > 0) {
+    dim1 = A_int.cols();
+    for (int i = 0; i < nrows; ++i) {
+      PPL::Linear_Expression e;
+      for (unsigned j = dim1; j > 0; j--) {
+        e += A_int(i,j-1) * PPL::Variable(j-1);
+      }
+      e -= b_int(i);
+      cs.insert(e <= 0);
     }
-    e -= b(i);
-    cs.insert(e <= 0);
+  }
+  nrows = Ae_int.rows();
+  if (nrows > 0) {
+    dim2 = Ae_int.cols();
+    for (int i = 0; i < nrows; ++i) {
+      PPL::Linear_Expression e;
+      for (unsigned j = dim2; j > 0; j--) {
+        e += Ae_int(i,j-1) * PPL::Variable(j-1);
+      }
+      e -= be_int(i);
+      cs.insert(e == 0);
+    }
+  }
+  if (dim1 != 0) {
+    dim = dim1;
+  } else if (dim2 != 0) {
+    dim = dim2;
+  } else {
+    return true; // input is empty, nothing to do
   }
   PPL::C_Polyhedron ph(cs);
 
   /**
    * Call vertex enumeration from cddlib
    */
-  ph.minimized_generators(); // V to H
-
+  ph.minimized_generators();
+  // print_constraints(ph, "*** ph constraints ***", std::cout);
+  // print_generators(ph, "*** ph generators ***", std::cout);
   /**
    * Read results to Eigen format
    */
@@ -376,10 +410,10 @@ bool Poly::facetEnumeration(const Eigen::MatrixXd &R_input, Eigen::MatrixXd *A, 
   }
 
   PPL::C_Polyhedron ph(gs);
-  print_generators(ph, "*** ph generators ***", std::cout);
 
   ph.minimized_constraints(); // V to H
-  print_constraints(ph, "*** ph constraints ***", std::cout);
+  // print_generators(ph, "*** ph generators ***", std::cout);
+  // print_constraints(ph, "*** ph constraints ***", std::cout);
 
   cs = ph.constraints();
 
@@ -449,11 +483,6 @@ bool Poly::polytopeFacetEnumeration(const Eigen::MatrixXd &M, Eigen::MatrixXd *A
 }
 
 bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Eigen::MatrixXd *R) {
-  /*
-    A = [facetEnumeration(R1); facetEnumeration(R2)];
-    R = vertexEnumeration(A);
-   */
-  std::cout << "[intersection] debug 0" << std::endl;
   if ((R1.rows() == 0)||(R2.rows() == 0)) {
     *R = Eigen::MatrixXd(0, 0);
     return true;
@@ -463,34 +492,143 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
     return false;
   }
 
-  // get inequalities
-  Eigen::IOFormat CleanFmt(4, 0, ", ", "\n", "[", "]");
+  /**
+   * Convert the inputs to integers
+   */
+  Eigen::MatrixXi R1_int = (R1*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
+  Eigen::MatrixXi R2_int = (R2*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
+  R1_int.leftCols(1) = R1.leftCols(1).cast<int>();
+  R2_int.leftCols(1) = R2.leftCols(1).cast<int>();
+  /**
+   * Convert input to PPL format
+   */
+  PPL::Generator_System gs1;
+  PPL::Generator_System gs2;
 
-  Eigen::MatrixXd A1, A2;
-  Eigen::VectorXd b1, b2;
-  std::cout << "[intersection] debug 1" << std::endl;
-  facetEnumeration(R1, &A1, &b1);
-  std::cout << "[intersection] debug 2" << std::endl;
-  std::cout << "R1:\n" << R1 << std::endl;
-  facetEnumeration(R2, &A2, &b2);
-  std::cout << "[intersection] debug 3" << std::endl;
-  std::cout << "A1:\n" << A1 << std::endl;
-  std::cout << "A2:\n" << A2 << std::endl;
-  std::cout << "b1:\n" << b1 << std::endl;
-  std::cout << "b2:\n" << b2 << std::endl;
+  int nrows = R1_int.rows();
+  int dim = R1_int.cols() - 1;
+  bool has_a_point = false;
+  for (int i = 0; i < nrows; ++i) {
+    PPL::Linear_Expression e;
+    for (unsigned j = dim; j > 0; j--) {
+      e += R1_int(i,j) * PPL::Variable(j-1);
+    }
+    if (R1_int(i,0) == 1) {
+      // a vertex
+      has_a_point = true;
+      gs1.insert(point(e, PPL_MULTIPLIER_BEFORE_ROUNDING));
+    } else {
+      gs1.insert(ray(e));
+    }
+  }
+  // Every non-empty generator system must have at least one point.
+  if (nrows > 0 && !has_a_point) {
+    gs1.insert(PPL::point());
+  }
 
-  // stitch
-  // std::cout << "[debug] A1: " << A1.rows() << " x " << A1.cols() << std::endl;
-  // std::cout << "[debug] A2: " << A2.rows() << " x " << A2.cols() << std::endl;
-  Eigen::MatrixXd A(A1.rows() + A2.rows(), A1.cols());
-  Eigen::VectorXd b(b1.size() + b2.size());
-  A << A1, A2;
-  b << b1, b2;
-  // get generators back
-  std::cout << "[intersection] debug 4" << std::endl;
-  std::cout << "A:\n" << A << std::endl;
-  std::cout << "b:\n" << b << std::endl;
-  return vertexEnumeration(A, b, R);
+  nrows = R2_int.rows();
+  dim = R2_int.cols() - 1;
+  has_a_point = false;
+  for (int i = 0; i < nrows; ++i) {
+    PPL::Linear_Expression e;
+    for (unsigned j = dim; j > 0; j--) {
+      e += R2_int(i,j) * PPL::Variable(j-1);
+    }
+    if (R2_int(i,0) == 1) {
+      // a vertex
+      has_a_point = true;
+      gs2.insert(point(e, PPL_MULTIPLIER_BEFORE_ROUNDING));
+    } else {
+      gs2.insert(ray(e));
+    }
+  }
+  // Every non-empty generator system must have at least one point.
+  if (nrows > 0 && !has_a_point) {
+    gs2.insert(PPL::point());
+  }
+
+
+  PPL::C_Polyhedron ph1(gs1);
+  PPL::C_Polyhedron ph2(gs2);
+  ph1.minimized_constraints();
+  ph2.minimized_constraints();
+
+  /**
+   * Intersection
+   */
+  // print_generators(ph1, "*** ph1 generators ***", std::cout);
+  // print_generators(ph2, "*** ph2 generators ***", std::cout);
+
+  // ph1.add_constraints(ph2.constraints());
+  ph1.intersection_assign(ph2);
+  // print_constraints(ph1, "*** ph constraints ***", std::cout);
+  // print_generators(ph1, "*** ph generators ***", std::cout);
+
+
+  /**
+   * Read the results
+   * Below are mostly copied from vertexEnumeration
+   */
+  ph1.minimized_generators();
+  /**
+   * Read results to Eigen format
+   */
+  PPL::Generator_System gs = ph1.generators();
+  std::vector<double> R_vec;
+  std::vector<int> t_vec;
+  std::vector<double> R_row;
+  std::vector<int> t_row;
+  PPL::Generator_System::const_iterator ig = gs.begin();
+  PPL::Generator_System::const_iterator gs_end = gs.end();
+
+  while (ig != gs_end) {
+    R_row.resize(dim);
+    t_row.resize(1);
+    t_row[0] = 0;
+    if (ig->is_point()) {
+      t_row[0] = 1;
+      mpz_class divisor = ig->divisor();
+      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
+        mpq_class q(ig->coefficient(PPL::Variable(j)), divisor);
+        R_row[j] = q.get_d();
+      }
+    } else if (ig->is_ray() || ig->is_line()) {
+      mpz_class max = abs(ig->coefficient(PPL::Variable(0)));
+      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
+        if (cmp(max, abs(ig->coefficient(PPL::Variable(j)))) < 0)
+          max = abs(ig->coefficient(PPL::Variable(j)));
+      }
+      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
+        R_row[j] = mpq_class(ig->coefficient(PPL::Variable(j)), max).get_d();
+      }
+    } else {
+      std::cout << "[Intersection] A Closure point! Not implemented yet, should be the same as point. Make sure you know why there is a Closure point\n";
+      exit(1);
+    }
+
+    if (ig->is_line()) {
+      R_row.resize(2*dim);
+      for (int ii = 0; ii < dim; ++ii)
+        R_row[dim + ii] = -R_row[ii];
+      t_row.assign(2, 0);
+    }
+
+    for (int ii = 0; ii < R_row.size(); ++ii)
+      R_vec.push_back(R_row[ii]);
+    for (int ii = 0; ii < t_row.size(); ++ii)
+      t_vec.push_back(t_row[ii]);
+    ig++;
+  }
+
+  int num_generators = R_vec.size()/dim;
+  Eigen::MatrixXd R_ = Eigen::MatrixXd::Map(R_vec.data(), dim, num_generators).transpose();
+  Eigen::VectorXi t_ = Eigen::VectorXi::Map(t_vec.data(), t_vec.size());
+
+  *R = Eigen::MatrixXd(R_.rows(), R_.cols() + 1);
+  R->leftCols(1) = t_.cast<double>();
+  R->rightCols(R_.cols()) = R_;
+
+  return true;
 }
 
 bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2, Eigen::MatrixXd *C) {
@@ -508,17 +646,29 @@ bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2
   R2 << Eigen::VectorXd::Zero(C2.rows()), C2;
 
   Eigen::MatrixXd R;
-  std::cout << "[coneIntersection] debug 1" << std::endl;
   if (!intersection(R1, R2, &R)) return false;
-  std::cout << "[coneIntersection] debug 2" << std::endl;
-  *C = R.rightCols(R.cols()-1);
+  // get rid of the origin
+  int id0 = -1;
+  for (int i = 0; i < R.rows(); ++i) {
+    if (int(R(i, 0)) == 1) {
+      id0 = i;
+      break;
+    }
+  }
+  Eigen::MatrixXd R_;
+  if (id0 >= 0) {
+    R_ = Eigen::MatrixXd(R.rows() - 1, R.cols());
+    R_.topRows(id0) = R.topRows(id0);
+    R_.bottomRows(R.rows() - id0 - 1) = R.bottomRows(R.rows() - id0 - 1);
+  }
+
+  *C = R_.rightCols(R_.cols()-1);
   if (C->norm() > 1e-10) {
-    assert(R.leftCols<1>().norm() < 1e-10);
+    assert(R_.leftCols<1>().norm() < 1e-10);
     C->rowwise().normalize();
   } else {
     *C = Eigen::MatrixXd(0, 0);
   }
-  std::cout << "[coneIntersection] debug 3" << std::endl;
 
   return true;
 }

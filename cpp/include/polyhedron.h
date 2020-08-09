@@ -72,23 +72,26 @@ Eigen::MatrixXd hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
         const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard = 10, int runup = 10, double max_radius = -1);
 
 /**
- * Vertex enumeration. Given a polyhedron (A, b):
- *      {x: A*x <= b},
+ * Vertex enumeration. Given a polyhedron (A, b, Ae, be):
+ *      {x: A*x <= b, Ae*x = be},
  * Find its generator representation R = [m M]:
  *      {y: y = M_ray'*x1 + M_vertex'*x2, x1 >= 0, 0 <= x2 <= 1}
  * where M_ray and M_vertex are rows of M whose corresponding m equals 0 and 1.
  *
  *   Examples:
  *       A = [0 1 0; 1 0 0]; b = [0; 1];
- *       R = VertexEnumeration(A, b, &R);
+ *       R = VertexEnumeration(A, b, Eigen::MatrixXd::Zero(0,0), Eigen::VectorXd::Zero(0), &R);
  *
  * @param[in]  A     Each row represents an inequality. It's good for numerical stability to normalize these rows
  * @param[in]  b     Each row represents an inequality.
+ * @param[in]  Ae    Each row represents an equality. It's good for numerical stability to normalize these rows
+ * @param[in]  be    Each row represents an equality.
  * @param      R     Pointer to output R, each row of R represents a generator.
  *
  * @return     True if no error occurs.
  */
-bool vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen::MatrixXd *R);
+bool vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+        const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be, Eigen::MatrixXd *R);
 
 /**
  * Facet enumeration. Given a polyhedron R = [m M]:

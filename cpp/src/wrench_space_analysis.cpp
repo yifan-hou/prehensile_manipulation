@@ -47,6 +47,10 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   // getchar();
   Timer timer;
   timer.tic();
+
+  Eigen::FullPivLU<MatrixXd> lu; // for quickly solving linear system
+  lu.setThreshold(TOL);
+
   double time_stats_initialization;
   double time_stats_force_margin;
   double time_stats_hybrid_servoing;
@@ -83,12 +87,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
   // for crashing check
   MatrixXd cone_allFix_r;
-  std::cout << "debug" << std::endl;
-  std::cout << "eCone_allFix_r:\n" << eCone_allFix_r << std::endl;
-  std::cout << "hCone_allFix_r:\n" << hCone_allFix_r << std::endl;
   Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r);
-  std::cout << "debug 4" << std::endl;
-  exit(-1);
 
   // divide the big matrices
   // Jn: nContacts x 6,  Nn: nContacts x 12,  Jacobian for the normals
@@ -226,7 +225,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     std::cout << "[WrenchStamping]    HFVC has no solution." << std::endl;
     return -1;
   }
-
   assert(action.n_af < kDimActualized); // shouldn't be all force
   assert(action.n_af > 0); // shouldn't be all velocity
   // make sure all velocity commands >= 0
@@ -241,13 +239,16 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
   MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
 
+  std::cout << "action.R_a:\n" << action.R_a << std::endl;
+  std::cout << "action.n_av:\n" << action.n_av << std::endl;
+  std::cout << "action.C:\n" << action.C << std::endl;
+  std::cout << "action.b_C:\n" << action.b_C << std::endl;
+
   time_stats_hybrid_servoing = timer.toc();
   timer.tic();
 
   // Crashing check
   MatrixXd R;
-  // std::cout << "[debug] cone_allFix_r: " << cone_allFix_r.rows() << " x " << cone_allFix_r.cols() << std::endl;
-  // std::cout << "[debug] V_control_directions_r: " << V_control_directions_r.rows() << " x " << V_control_directions_r.cols() << std::endl;
   Poly::coneIntersection(cone_allFix_r, V_control_directions_r, &R); // this line has errors sometimes
   if (R.rows() > 0) {
     std::cout << "[WrenchStamping]    Crashing." << std::endl;
@@ -270,18 +271,42 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     MatrixXd Nu = Nu_of_the_modes[id]; // Nu*v >= 0
 
     // check velocity constraints
-    // (TODO) this part can be computationally expensive
-    Eigen::MatrixXd NCNu(2*N.rows() + 2*action.C.rows() + Nu.rows(), N.cols());
-    NCNu << N, -N, -Nu, action.C, -action.C;
-    Eigen::VectorXd b_NCNu = Eigen::VectorXd::Zero(NCNu.rows());
-    b_NCNu.segment(2*N.rows() + Nu.rows(), action.b_C.rows()) = action.b_C;
-    b_NCNu.segment(2*N.rows() + Nu.rows() + action.C.rows(), action.b_C.rows()) = -action.b_C;
-    if(!Poly::vertexEnumeration(NCNu, b_NCNu, &R)) {
+    Eigen::MatrixXd NC(N.rows() + action.C.rows(), N.cols());
+    NC << N, action.C;
+    Eigen::VectorXd b_NC = Eigen::VectorXd::Zero(NC.rows());
+    b_NC.tail(action.b_C.rows()) = action.b_C;
+    Eigen::VectorXd b_Nu = Eigen::VectorXd(Nu.rows());
+    // std::cout << "N:\n" << N << std::endl;
+    // std::cout << "C:\n" << action.C << std::endl;
+    // std::cout << "b_C:\n" << action.b_C << std::endl;
+    // std::cout << "Nu:\n" << Nu << std::endl;
+    // std::cout << "NC:\n" << NC << std::endl;
+    // std::cout << "b_NC:\n" << b_NC << std::endl;
+    if(!Poly::vertexEnumeration(-Nu, b_Nu, NC, b_NC, &R)) {
       std::cerr << "Error: vertexEnumeration returns error." << std::endl;
       return -1;
     }
+    // char c = getchar();
+    // if (c == 'l') {
+    //   std::cout << "N:\n" << N << std::endl;
+    //   std::cout << "C:\n" << action.C << std::endl;
+    //   std::cout << "b_C:\n" << action.b_C << std::endl;
+    //   std::cout << "Nu:\n" << Nu << std::endl;
+    //   std::cout << "R:\n" << R << std::endl;
+    //   std::cout << "NC:\n" << NC << std::endl;
+    //   std::cout << "b_NC:\n" << b_NC << std::endl;
+    //   getchar();
+    // }
+    // if (!a_solution_exists) {
     if (R.rows() == 0) {
+      // no solution
       if (id == goal_id) {
+        // std::cout << "N:\n" << N << std::endl;
+        // std::cout << "Nu:\n" << Nu << std::endl;
+        // std::cout << "action.C:\n" << action.C << std::endl;
+        // std::cout << "action.b_C:\n" << action.b_C << std::endl;
+        // std::cout << "NCNu:\n" << NCNu << std::endl;
+        // std::cout << "b_NCNu:\n" << b_NCNu << std::endl;
         std::cout << " Goal is infeasible. Return." << std::endl;
         return -1;
       }
@@ -320,7 +345,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
     // std::cout << "F_control_directions_r:\n" << F_control_directions_r << std::endl;
     // std::cout << "polytope_of_the_modes[feasible_ids[c]]:\n" << polytope_of_the_modes[feasible_ids[c]] << std::endl;
-    // std::cout << "polytope_projection:\n" << polytope_projection << std::endl;
     // std::cout << " A rows: " << pp_A.rows() << std::endl;
     // getchar();
     // return -1;
@@ -341,6 +365,8 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       if (print_level > 0) std::cout << " (id:" << pps_A.size() - 1 << ") ";
     }
     if (print_level > 0) std::cout << " A rows: " << pp_A.rows() << std::endl;
+    // std::cout << "polytope_projection:\n" << polytope_projection << std::endl;
+    // std::cout << "polytope_of_the_modes[feasible_ids[c]]:\n" << polytope_of_the_modes[feasible_ids[c]] << std::endl;
   }
   if (print_level > 0)
     std::cout << "[WrenchStamping]  4.2 Sample wrenches and find feasible ones." << std::endl;
@@ -653,12 +679,8 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       action.w_av = action.b_C;
       MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
       MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
-      // std::cout << "[WrenchStamping]    Debug: action.C\n" << action.C << std::endl;
-      // std::cout << "[WrenchStamping]    Debug: action.b_C\n" << action.b_C << std::endl;
 
       // Crashing check
-      std::cout << "[debug] cone_allFix_r: " << cone_allFix_r.rows() << " x " << cone_allFix_r.cols() << std::endl;
-      std::cout << "[debug] V_control_directions_r: " << V_control_directions_r.rows() << " x " << V_control_directions_r.cols() << std::endl;
 
       time_stats_hybrid_servoing = timer.toc();
       timer.tic();
@@ -908,7 +930,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         // get the inequality representations for the cone projections
         if(!Poly::coneFacetEnumeration(cone_projection, &cp_A_temp)) {
           std::cerr << "coneFacetEnumeration return error." << std::endl;
-          std::cout << "[debug] cone_projection: " << cone_projection.rows() << " x " << cone_projection.cols() << std::endl;
+          // std::cout << "[debug] cone_projection: " << cone_projection.rows() << " x " << cone_projection.cols() << std::endl;
           exit(1);
         }
 

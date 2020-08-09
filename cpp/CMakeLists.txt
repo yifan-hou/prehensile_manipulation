@@ -36,14 +36,14 @@ include_directories(include/)
 ##
 ## targets
 ##
-# add_library(timer src/timer.cpp)
-# add_library(hfvc src/solvehfvc.cpp)
+add_library(timer src/timer.cpp)
+add_library(hfvc src/solvehfvc.cpp)
 
 add_library(polylib src/polyhedron.cpp)
 target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${RobotUtilLib})
 
-# add_library(sharedgraspinglib src/wrench_space_analysis.cpp)
-# target_link_libraries(sharedgraspinglib polylib timer hfvc)
+add_library(sharedgraspinglib src/wrench_space_analysis.cpp)
+target_link_libraries(sharedgraspinglib polylib timer hfvc)
 
 ##
 ## Tests
@@ -51,16 +51,13 @@ target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${RobotUtilLib})
 # add_executable(qhulltest src/testQHull.cpp)
 # target_link_libraries(qhulltest ${qhullLibs})
 
-add_executable(polytest src/testpoly.cpp)
-target_link_libraries(polytest polylib)
+# add_executable(polytest src/testpoly.cpp)
+# target_link_libraries(polytest polylib)
 
-# pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
-# target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib)
+pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
+target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib)
 
 # add_executable(lutest src/testEigenLU.cpp)
-
-# add_executable(cddtest src/testcdd.cpp)
-# target_link_libraries(cddtest ${CDDLIB})
 
 add_executable(ppltest src/testppl.cpp)
 target_link_libraries(ppltest ${PPLLIB} ${GMPLIB})

@@ -90,25 +90,20 @@ print_generators(const Grid& gr,
 
 int main(int argc, char *argv[]) {
 
-
-  // mpz_class m1(0);
-  // std::cout << "cmp(m1,0): " << cmp(m1, 0) << std::endl;
-  // std::cout << "cmp(m1,1): " << cmp(m1, 1) << std::endl;
-  // std::cout << "cmp(m1,-1): " << cmp(m1, -1) << std::endl;
-
 // V to H
   Eigen::MatrixXi coefficients(4,4);
-  // coefficients << 0, 0, 10, 0,
-  //                 0, 10, 0, 0,
-  //                 0, 0,  0, 10;
+  coefficients << 1, 100000,  0, 0,
+                  1, -100000, 0, 0,
+                  1, 0,  100000, 1,
+                  1, 0, -100000, 0;
   // coefficients << 0,      50000,        100000,  -45610,
   //          0,     -50000,        100000,  -51431,
   //          0,      47213,        94423,    48569,
   //          0,     -47213,        94423,    43067;
-  coefficients <<  0,   21350,   71180, -446067,
-                  0,  -21350,   71180,    -503000,
-                  0,   20160,   67210,     475000,
-                  0,  -20160,   67210,    421200;
+  // coefficients <<  0,   21350,   71180, -446067,
+  //                 0,  -21350,   71180,    -503000,
+  //                 0,   20160,   67210,     475000,
+  //                 0,  -20160,   67210,    421200;
 
 
   int nrows = coefficients.rows();
@@ -209,36 +204,36 @@ int main(int argc, char *argv[]) {
 
   // H to V
   std::cout << "\n\n\n\nH to V\n\n";
-  Eigen::MatrixXi A(3, 3);
-  A << -10, 0, 199,
-        0, -11, 0,
-        0, 0, -120;
-        // 1,  1, 1;
-  Eigen::VectorXi b(3,1);
-  b << 0, 0, 0;
+  // Eigen::MatrixXi A(3, 3);
+  // A << -10, 0, 199,
+  //       0, -11, 0,
+  //       0, 0, -120;
+  //       // 1,  1, 1;
+  // Eigen::VectorXi b(3,1);
+  // b << 0, 0, 0;
 
-  nrows = A.rows();
-  dim = A.cols();
-  std::cout << "dim: " << dim << std::endl;
+  // nrows = A.rows();
+  // dim = A.cols();
+  // std::cout << "dim: " << dim << std::endl;
 
-  cs.clear();
-  for (int i = 0; i < nrows; ++i) {
-    PPL::Linear_Expression e;
-    std::cout << "row " << i << " ";
-    for (unsigned j = dim; j > 0; j--) {
-      e += A(i,j-1) * PPL::Variable(j-1);
-      std::cout << j-1 << ": " << A(i,j-1) << ", ";
-    }
-    std::cout << std::endl;
-    e -= b(i);
-    cs.insert(e <= 0);
-  }
+  // cs.clear();
+  // for (int i = 0; i < nrows; ++i) {
+  //   PPL::Linear_Expression e;
+  //   std::cout << "row " << i << " ";
+  //   for (unsigned j = dim; j > 0; j--) {
+  //     e += A(i,j-1) * PPL::Variable(j-1);
+  //     std::cout << j-1 << ": " << A(i,j-1) << ", ";
+  //   }
+  //   std::cout << std::endl;
+  //   e -= b(i);
+  //   cs.insert(e <= 0);
+  // }
 
-  ph = PPL::C_Polyhedron(cs);
-  ph.minimized_generators(); // V to H
+  // ph = PPL::C_Polyhedron(cs);
+  // ph.minimized_generators(); // V to H
 
-  print_generators(ph, "*** generators: ***", std::cout);
-  print_constraints(ph, "*** constraints: ***", std::cout);
+  // print_generators(ph, "*** generators: ***", std::cout);
+  // print_constraints(ph, "*** constraints: ***", std::cout);
 
   gs = ph.generators();
   // convert generators to Eigen Matrix format

@@ -13,7 +13,7 @@ solution = [];
 TOL = 1e-7;
 
 goal_mode_is_given = false;
-if nargin == 15
+if nargin == 13
     goal_mode_is_given = true;
 end
 
@@ -94,7 +94,7 @@ for i = 1:size(e_modes, 2)
         Jacus{eh_cone_feasible_mode_count} = Nu;
 
         if goal_mode_is_given
-            if (i == e_mode_goal) && (j == h_mode_goal)
+            if (all(e_modes(:, i) == e_mode_goal) && all(h_modes(:, j) == h_mode_goal))
                 goal_id = eh_cone_feasible_mode_count;
             end
         end
