@@ -338,6 +338,8 @@ bool solvehfvc_newer(const MatrixXd &N,
    */
   MatrixXd N_reg = N;
   MatrixXd null_space_N_r;
+  std::cout << "Calling nullSpace with:" << std::endl;
+  std::cout << "N_reg:\n" << N_reg << std::endl;
   int rank_N = RUT::nullSpace(&N_reg, &null_space_N_r);
 
   /**
@@ -349,6 +351,8 @@ bool solvehfvc_newer(const MatrixXd &N,
   assert(C.leftCols(kDimUnActualized).norm() < 1e-10);
   MatrixXd Rv = C.rightCols(kDimActualized);
   MatrixXd Rf;
+  std::cout << "Calling nullSpace with:" << std::endl;
+  std::cout << "Rv:\n" << Rv << std::endl;
   int rank_C = RUT::nullSpace(&Rv, &Rf);
   assert(rank_C == C.rows());
   C.rightCols(kDimActualized) = Rv;
