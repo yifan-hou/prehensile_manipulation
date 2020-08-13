@@ -29,21 +29,21 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     int print_level) {
   if (print_level > 0)
     std::cout << "[wrenchSpaceAnalysis_2d] Calling..\n";
-  std::cout << "Jac_e: " << Jac_e << std::endl;
-  std::cout << "Jac_h: " << Jac_h << std::endl;
-  std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
-  std::cout << "hCone_allFix_r: " << hCone_allFix_r << std::endl;
-  std::cout << "F_G: " << F_G << std::endl;
-  std::cout << "kContactForce: " << kContactForce << std::endl;
-  std::cout << "kFrictionE: " << kFrictionE << std::endl;
-  std::cout << "kFrictionH: " << kFrictionH << std::endl;
-  std::cout << "kCharacteristicLength: " << kCharacteristicLength << std::endl;
-  std::cout << "G: " << G << std::endl;
-  std::cout << "b_G: " << b_G << std::endl;
-  std::cout << "e_modes: " << e_modes << std::endl;
-  std::cout << "h_modes: " << h_modes << std::endl;
-  std::cout << "e_mode_goal: " << e_mode_goal << std::endl;
-  std::cout << "h_mode_goal: " << h_mode_goal << std::endl;
+  // std::cout << "Jac_e: " << Jac_e << std::endl;
+  // std::cout << "Jac_h: " << Jac_h << std::endl;
+  // std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
+  // std::cout << "hCone_allFix_r: " << hCone_allFix_r << std::endl;
+  // std::cout << "F_G: " << F_G << std::endl;
+  // std::cout << "kContactForce: " << kContactForce << std::endl;
+  // std::cout << "kFrictionE: " << kFrictionE << std::endl;
+  // std::cout << "kFrictionH: " << kFrictionH << std::endl;
+  // std::cout << "kCharacteristicLength: " << kCharacteristicLength << std::endl;
+  // std::cout << "G: " << G << std::endl;
+  // std::cout << "b_G: " << b_G << std::endl;
+  // std::cout << "e_modes: " << e_modes << std::endl;
+  // std::cout << "h_modes: " << h_modes << std::endl;
+  // std::cout << "e_mode_goal: " << e_mode_goal << std::endl;
+  // std::cout << "h_mode_goal: " << h_mode_goal << std::endl;
   // getchar();
   Timer timer;
   timer.tic();
@@ -221,12 +221,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   int kDimActualized = 3;
   int kDimUnActualized = 3;
   HFVC action;
-  std::cout << "\ndebug: calling solvehfvc with:" << std::endl;
-  std::cout << "N_of_the_modes[goal_id]:\n" << N_of_the_modes[goal_id] << std::endl;
-  std::cout << "G:\n" << G << std::endl;
-  std::cout << "b_G:\n" << b_G << std::endl;
-  std::cout << "kDimActualized:\n" << kDimActualized << std::endl;
-  std::cout << "kDimUnActualized:\n" << kDimUnActualized << std::endl;
   if (!solvehfvc_newer(N_of_the_modes[goal_id], G, b_G, kDimActualized, kDimUnActualized, &action)) {
     std::cout << "[WrenchStamping]    HFVC has no solution." << std::endl;
     return -1;
