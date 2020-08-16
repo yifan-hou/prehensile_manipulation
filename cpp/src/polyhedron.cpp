@@ -1,7 +1,6 @@
 #include "polyhedron.h"
-// #include "setoper.h"
-// #include "cdd.h"
 #include <ppl.hh> // use PPL instead of CDD
+#include <glpk.h> /* GNU GLPK linear/mixed integer solver */
 
 #include "eiquadprog.hpp"
 #include "RobotUtilities/utilities.h"
@@ -26,7 +25,6 @@ using orgQhull::QhullVertexList;
 using orgQhull::QhullVertexListIterator;
 
 namespace PPL = Parma_Polyhedra_Library;
-
 
 
 // PPL utilities
@@ -810,4 +808,78 @@ bool Poly::minkowskiSum(const Eigen::MatrixXd &poly1, const Eigen::MatrixXd &pol
   *results = convolution;
   // *results = convhull(convolution);
   return true;
+}
+
+// todo: make this a full lp. Make a separate function for
+//  feasibility check
+bool Poly::lpfeasibility(const Eigen::MatrixXd &A,
+    const Eigen::VectorXd &b, Eigen::VectorXd *xs) {
+  /* declare variables */
+  glp_prob *lp;
+  glp_smcp parm;
+  glp_init_smcp(&parm);
+  parm.presolve = GLP_OFF;
+  parm.msg_lev = GLP_MSG_ERR; // error and warning only
+
+  int *ia, *ja;
+  double *ar;
+  int rows = A.rows();
+  int cols = A.cols();
+  int size = rows * cols;
+  ia = new int[size + 1000];
+  ja = new int[size + 1000];
+  ar = new double[size + 1000];
+  double z, x1, x2;
+
+  /* create problem */
+  lp = glp_create_prob();
+  glp_set_obj_dir(lp, GLP_MAX);
+
+  /* fill problem */
+  glp_add_rows(lp, rows);
+  for (int r = 1; r <= rows; ++r) {
+    glp_set_row_bnds(lp, r, GLP_UP, 0.0, b(r-1));
+  }
+
+  // set variable bounds and cost function
+  glp_add_cols(lp, cols);
+  for (int c = 1; c <= cols; ++c) {
+    glp_set_col_bnds(lp, c, GLP_FR, 0.0, 0.0); // no boundary
+    glp_set_obj_coef(lp, c, 0.0); // no cost function, so coef = 0
+  }
+
+  // fill in coefficient matrix
+  int id = 0;
+  for (int r = 1; r <= rows; ++r) {
+    for (int c = 1; c <= cols; ++c) {
+      id = (r-1)*cols + c;
+      ia[id] = r, ja[id] = c, ar[id] = A(r-1, c-1);
+    }
+  }
+  glp_load_matrix(lp, id, ia, ja, ar);
+  /* solve problem */
+  glp_simplex(lp, &parm);
+  int result = glp_get_status(lp);
+
+  /* housekeeping */
+  glp_delete_prob(lp);
+  glp_free_env();
+  delete [] ia;
+  delete [] ja;
+  delete [] ar;
+
+  if ((result == GLP_OPT) || (result == GLP_FEAS)) {
+    // feasible
+    // z = glp_get_obj_val(lp);
+    for (int d = 0; d < cols; ++d) {
+      (*xs)(d) = glp_get_col_prim(lp, d + 1);
+    }
+    // std::cout << "z: " << z << std::endl;
+    // std::cout << "solution: " << xs.transpose() << std::endl;
+    return true;
+  } else {
+    return false;
+    // std::cout << "Infeasible." << std::endl;
+  }
+
 }

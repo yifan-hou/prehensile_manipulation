@@ -3,6 +3,12 @@
 # Dependencies
 
 ## PPL
+First, install GMP and glpk:
+```
+sudo apt install libgmp-dev
+sudo apt install libglpk-dev
+```
+
 Download from https://www.bugseng.com/ppl-download
 Extract somewhere,
 ```
@@ -62,11 +68,7 @@ cmake ..
 make
 ```
 A python library is now in build/ folder.
-## Potential errors and fixes
-If you get linking error about GMP, you need to install
-```
-sudo apt install libgmp-dev
-```
+
 
 
 # Run

@@ -208,4 +208,16 @@ bool convhull(const std::vector<double> &vectors, int dim, int num, std::vector<
 bool minkowskiSumOfVectors(const Eigen::MatrixXd &vectors, Eigen::MatrixXd *results);
 bool minkowskiSum(const Eigen::MatrixXd &poly1, const Eigen::MatrixXd &poly2, Eigen::MatrixXd *results);
 
+/**
+ * Check if a system of linear inequalities
+ *   Ax <= b
+ * has a solution.
+ * TODO: write a full LP
+ *
+ * @return     True if a solution exists
+ */
+bool lpfeasibility(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    Eigen::VectorXd *xs);
+
+
 }

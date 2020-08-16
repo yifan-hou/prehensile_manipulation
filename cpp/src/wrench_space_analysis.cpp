@@ -523,8 +523,18 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   }
 
   // for crashing check
-  MatrixXd cone_allFix_r;
-  Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r);
+  // Instead of
+  //    Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r);
+  // save the H-representation of the cone of the all-fixed mode
+  MatrixXd Ae_allFix;
+  MatrixXd Ah_allFix;
+  Poly::coneFacetEnumeration(eCone_allFix_r, &Ae_allFix);
+  Poly::coneFacetEnumeration(hCone_allFix_r, &Ah_allFix);
+  MatrixXd A_allFix(Ae_allFix.rows() + Ah_allFix.rows(), Ae_allFix.cols());
+  A_allFix << Ae_allFix, Ah_allFix;
+  // do minimized_constraints here?
+
+
 
   Eigen::MatrixXi e_sss_modes, h_sss_modes;
   std::vector<Eigen::MatrixXi> e_s_modes, h_s_modes;
@@ -656,13 +666,20 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       time_stats_hybrid_servoing = timer.toc();
       timer.tic();
 
-      MatrixXd R;
-      Poly::coneIntersection(cone_allFix_r, V_control_directions_r, &R); // this line has errors sometimes
-      if (R.rows() > 0) {
+      // this might be much faster:
+      //    MatrixXd R = A_allFix * V_control_directions_r.transpose();
+      MatrixXd A_V_cone;
+      Poly::coneFacetEnumeration(V_control_directions_r, &A_V_cone);
+      MatrixXd A_AF_V(A_V_cone.rows() + A_allFix.rows(), A_allFix.cols());
+      A_AF_V << A_V_cone, A_allFix;
+      VectorXd xs = VectorXd::Zero(A_V_cone.cols());
+      bool is_feasible = Poly::lpfeasibility(A_AF_V, Eigen::VectorXd::Zero(A_AF_V.rows()), &xs);
+      if (is_feasible && xs.norm() > TOL) {
         std::cout << "[WrenchStamping]    Crashing." << std::endl;
         continue;
+      } else {
+        std::cout << "  No crashing." << std::endl;
       }
-
 
       /**
        * Debug HS

@@ -3,6 +3,11 @@ project(shared_grasping)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# debug & profiling
+set(CMAKE_BUILD_TYPE Debug)
+# SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+# SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+# SET(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pg")
 
 add_compile_options(-std=c++11)
 
@@ -14,6 +19,7 @@ find_package(Eigen3 REQUIRED)
 find_package(pybind11 REQUIRED)
 find_library(PPLLIB ppl REQUIRED)
 find_library(GMPLIB gmp REQUIRED)
+find_library(GLPKLIB glpk REQUIRED)
 
 
 # qhull
@@ -27,8 +33,6 @@ SET(qhullLibs qhullcpp qhull_r)
 find_library(RobotUtilLib Utilities HINTS /usr/local/lib/RobotUtilities)
 
 
-
-
 include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(include/)
 
@@ -36,13 +40,13 @@ include_directories(include/)
 ##
 ## targets
 ##
-add_library(timer src/timer.cpp)
-add_library(hfvc src/solvehfvc.cpp)
+add_library(timer SHARED src/timer.cpp)
+add_library(hfvc SHARED src/solvehfvc.cpp)
 
-add_library(polylib src/polyhedron.cpp)
-target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${RobotUtilLib})
+add_library(polylib SHARED src/polyhedron.cpp)
+target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${GLPKLIB} ${RobotUtilLib})
 
-add_library(sharedgraspinglib src/wrench_space_analysis.cpp)
+add_library(sharedgraspinglib SHARED src/wrench_space_analysis.cpp)
 target_link_libraries(sharedgraspinglib polylib timer hfvc)
 
 ##
@@ -61,3 +65,12 @@ target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib)
 
 add_executable(ppltest src/testppl.cpp)
 target_link_libraries(ppltest ${PPLLIB} ${GMPLIB})
+
+add_executable(lptest src/lp.cpp)
+target_link_libraries(lptest ${GLPKLIB})
+
+
+# for debug
+find_library(libcnpy cnpy HINTS /usr/local/lib)
+add_executable(exam src/exam.cpp)
+target_link_libraries(exam sharedgraspinglib ${libcnpy})
