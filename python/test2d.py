@@ -98,14 +98,23 @@ h_modes = np.asarray(modes[1]).astype('int32').T
 ## Goal
 ##
 
-# Palm Pivot
-G = np.array([0., 0., 1., 0., 0., 0.]);
+
+# # Palm Pivot
+# G = np.array([0., 0., 1., 0., 0., 0.]);
+# G = G[newaxis, :]
+# b_G = np.array([[0.1]]);
+# e_mode_goal = np.array([[0, 1]]).astype('int32').T # sf
+# h_mode_goal = np.array([[1, 1]]).astype('int32').T # ff
+
+# Right sliding
+G = np.array([1., 0., 0., 0., 0., 0.]);
 G = G[newaxis, :]
 b_G = np.array([[0.1]]);
-e_mode_goal = np.array([[0, 1]]).astype('int32').T # sf
+e_mode_goal = np.array([[2, 2]]).astype('int32').T # sf
 h_mode_goal = np.array([[1, 1]]).astype('int32').T # ff
 
-print_level = 0; # 0: minimal screen outputs
+
+print_level = 1; # 0: minimal screen outputs
 stability_margin = ws.wrenchSpaceAnalysis_2d(J_e, J_h, eCone_allFix, hCone_allFix, F_G,
     kContactForce, kFrictionE, kFrictionH, kCharacteristicLength,
     G, b_G, e_modes, h_modes, e_mode_goal, h_mode_goal, print_level)

@@ -1,5 +1,4 @@
 #include "polyhedron.h"
-#include <ppl.hh> // use PPL instead of CDD
 #include <glpk.h> /* GNU GLPK linear/mixed integer solver */
 
 #include "eiquadprog.hpp"
@@ -24,7 +23,6 @@ using orgQhull::QhullPoint;
 using orgQhull::QhullVertexList;
 using orgQhull::QhullVertexListIterator;
 
-namespace PPL = Parma_Polyhedra_Library;
 
 
 // PPL utilities
@@ -220,8 +218,121 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
 }
 
 
-bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
-    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,  Eigen::MatrixXd *R) {
+// Eigen::VectorXd Poly::sampleInPolytopeAOutOfB(const Eigen::MatrixXd &A,
+//     const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard, int runup, double max_radius) {
+//   // https://www.mathworks.com/matlabcentral/fileexchange/34208-uniform-distribution-over-a-convex-polytope
+//   int dim = x0.rows();
+//   Eigen::MatrixXd X = Eigen::MatrixXd::Zero(N+runup+discard, dim);
+//   if ((A*x0 - b).maxCoeff() > 0) {
+//     std::cout << "[hitAndRunSampleInPolytope] x0 is outside of Ax<b" << std::endl;
+//     exit(1);
+//   }
+//   if ((max_radius > 0) && (x0.norm() > max_radius)) {
+//     std::cout << "[hitAndRunSampleInPolytope] x0 is outside of max_radius" << std::endl;
+//     exit(1);
+//   }
+
+//   int n = 0; // num generated so far
+//   Eigen::VectorXd x = x0;
+//   Eigen::VectorXd M = Eigen::VectorXd::Zero(dim); // Incremental mean.
+//   Eigen::VectorXd u; // direction
+//   Eigen::VectorXd v, z, c; // temp
+//   while (n < N+runup+discard) {
+//       // test whether in runup or not
+//       if (n < runup) {
+//         // same as hitandrun
+//         u = Eigen::VectorXd::Random(dim).normalized();
+//       } else {
+//         // choose a previous point at random
+//         v = X.middleRows(RUT::randi(n), 1).transpose();
+//         // line sampling direction is from v to sample mean
+//         u = (v-M).normalized();
+//       }
+//       // proceed as in hit and run
+//       z = A*u;
+//       c = (b - A*x).cwiseQuotient(z);
+
+//       // tmin = max(c(z<0));
+//       // tmax = min(c(z>0));
+//       double tmin = 9999999;
+//       double tmax = -9999999;
+//       if (max_radius > 0) {
+//         double a = u.dot(u);
+//         double bb = 2.0*x.dot(u);
+//         double c = x.dot(x) - max_radius*max_radius;
+//         double delta = sqrt(bb*bb - 4.0*a*c);
+//         tmin = (-bb + delta)/2/a;
+//         tmax = (-bb - delta)/2/a;
+//       }
+//       for (int i = 0; i < z.rows(); ++i) {
+//         if (z(i) > 0) {
+//           if (c(i) < tmin) tmin = c(i);
+//         } else {
+//           if (c(i) > tmax) tmax = c(i);
+//         }
+//       }
+//       // Choose a random point on that line segment
+
+//       double distance = tmin+(tmax-tmin)*RUT::rand();
+//       // std::cout << "debug: tmin: " << tmin << ", tmax: " << tmax  << ", distance: " << distance << std::endl;
+//       x = x + distance*u;
+//       if (max_radius > 0) {
+//         // std::cout << "x.norm(): " << x.norm() << ", max_radius: " << max_radius << std::endl;
+//         if(x.norm() >= max_radius) {
+//           std::cout << "[hitAndRunSampleInPolytope] assertion failed." << std::endl;
+//           getchar();
+//           exit(1);
+//         }
+//       }
+//       X.middleRows(n,1) = x.transpose();
+//       n++;
+
+//       // Incremental mean and covariance updates
+//       M = M + (x - M)/n;     // sample mean
+//   }
+//   return X.bottomRows(N);
+// }
+
+bool Poly::constructPPLGeneratorsFromV(const Eigen::MatrixXd &R_input,
+    PPL::Generator_System *gs) {
+  /**
+   * Convert the inputs to integers
+   */
+  Eigen::MatrixXi R_int = (R_input*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
+  R_int.leftCols(1) = R_input.leftCols(1).cast<int>();
+
+  /**
+   * Convert input to PPL format
+   */
+  int nrows = R_int.rows();
+  int dim = R_int.cols() - 1;
+
+  bool has_a_point = false;
+  for (int i = 0; i < nrows; ++i) {
+    PPL::Linear_Expression e;
+    for (unsigned j = dim; j > 0; j--) {
+      e += R_int(i,j) * PPL::Variable(j-1);
+    }
+    if (R_int(i,0) == 1) {
+      // a vertex
+      has_a_point = true;
+      gs->insert(point(e, PPL_MULTIPLIER_BEFORE_ROUNDING));
+    } else if (R_int(i,0) == 2) {
+      gs->insert(line(e));
+    } else {
+      gs->insert(ray(e));
+    }
+  }
+
+  // Every non-empty generator system must have at least one point.
+  if (nrows > 0 && !has_a_point) {
+    gs->insert(PPL::point());
+  }
+  return true;
+}
+
+bool Poly::constructPPLConstraintsFromH(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be, PPL::Constraint_System *cs) {
   /**
    * Convert the inputs to integers
    */
@@ -232,7 +343,6 @@ bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   /**
    * Eigen to PPL format conversion
    */
-  PPL::Constraint_System cs;
   int dim;
   int dim1 = 0, dim2 = 0;
 
@@ -245,7 +355,7 @@ bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
         e += A_int(i,j-1) * PPL::Variable(j-1);
       }
       e -= b_int(i);
-      cs.insert(e <= 0);
+      cs->insert(e <= 0);
     }
   }
   nrows = Ae_int.rows();
@@ -257,24 +367,37 @@ bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
         e += Ae_int(i,j-1) * PPL::Variable(j-1);
       }
       e -= be_int(i);
-      cs.insert(e == 0);
+      cs->insert(e == 0);
     }
   }
-  if (dim1 != 0) {
-    dim = dim1;
-  } else if (dim2 != 0) {
-    dim = dim2;
-  } else {
-    return true; // input is empty, nothing to do
-  }
-  PPL::C_Polyhedron ph(cs);
+  return true;
+}
 
-  /**
-   * Call vertex enumeration from cddlib
-   */
-  ph.minimized_generators();
-  // print_constraints(ph, "*** ph constraints ***", std::cout);
-  // print_generators(ph, "*** ph generators ***", std::cout);
+bool Poly::constructPPLPolyFromV(const Eigen::MatrixXd &R_input,
+    PPL::C_Polyhedron *ph) {
+  PPL::Generator_System gs;
+  if (constructPPLGeneratorsFromV(R_input, &gs)) {
+    ph->add_generators(gs);
+    return true;
+  } else {
+    return false;
+  }
+}
+
+bool Poly::constructPPLPolyFromH(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be, PPL::C_Polyhedron *ph) {
+  PPL::Constraint_System cs;
+  if (constructPPLConstraintsFromH(A, b, Ae, be, &cs)) {
+    // print_constraints(*ph, "*** ph constraints ***", std::cout);
+    ph->add_constraints(cs);
+    // print_constraints(*ph, "*** ph constraints ***", std::cout);
+    return true;
+  } else {
+    return false;
+  }
+}
+
+bool Poly::getVertexFromPPL(const PPL::C_Polyhedron &ph, Eigen::MatrixXd *R) {
   /**
    * Read results to Eigen format
    */
@@ -286,6 +409,8 @@ bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   PPL::Generator_System::const_iterator ig = gs.begin();
   PPL::Generator_System::const_iterator gs_end = gs.end();
 
+  int dim = ph.space_dimension();
+  assert(dim == 6); // just for testing
   while (ig != gs_end) {
     R_row.resize(dim);
     t_row.resize(1);
@@ -335,80 +460,18 @@ bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   return true;
 }
 
-bool Poly::facetEnumeration(const Eigen::MatrixXd &R_input, Eigen::MatrixXd *A, Eigen::VectorXd *b) {
-  /**
-   * Scale input matrix to make it numerically more stable
-   */
-  // Eigen::MatrixXd S = Eigen::MatrixXd::Identity(R_input.cols(), R_input.cols());
-  // double inf_value = 0;
-  // if (R_input.leftCols(1).minCoeff() > 0.1) {
-  //   // no rays
-  //   inf_value = std::numeric_limits<double>::infinity();
-  // }
-  // for (int i = 1; i < R_input.cols(); ++i) {
-  //   double max = -inf_value;
-  //   double min = inf_value;
-  //   for (int j = 0; j < R_input.rows(); ++j) {
-  //     if (R_input(j, i) > max) max = R_input(j, i);
-  //     if (R_input(j, i) < min) min = R_input(j, i);
-  //   }
-  //   double range = max - min;
-  //   if ( range > 1e-8) {
-  //     S(i,i) = 1.0/range;
-  //   }
-  // }
-
-  /**
-   * Convert the inputs to integers
-   */
-  Eigen::MatrixXi R_int = (R_input*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
-  R_int.leftCols(1) = R_input.leftCols(1).cast<int>();
-
-  /**
-   * Convert input to PPL format
-   */
-  int nrows = R_int.rows();
-  int dim = R_int.cols() - 1;
-  PPL::Constraint_System cs;
-  PPL::Generator_System gs;
-
-  bool has_a_point = false;
-  for (int i = 0; i < nrows; ++i) {
-    PPL::Linear_Expression e;
-    for (unsigned j = dim; j > 0; j--) {
-      e += R_int(i,j) * PPL::Variable(j-1);
-    }
-    if (R_int(i,0) == 1) {
-      // a vertex
-      has_a_point = true;
-      gs.insert(point(e, PPL_MULTIPLIER_BEFORE_ROUNDING));
-    } else {
-      gs.insert(ray(e));
-    }
-  }
-
-  // Every non-empty generator system must have at least one point.
-  if (nrows > 0 && !has_a_point) {
-    gs.insert(PPL::point());
-  }
-
-  PPL::C_Polyhedron ph(gs);
-
-  ph.minimized_constraints(); // V to H
-  // print_generators(ph, "*** ph generators ***", std::cout);
-  // print_constraints(ph, "*** ph constraints ***", std::cout);
-
-  cs = ph.constraints();
-
-  // convert constraints to Eigen Matrix format
+bool Poly::getFacetFromPPL(const PPL::C_Polyhedron &ph, Eigen::MatrixXd *A, Eigen::VectorXd *b) {
   // from Ax + b >= 0
   // to   Ax < b
+  PPL::Constraint_System cs = ph.constraints();
   std::vector<double> A_vec;
   std::vector<double> b_vec;
   std::vector<double> A_row;
   std::vector<double> b_row;
   PPL::Constraint_System::const_iterator ic = cs.begin();
   PPL::Constraint_System::const_iterator cs_end = cs.end();
+
+  int dim = ph.space_dimension();
 
   while (ic != cs_end) {
     A_row.resize(dim);
@@ -444,8 +507,70 @@ bool Poly::facetEnumeration(const Eigen::MatrixXd &R_input, Eigen::MatrixXd *A, 
   int num_generators = A_vec.size()/dim;
   *A = Eigen::MatrixXd::Map(A_vec.data(), dim, num_generators).transpose();
   *b = Eigen::VectorXd::Map(b_vec.data(), b_vec.size());
-
   return true;
+}
+
+bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,  Eigen::MatrixXd *R) {
+  int dim;
+  if (A.cols() != 0) {
+    dim = A.cols();
+  } else if (Ae.cols() != 0) {
+    dim = Ae.cols();
+  } else {
+    *R = Eigen::MatrixXd::Zero(0,0);
+    return true; // input is empty, nothing to do
+  }
+
+  PPL::C_Polyhedron ph(dim, PPL::UNIVERSE); // start from the universe, then add constraints
+  constructPPLPolyFromH(A, b, Ae, be, &ph);
+  // print_constraints(ph, "*** ph constraints ***", std::cout);
+
+  /**
+   * Call vertex enumeration from cddlib
+   */
+  ph.minimized_generators();
+  // print_constraints(ph, "*** ph constraints ***", std::cout);
+  // print_generators(ph, "*** ph generators ***", std::cout);
+  return getVertexFromPPL(ph, R);
+}
+
+bool Poly::facetEnumeration(const Eigen::MatrixXd &R_input, Eigen::MatrixXd *A, Eigen::VectorXd *b) {
+  /**
+   * Scale input matrix to make it numerically more stable
+   */
+  // Eigen::MatrixXd S = Eigen::MatrixXd::Identity(R_input.cols(), R_input.cols());
+  // double inf_value = 0;
+  // if (R_input.leftCols(1).minCoeff() > 0.1) {
+  //   // no rays
+  //   inf_value = std::numeric_limits<double>::infinity();
+  // }
+  // for (int i = 1; i < R_input.cols(); ++i) {
+  //   double max = -inf_value;
+  //   double min = inf_value;
+  //   for (int j = 0; j < R_input.rows(); ++j) {
+  //     if (R_input(j, i) > max) max = R_input(j, i);
+  //     if (R_input(j, i) < min) min = R_input(j, i);
+  //   }
+  //   double range = max - min;
+  //   if ( range > 1e-8) {
+  //     S(i,i) = 1.0/range;
+  //   }
+  // }
+
+  int nrows = R_input.rows();
+  int dim = R_input.cols() - 1;
+
+  // std::cout << "Calling facetEnumeration." << std::endl;
+  // std::cout << "R_input:\n" << R_input << std::endl;
+  PPL::C_Polyhedron ph(dim, PPL::EMPTY); // start from empty, then add generators
+  constructPPLPolyFromV(R_input, &ph);
+  // print_generators(ph, "*** ph generators ***", std::cout);
+
+  ph.minimized_constraints(); // V to H
+  // print_generators(ph, "*** ph generators ***", std::cout);
+  // print_constraints(ph, "*** ph constraints ***", std::cout);
+  return getFacetFromPPL(ph, A, b);
 }
 
 bool Poly::coneFacetEnumeration(const Eigen::MatrixXd &M, Eigen::MatrixXd *A) {
@@ -475,64 +600,12 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
     return false;
   }
 
-  /**
-   * Convert the inputs to integers
-   */
-  Eigen::MatrixXi R1_int = (R1*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
-  Eigen::MatrixXi R2_int = (R2*PPL_MULTIPLIER_BEFORE_ROUNDING).cast<int>();
-  R1_int.leftCols(1) = R1.leftCols(1).cast<int>();
-  R2_int.leftCols(1) = R2.leftCols(1).cast<int>();
-  /**
-   * Convert input to PPL format
-   */
-  PPL::Generator_System gs1;
-  PPL::Generator_System gs2;
+  int dim = R1.cols() - 1;
+  PPL::C_Polyhedron ph1(dim, PPL::EMPTY);
+  PPL::C_Polyhedron ph2(dim, PPL::EMPTY);
+  constructPPLPolyFromV(R1, &ph1);
+  constructPPLPolyFromV(R2, &ph2);
 
-  int nrows = R1_int.rows();
-  int dim = R1_int.cols() - 1;
-  bool has_a_point = false;
-  for (int i = 0; i < nrows; ++i) {
-    PPL::Linear_Expression e;
-    for (unsigned j = dim; j > 0; j--) {
-      e += R1_int(i,j) * PPL::Variable(j-1);
-    }
-    if (R1_int(i,0) == 1) {
-      // a vertex
-      has_a_point = true;
-      gs1.insert(point(e, PPL_MULTIPLIER_BEFORE_ROUNDING));
-    } else {
-      gs1.insert(ray(e));
-    }
-  }
-  // Every non-empty generator system must have at least one point.
-  if (nrows > 0 && !has_a_point) {
-    gs1.insert(PPL::point());
-  }
-
-  nrows = R2_int.rows();
-  dim = R2_int.cols() - 1;
-  has_a_point = false;
-  for (int i = 0; i < nrows; ++i) {
-    PPL::Linear_Expression e;
-    for (unsigned j = dim; j > 0; j--) {
-      e += R2_int(i,j) * PPL::Variable(j-1);
-    }
-    if (R2_int(i,0) == 1) {
-      // a vertex
-      has_a_point = true;
-      gs2.insert(point(e, PPL_MULTIPLIER_BEFORE_ROUNDING));
-    } else {
-      gs2.insert(ray(e));
-    }
-  }
-  // Every non-empty generator system must have at least one point.
-  if (nrows > 0 && !has_a_point) {
-    gs2.insert(PPL::point());
-  }
-
-
-  PPL::C_Polyhedron ph1(gs1);
-  PPL::C_Polyhedron ph2(gs2);
   ph1.minimized_constraints();
   ph2.minimized_constraints();
 
@@ -541,77 +614,18 @@ bool Poly::intersection(const Eigen::MatrixXd &R1, const Eigen::MatrixXd &R2, Ei
    */
   // print_generators(ph1, "*** ph1 generators ***", std::cout);
   // print_generators(ph2, "*** ph2 generators ***", std::cout);
-
   // ph1.add_constraints(ph2.constraints());
   ph1.intersection_assign(ph2);
   // print_constraints(ph1, "*** ph constraints ***", std::cout);
   // print_generators(ph1, "*** ph generators ***", std::cout);
 
+  ph1.minimized_generators();
 
   /**
    * Read the results
-   * Below are mostly copied from vertexEnumeration
    */
-  ph1.minimized_generators();
-  /**
-   * Read results to Eigen format
-   */
-  PPL::Generator_System gs = ph1.generators();
-  std::vector<double> R_vec;
-  std::vector<int> t_vec;
-  std::vector<double> R_row;
-  std::vector<int> t_row;
-  PPL::Generator_System::const_iterator ig = gs.begin();
-  PPL::Generator_System::const_iterator gs_end = gs.end();
 
-  while (ig != gs_end) {
-    R_row.resize(dim);
-    t_row.resize(1);
-    t_row[0] = 0;
-    if (ig->is_point()) {
-      t_row[0] = 1;
-      mpz_class divisor = ig->divisor();
-      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
-        mpq_class q(ig->coefficient(PPL::Variable(j)), divisor);
-        R_row[j] = q.get_d();
-      }
-    } else if (ig->is_ray() || ig->is_line()) {
-      mpz_class max = abs(ig->coefficient(PPL::Variable(0)));
-      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
-        if (cmp(max, abs(ig->coefficient(PPL::Variable(j)))) < 0)
-          max = abs(ig->coefficient(PPL::Variable(j)));
-      }
-      for (PPL::dimension_type j = ig->space_dimension(); j-- > 0; ) {
-        R_row[j] = mpq_class(ig->coefficient(PPL::Variable(j)), max).get_d();
-      }
-    } else {
-      std::cout << "[Intersection] A Closure point! Not implemented yet, should be the same as point. Make sure you know why there is a Closure point\n";
-      exit(1);
-    }
-
-    if (ig->is_line()) {
-      R_row.resize(2*dim);
-      for (int ii = 0; ii < dim; ++ii)
-        R_row[dim + ii] = -R_row[ii];
-      t_row.assign(2, 0);
-    }
-
-    for (int ii = 0; ii < R_row.size(); ++ii)
-      R_vec.push_back(R_row[ii]);
-    for (int ii = 0; ii < t_row.size(); ++ii)
-      t_vec.push_back(t_row[ii]);
-    ig++;
-  }
-
-  int num_generators = R_vec.size()/dim;
-  Eigen::MatrixXd R_ = Eigen::MatrixXd::Map(R_vec.data(), dim, num_generators).transpose();
-  Eigen::VectorXi t_ = Eigen::VectorXi::Map(t_vec.data(), t_vec.size());
-
-  *R = Eigen::MatrixXd(R_.rows(), R_.cols() + 1);
-  R->leftCols(1) = t_.cast<double>();
-  R->rightCols(R_.cols()) = R_;
-
-  return true;
+  return getVertexFromPPL(ph1, R);
 }
 
 bool Poly::coneIntersection(const Eigen::MatrixXd &C1, const Eigen::MatrixXd &C2, Eigen::MatrixXd *C) {

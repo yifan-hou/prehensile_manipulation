@@ -91,6 +91,7 @@ Eigen::MatrixXd getConeOfTheMode_2d(const Eigen::MatrixXd &cone_allFix,
 Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
     const Eigen::VectorXi &sss_mode, int kNumSlidingPlanes);
 
+// Nu v >= 0
 void getConstraintOfTheMode_2d(
     const Eigen::MatrixXd &J_e_AF, const Eigen::MatrixXd &J_h_AF,
     const Eigen::VectorXi &mode_e, const Eigen::VectorXi &mode_h,

@@ -1,8 +1,11 @@
 #include <vector>
 #include <Eigen/Dense>
+#include <ppl.hh> // use PPL instead of CDD
 
 #define KCONVHULL_ROUND 3
 #define PPL_MULTIPLIER_BEFORE_ROUNDING 10000 // floating point will get round to integer after multiplied with this number
+
+namespace PPL = Parma_Polyhedra_Library;
 
 namespace Poly {
 
@@ -71,6 +74,24 @@ double distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
 Eigen::MatrixXd hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
         const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard = 10, int runup = 10, double max_radius = -1);
 
+
+// 0: ray, 1: point, 2: line
+bool constructPPLGeneratorsFromV(const Eigen::MatrixXd &R_input,
+    PPL::Generator_System *gs);
+
+bool constructPPLConstraintsFromH(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be, PPL::Constraint_System *cs);
+
+// 0: ray, 1: point, 2: line
+bool constructPPLPolyFromV(const Eigen::MatrixXd &R_input, PPL::C_Polyhedron *ph);
+
+bool constructPPLPolyFromH(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be, PPL::C_Polyhedron *ph);
+
+// 0: ray, 1: point, (Todo): implement 2: line
+bool getVertexFromPPL(const PPL::C_Polyhedron &ph, Eigen::MatrixXd *R);
+
+bool getFacetFromPPL(const PPL::C_Polyhedron &ph, Eigen::MatrixXd *A, Eigen::VectorXd *b);
 /**
  * Vertex enumeration. Given a polyhedron (A, b, Ae, be):
  *      {x: A*x <= b, Ae*x = be},
@@ -90,6 +111,9 @@ Eigen::MatrixXd hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
  *
  * @return     True if no error occurs.
  */
+
+
+
 bool vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
         const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be, Eigen::MatrixXd *R);
 

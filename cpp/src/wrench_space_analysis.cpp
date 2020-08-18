@@ -494,8 +494,8 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   double time_stats_initialization;
   double time_stats_hybrid_servoing;
   double time_stats_velocity_filtering;
+  double time_stats_projection;
   double time_stats_force_control;
-
 
   bool flag_given_goal_velocity = false;
   if (b_G.size() > 0) flag_given_goal_velocity = true;
@@ -660,6 +660,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       action.w_av = action.b_C;
       MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
       MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
+      MatrixXd R_a_inv = action.R_a.inverse();
 
       // Crashing check
 
@@ -906,21 +907,82 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       for (int c = 0; c < e_cones_VFeasible.size(); ++c) {
         std::cout << "[WrenchStamping]    Cone " << c << ": " << e_modes_VFeasible[c].transpose() << ": ";
         // compute cone of the modes
-        Poly::coneIntersection(e_cones_VFeasible[c], hCone_allFix_r, &cone_of_the_mode);
-        if (cone_of_the_mode.rows() == 0) {
+        PPL::C_Polyhedron ph1(6, PPL::EMPTY);
+        Eigen::MatrixXd R1(e_cones_VFeasible[c].rows(), e_cones_VFeasible[c].cols() + 1);
+        R1 << Eigen::VectorXd::Zero(e_cones_VFeasible[c].rows()), e_cones_VFeasible[c];
+        Poly::constructPPLPolyFromV(R1, &ph1);
+
+        PPL::C_Polyhedron ph2(6, PPL::EMPTY);
+        Eigen::MatrixXd R2(hCone_allFix_r.rows(), hCone_allFix_r.cols() + 1);
+        R2 << Eigen::VectorXd::Zero(hCone_allFix_r.rows()), hCone_allFix_r;
+        Poly::constructPPLPolyFromV(R2, &ph2);
+
+        ph1.minimized_constraints();
+        ph2.minimized_constraints();
+        ph1.intersection_assign(ph2);
+        ph1.minimized_generators();
+
+        // check intersection results
+        MatrixXd R_mode;
+        Poly::getVertexFromPPL(ph1, &R_mode);
+        if (!((R_mode.rows() > 0) && (R_mode.rightCols(R_mode.cols()-1).norm() > TOL))) {
           std::cout << "Empty cone." << std::endl;
           assert(c != goal_id);
           continue;
         }
+        /**
+         * Projection to force controlled subspace
+         */
+        // cylindrificate the intersection in the V directions
+        MatrixXd R_V_lines(V_control_directions_r.rows(), V_control_directions_r.cols() + 1);
+        R_V_lines << 2*VectorXd::Ones(V_control_directions_r.rows()), V_control_directions_r;
+        PPL::Generator_System gs_V;
+        Poly::constructPPLGeneratorsFromV(R_V_lines, &gs_V);
+        ph1.add_generators(gs_V);
+        ph1.minimized_constraints();
+
+        // project to force controlled subspace
+        MatrixXd c_A_temp;
+        VectorXd c_b_temp;
+        Poly::getFacetFromPPL(ph1, &c_A_temp, &c_b_temp);
+        assert(c_b_temp.norm() < TOL);
+        c_A_temp = c_A_temp * R_a_inv;
+        cp_A_temp = c_A_temp.leftCols(action.n_af);
+
+        // // construct the force controlled subspace
+        // MatrixXd R_F_lines(F_control_directions_r.rows(), F_control_directions_r.cols() + 1);
+        // R_F_lines << 2*VectorXd::Ones(F_control_directions_r.rows()), F_control_directions_r;
+        // PPL::Generator_System gs_F;
+        // Poly::constructPPLGeneratorsFromV(R_F_lines, &gs_F);
+        // PPL::C_Polyhedron ph_F(6, PPL::EMPTY);
+        // ph_F.add_generators(gs_F);
+
+        // // Projection by intersection
+        // ph1.intersection_assign(ph_F);
+
+
+        // clean up R_mode
+        // 1. get rid of point origin
+        int id0 = -1;
+        for (int i = 0; i < R_mode.rows(); ++i) {
+          if (int(R_mode(i, 0)) == 1) {
+            id0 = i;
+            break;
+          }
+        }
+        Eigen::MatrixXd R_;
+        if (id0 >= 0) {
+          R_ = Eigen::MatrixXd(R_mode.rows() - 1, R_mode.cols());
+          R_.topRows(id0) = R_mode.topRows(id0);
+          R_.bottomRows(R_mode.rows() - id0 - 1) = R_mode.bottomRows(R_mode.rows() - id0 - 1);
+        }
+        assert(R_.leftCols<1>().norm() < 1e-10); // make sure the all the rest are rays
+        // 2. get rid of the first column
+        cone_of_the_mode = R_.rightCols(R_.cols()-1);
+        cone_of_the_mode.rowwise().normalize();
         // projection
         cone_projection = cone_of_the_mode * F_control_directions_r.transpose();
-        // cone_projection.rowwise().normalize();
-        // get the inequality representations for the cone projections
-        if(!Poly::coneFacetEnumeration(cone_projection, &cp_A_temp)) {
-          std::cerr << "coneFacetEnumeration return error." << std::endl;
-          // std::cout << "[debug] cone_projection: " << cone_projection.rows() << " x " << cone_projection.cols() << std::endl;
-          exit(1);
-        }
+        cone_projection.rowwise().normalize();
 
         std::cout << cone_projection.rows() << " generators.";
         if (goal_id == c) {
@@ -940,6 +1002,9 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       }
       assert(cone_projection_goal_r.norm() > 1e-5);
       assert(cone_projection_goal_r.rows() >= action.n_af); // ideally we should check its rank
+
+      time_stats_projection = timer.toc();
+      timer.tic();
 
       std::cout << "[WrenchStamping]  3.2 Sample wrenches and find feasible ones." << std::endl;
       // sample wrenches in the projection of the goal cone
@@ -1021,9 +1086,10 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         std::cout << "  time_stats_initialization: " << time_stats_initialization << " ms\n";
         std::cout << "  time_stats_hybrid_servoing: " << time_stats_hybrid_servoing << " ms\n";
         std::cout << "  time_stats_velocity_filtering: " << time_stats_velocity_filtering << " ms\n";
+        std::cout << "  time_stats_projection: " << time_stats_projection << " ms\n";
         std::cout << "  time_stats_force_control: " << time_stats_force_control << " ms\n";
         std::cout << "  Total: " << time_stats_initialization + time_stats_hybrid_servoing + time_stats_velocity_filtering
-            + time_stats_force_control << " ms\n";
+            + time_stats_projection + time_stats_force_control << " ms\n";
       }
     }
   }

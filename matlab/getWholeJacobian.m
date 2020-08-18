@@ -6,6 +6,19 @@
 %   3D: Each contact contributes 2d + 1 edges; the last one is a copy of the first one
 %   2D: Each contact contributes 2 edges (left, right)
 % If planar, kNumSlidingPlanes must = 1, the computation puts everything on XY plane
+%
+% Left/right convention in 2d:
+%    Object motion w.r.t. the environment
+%
+%    cone edge 1,      cone edge 2
+%         -----\-------/------
+%         |     \  N  /      |
+%         |      \ ^ /       |
+% T_e <---|       \|/        | ---> right sliding
+%     =============|==================
+%
+
+
 function [N_e, T_e, N_h, T_h, eCone, eTCone, hCone hTCone] = getWholeJacobian(CP_W_e, CN_W_e, ...
         CP_H_h, CN_H_h, adj_WH, adj_HW, kNumSlidingPlanes, kFrictionE, kFrictionH)
 
