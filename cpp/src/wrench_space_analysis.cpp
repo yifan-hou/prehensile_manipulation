@@ -211,7 +211,10 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       eh_modes.push_back(eh_mode);
     }
   }
-  assert(goal_id >= 0);
+  if (goal_id < 0) {
+    std::cout << "[WrenchStamping]    Goal mode does not have force-balance." << std::endl;
+    return -1;
+  }
 
   time_stats_force_margin = timer.toc();
   timer.tic();

@@ -410,7 +410,6 @@ bool Poly::getVertexFromPPL(const PPL::C_Polyhedron &ph, Eigen::MatrixXd *R) {
   PPL::Generator_System::const_iterator gs_end = gs.end();
 
   int dim = ph.space_dimension();
-  assert(dim == 6); // just for testing
   while (ig != gs_end) {
     R_row.resize(dim);
     t_row.resize(1);
