@@ -2,7 +2,6 @@
 #include <glpk.h> /* GNU GLPK linear/mixed integer solver */
 
 #include "eiquadprog.hpp"
-#include "RobotUtilities/utilities.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,13 +16,16 @@
 #include "libqhullcpp/QhullLinkedList.h"
 #include "libqhullcpp/QhullVertex.h"
 #include "libqhullcpp/Qhull.h"
+#include "RobotUtilities/utilities.h"
 
 using orgQhull::Qhull;
 using orgQhull::QhullPoint;
 using orgQhull::QhullVertexList;
 using orgQhull::QhullVertexListIterator;
 
-
+// pairs definition, used for trackign index during sorting
+typedef std::pair<int,int> int_pair;
+bool int_comparator_descending ( const int_pair& l, const int_pair& r) { return l.first > r.first; }
 
 // PPL utilities
 void print_constraints(const PPL::Constraint_System& cs,
@@ -178,21 +180,21 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
 
       // tmin = max(c(z<0));
       // tmax = min(c(z>0));
-      double tmin = 9999999;
-      double tmax = -9999999;
+      double tmin = -9999999;
+      double tmax = 9999999;
       if (max_radius > 0) {
         double a = u.dot(u);
         double bb = 2.0*x.dot(u);
         double c = x.dot(x) - max_radius*max_radius;
         double delta = sqrt(bb*bb - 4.0*a*c);
-        tmin = (-bb + delta)/2/a;
-        tmax = (-bb - delta)/2/a;
+        tmin = (-bb - delta)/2/a;
+        tmax = (-bb + delta)/2/a;
       }
       for (int i = 0; i < z.rows(); ++i) {
-        if (z(i) > 0) {
-          if (c(i) < tmin) tmin = c(i);
+        if (z(i) < 0) {
+          if (c(i) > tmin) tmin = c(i);
         } else {
-          if (c(i) > tmax) tmax = c(i);
+          if (c(i) < tmax) tmax = c(i);
         }
       }
       // Choose a random point on that line segment
@@ -217,81 +219,150 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
   return X.bottomRows(N);
 }
 
+std::vector<Eigen::VectorXd> Poly::sampleInP1OutOfP2(const Eigen::MatrixXd &A1,
+    const Eigen::VectorXd &b1, const std::vector<Eigen::MatrixXd> &A2,
+    const std::vector<Eigen::VectorXd> &b2, const Eigen::VectorXd &x0,
+    int N, double max_radius) {
+  int dim = x0.rows();
+  if ((A1*x0 - b1).maxCoeff() > 0) {
+    std::cout << "[sampleInP1OutOfP2] x0 is outside of P1" << std::endl;
+    exit(1);
+  }
+  if ((max_radius > 0) && (x0.norm() > max_radius)) {
+    std::cout << "[sampleInP1OutOfP2] x0 is outside of max_radius" << std::endl;
+    exit(1);
+  }
 
-// Eigen::VectorXd Poly::sampleInPolytopeAOutOfB(const Eigen::MatrixXd &A,
-//     const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard, int runup, double max_radius) {
-//   // https://www.mathworks.com/matlabcentral/fileexchange/34208-uniform-distribution-over-a-convex-polytope
-//   int dim = x0.rows();
-//   Eigen::MatrixXd X = Eigen::MatrixXd::Zero(N+runup+discard, dim);
-//   if ((A*x0 - b).maxCoeff() > 0) {
-//     std::cout << "[hitAndRunSampleInPolytope] x0 is outside of Ax<b" << std::endl;
-//     exit(1);
-//   }
-//   if ((max_radius > 0) && (x0.norm() > max_radius)) {
-//     std::cout << "[hitAndRunSampleInPolytope] x0 is outside of max_radius" << std::endl;
-//     exit(1);
-//   }
+  Eigen::MatrixXd covar = Eigen::MatrixXd::Identity(dim,dim);
+  RUT::normal_random_variable sample { covar };
+  Eigen::VectorXd vec_origin = x0.normalized();
+  Eigen::VectorXd u, z, c; // temps
+  std::vector<Eigen::VectorXd> X;
+  std::vector<int_pair> P2_ranking;
+  for (int i = 0; i < A2.size(); ++i) {
+    P2_ranking.push_back(std::make_pair (0, i));
+  }
+  for (int s = 0; s < N; ++s) {
+    u = sample();
+    u = u - u.dot(vec_origin)*vec_origin; // optional
+    u.normalize();
+    z = A1*u;
+    c = (b1 - A1*x0).cwiseQuotient(z);
 
-//   int n = 0; // num generated so far
-//   Eigen::VectorXd x = x0;
-//   Eigen::VectorXd M = Eigen::VectorXd::Zero(dim); // Incremental mean.
-//   Eigen::VectorXd u; // direction
-//   Eigen::VectorXd v, z, c; // temp
-//   while (n < N+runup+discard) {
-//       // test whether in runup or not
-//       if (n < runup) {
-//         // same as hitandrun
-//         u = Eigen::VectorXd::Random(dim).normalized();
-//       } else {
-//         // choose a previous point at random
-//         v = X.middleRows(RUT::randi(n), 1).transpose();
-//         // line sampling direction is from v to sample mean
-//         u = (v-M).normalized();
-//       }
-//       // proceed as in hit and run
-//       z = A*u;
-//       c = (b - A*x).cwiseQuotient(z);
-
-//       // tmin = max(c(z<0));
-//       // tmax = min(c(z>0));
-//       double tmin = 9999999;
-//       double tmax = -9999999;
-//       if (max_radius > 0) {
-//         double a = u.dot(u);
-//         double bb = 2.0*x.dot(u);
-//         double c = x.dot(x) - max_radius*max_radius;
-//         double delta = sqrt(bb*bb - 4.0*a*c);
-//         tmin = (-bb + delta)/2/a;
-//         tmax = (-bb - delta)/2/a;
-//       }
-//       for (int i = 0; i < z.rows(); ++i) {
-//         if (z(i) > 0) {
-//           if (c(i) < tmin) tmin = c(i);
-//         } else {
-//           if (c(i) > tmax) tmax = c(i);
-//         }
-//       }
-//       // Choose a random point on that line segment
-
-//       double distance = tmin+(tmax-tmin)*RUT::rand();
-//       // std::cout << "debug: tmin: " << tmin << ", tmax: " << tmax  << ", distance: " << distance << std::endl;
-//       x = x + distance*u;
-//       if (max_radius > 0) {
-//         // std::cout << "x.norm(): " << x.norm() << ", max_radius: " << max_radius << std::endl;
-//         if(x.norm() >= max_radius) {
-//           std::cout << "[hitAndRunSampleInPolytope] assertion failed." << std::endl;
-//           getchar();
-//           exit(1);
-//         }
-//       }
-//       X.middleRows(n,1) = x.transpose();
-//       n++;
-
-//       // Incremental mean and covariance updates
-//       M = M + (x - M)/n;     // sample mean
-//   }
-//   return X.bottomRows(N);
-// }
+    /**
+     * Compute the maximal motion along this direction within P1
+     */
+    // std::cout << "Direction: " << u.transpose() << std::endl;
+    double tmin = -9999999;
+    double tmax = 9999999;
+    if (max_radius > 0) {
+      double aa = u.dot(u);
+      double bb = 2.0*x0.dot(u);
+      double cc = x0.dot(x0) - max_radius*max_radius;
+      double delta = sqrt(bb*bb - 4.0*aa*cc);
+      tmin = (-bb - delta)/2/aa;
+      tmax = (-bb + delta)/2/aa;
+    }
+    // tmin = max(c(z<0));
+    // tmax = min(c(z>0));
+    for (int i = 0; i < z.rows(); ++i) {
+      if (z(i) < 0) {
+        if (c(i) > tmin) tmin = c(i);
+      } else {
+        if (c(i) < tmax) tmax = c(i);
+      }
+    }
+    // std::cout << "tmin: " << tmin << ", tmax: " << tmax << std::endl;
+    std::vector<double> segments;
+    segments.push_back(tmin);
+    segments.push_back(tmax);
+    for (int p = 0; p < A2.size(); ++p) {
+      int id = P2_ranking[p].second;
+      z = A2[id]*u;
+      c = (b2[id] - A2[id]*x0).cwiseQuotient(z);
+      /**
+       * Compute the maximal motion along this direction within P2
+       */
+      tmin = -9999999;
+      tmax = 9999999;
+      // tmin = max(c(z<0));
+      // tmax = min(c(z>0));
+      for (int i = 0; i < z.rows(); ++i) {
+        if (z(i) < 0) {
+          if (c(i) > tmin) tmin = c(i);
+        } else {
+          if (c(i) < tmax) tmax = c(i);
+        }
+      }
+      if (tmin > tmax) {
+        // this line has no intersection with the polyhedron
+        continue;
+      }
+      // std::cout << "round " << p << std::endl;
+      // std::cout << "P2 tmin: " << tmin << ", tmax: " << tmax << std::endl;
+      /**
+       * Remove from the segment [tmin, tmax] any part that belongs to P2
+       */
+      for (int seg = 0; seg < segments.size()/2; ) {
+        int i = 2*seg;
+        int j = 2*seg + 1;
+        double begin = segments[i];
+        double end = segments[j];
+        if (begin >= tmax) break;
+        if (end <= tmin) {
+          seg ++;
+          continue;
+        }
+        if ((begin >= tmin) && (end <= tmax)) {
+          segments.erase(segments.begin() + i, segments.begin() + i + 2);
+          if (segments.size() == 0) break;
+          continue;
+        }
+        if (begin >= tmin) {
+          segments[i] = tmax;
+          break;
+        } else if (end <= tmax) {
+          segments[j] = tmin;
+          seg ++;
+        } else {
+          segments[j] = tmin;
+          segments.insert(segments.begin() + j + 1, end);
+          segments.insert(segments.begin() + j + 1, tmax);
+          break;
+        }
+      } // end this P2
+      // std::cout << "Segments: ";
+      // for (int ii = 0; ii < segments.size(); ++ii) std::cout << segments[ii] << ", ";
+      // std::cout << std::endl;
+      if (segments.size() == 0) {
+        // this line dies on the current P2. record it
+        P2_ranking[p].first += 1;
+        break;
+      }
+    } // end all P2
+    // std::cout << "Segments: ";
+    // for (int ii = 0; ii < segments.size(); ++ii) std::cout << segments[ii] << ", ";
+    // std::cout << std::endl;
+    // getchar();
+    if (segments.size() == 0) {
+      std::sort(P2_ranking.begin(), P2_ranking.end(), int_comparator_descending);
+      continue;
+    }
+    // Pick the middle point of the longest segment
+    double distance = 0;
+    double max_length = 0;
+    for (int seg = 0; seg < segments.size()/2; ++seg) {
+      double seg_length = segments[2*seg + 1] - segments[2*seg];
+      if (seg_length > max_length) {
+        max_length = seg_length;
+        distance = 0.5*(segments[2*seg + 1] + segments[2*seg]);
+      }
+    }
+    // std::cout << "Distance: " << distance << std::endl;
+    X.push_back(x0 + distance*u);
+  } // end one direction
+  return X;
+}
 
 bool Poly::constructPPLGeneratorsFromV(const Eigen::MatrixXd &R_input,
     PPL::Generator_System *gs) {

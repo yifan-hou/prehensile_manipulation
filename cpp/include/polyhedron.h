@@ -74,6 +74,26 @@ double distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
 Eigen::MatrixXd hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
         const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard = 10, int runup = 10, double max_radius = -1);
 
+/**
+ * Sample points in Polyhedron 1, outside of Polyhedron 2. This function samples
+ * N random direction from a given initial point x0, then find the largest
+ * feasible segment along each of those directions, return their center points.
+ * There is one P1 and multiple P2.
+ *
+ * @param[in]  A1          Describes P1: A1 x <= b1. Rows must be normalized
+ * @param[in]  b1          Describes P1: A1 x <= b1
+ * @param[in]  A2          Describes P2: A2[i] x <= b2[i]. Rows must be normalized
+ * @param[in]  b2          Describes P2: A2[i] x <= b2[i]
+ * @param[in]  x0          The initial point. Must be within P1
+ * @param[in]  N           Number of directions to try
+ * @param[in]  max_radius  The maximum radius
+ *
+ * @return     At most N points
+ */
+std::vector<Eigen::VectorXd> sampleInP1OutOfP2(const Eigen::MatrixXd &A1,
+    const Eigen::VectorXd &b1, const std::vector<Eigen::MatrixXd> &A2,
+    const std::vector<Eigen::VectorXd> &b2, const Eigen::VectorXd &x0,
+    int N, double max_radius = -1);
 
 // 0: ray, 1: point, 2: line
 bool constructPPLGeneratorsFromV(const Eigen::MatrixXd &R_input,

@@ -9,7 +9,7 @@ set(CMAKE_BUILD_TYPE Debug)
 # SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
 # SET(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pg")
 
-add_compile_options(-std=c++11)
+add_compile_options(-std=c++14)
 
 ##
 ## Includes

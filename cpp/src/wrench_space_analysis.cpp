@@ -350,17 +350,21 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   else if (action.n_af == 2) ns = 20;
   else ns = 50;
 
-  int discard = 10;
-  int runup = 10;
-  MatrixXd wrench_samples = Poly::hitAndRunSampleInPolytope(pp_goal_A, pp_goal_b,
-      pp_goal_point, ns, discard, runup);
+  // int discard = 10;
+  // int runup = 10;
+  // MatrixXd wrench_samples = Poly::hitAndRunSampleInPolytope(pp_goal_A, pp_goal_b,
+  //     pp_goal_point, ns, discard, runup);
+  std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
+      pp_goal_A, pp_goal_b,
+      pps_A, pps_b, pp_goal_point, ns);
+
   // std::cout << "wrench_samples: \n" << wrench_samples << std::endl;
   // std::cout << "wrench_sample_norms: \n" << wrench_samples.rowwise().norm() << std::endl;
   VectorXd wrench_sample, wrench_best;
   double control_stability_margin = -1;
   for (int s = 0; s < ns; ++s) { // make sure they sum to one
     // create the sample
-    wrench_sample = wrench_samples.middleRows(s, 1).transpose();
+    wrench_sample = wrench_samples[s];
     if (print_level > 0)
       std::cout << "[WrenchStamping]    Sample #" << s << ": ";
     // check if the sample is within any other polytopes
@@ -899,12 +903,10 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
        */
       // projection cones of the modes onto force-controlled subspace
       std::cout << "[WrenchStamping] 3. Compute force control and control-stability-margin." << std::endl;
-      std::vector<Eigen::MatrixXd> cones_projection_r;
+      // std::vector<Eigen::MatrixXd> cones_projection_r;
       std::vector<Eigen::MatrixXd> cp_A; // A x <= 0
       Eigen::MatrixXd cone_projection_goal_r;
       Eigen::MatrixXd cp_goal_A;
-      // cones_projection_r.reserve(e_cones_VFeasible.size());
-      // cp_A.resize(e_cones_VFeasible.size());
       Eigen::MatrixXd cone_of_the_mode, cone_projection, cp_A_temp;
       std::cout << "[WrenchStamping]  3.1 Compute cone of the modes." << std::endl;
       for (int c = 0; c < e_cones_VFeasible.size(); ++c) {
@@ -951,6 +953,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         assert(c_b_temp.norm() < TOL);
         c_A_temp = c_A_temp * R_a_inv;
         cp_A_temp = c_A_temp.leftCols(action.n_af);
+        cp_A_temp.rowwise().normalize();
 
         // // construct the force controlled subspace
         // MatrixXd R_F_lines(F_control_directions_r.rows(), F_control_directions_r.cols() + 1);
@@ -983,21 +986,16 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         // 2. get rid of the first column
         cone_of_the_mode = R_.rightCols(R_.cols()-1);
         cone_of_the_mode.rowwise().normalize();
-        // projection
-        cone_projection = cone_of_the_mode * F_control_directions_r.transpose();
-        cone_projection.rowwise().normalize();
 
-        std::cout << cone_projection.rows() << " generators.";
+        // std::cout << cone_projection.rows() << " generators.";
         if (goal_id == c) {
           std::cout << " (id: Goal)" << std::endl;
-          // std::cout << "\n[debug] e_cones_VFeasible[c]:\n" << e_cones_VFeasible[c] << std::endl;
-          // std::cout << "\n[debug] hCone_allFix_r:\n" << hCone_allFix_r << std::endl;
-          // std::cout << "\n[debug] cone_of_the_mode:\n" << cone_of_the_mode << std::endl;
-          // std::cout << "\n[debug] F_control_directions_r:\n" << F_control_directions_r << std::endl;
-          cone_projection_goal_r = cone_projection;
+          // generators projection
+          cone_projection_goal_r = cone_of_the_mode * F_control_directions_r.transpose();
+          cone_projection_goal_r.rowwise().normalize();
           cp_goal_A = cp_A_temp;
         } else {
-          cones_projection_r.push_back(cone_projection);
+          // cones_projection_r.push_back(cone_projection);
           cp_A.push_back(cp_A_temp);
           std::cout << " (id:" << cp_A.size() - 1 << ") ";;
           std::cout << " A rows: " << cp_A_temp.rows() << std::endl;
@@ -1006,6 +1004,23 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       assert(cone_projection_goal_r.norm() > 1e-5);
       assert(cone_projection_goal_r.rows() >= action.n_af); // ideally we should check its rank
 
+      // get rid of cones that are not adjacent to goal cone
+      std::vector<MatrixXd> cp_A_selected;
+      std::cout << "reducing irrelevant cones. Total number of cones before: " << cp_A.size() << std::endl;
+      for (int i = 0; i < cp_A.size(); ++i) {
+        VectorXd xs = VectorXd::Zero(cp_goal_A.cols());
+        MatrixXd cp_all_A(cp_goal_A.rows() + cp_A[i].rows(), cp_goal_A.cols());
+        cp_all_A << cp_goal_A, cp_A[i];
+        bool is_feasible = Poly::lpfeasibility(cp_all_A, -1e-7*Eigen::VectorXd::Ones(cp_all_A.rows()), &xs);
+        std::cout << "is_feasible: " << is_feasible << ", xs: " << xs.transpose() << std::endl;
+        if (is_feasible && xs.norm() > TOL) {
+          cp_A_selected.push_back(cp_A[i]);
+        } else {
+        }
+      }
+      cp_A = cp_A_selected;
+      std::cout << "Total number of cones after: " << cp_A.size() << std::endl;
+
       time_stats_projection = timer.toc();
       timer.tic();
 
@@ -1013,28 +1028,29 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       // sample wrenches in the projection of the goal cone
       int ng = cone_projection_goal_r.rows();
       int ns = 0;
-      if (action.n_af == 1) ns = 3;
+      if (action.n_af == 1) ns = 1;
       else if (action.n_af == 2) ns = 10;
       else if (action.n_af == 3) ns = 20;
       else if (action.n_af == 4) ns = 50;
-      else if (action.n_af == 5) ns = 500;
-
+      else if (action.n_af == 5) ns = 200;
+      std::vector<VectorXd> cp_b;
+      for (int i = 0; i < cp_A.size(); ++i) cp_b.push_back(VectorXd::Zero(cp_A[i].rows()));
       Eigen::VectorXd x0 = cone_projection_goal_r.colwise().mean().transpose();
-      // std::cout << "cone_projection_goal_r: " << cone_projection_goal_r << std::endl;
+      std::cout << "\ndebug: x0: " << x0.transpose() << "\n\n";
       double max_radius = 2;
-      Eigen::MatrixXd wrench_samples = Poly::hitAndRunSampleInPolytope(cp_goal_A,
-          Eigen::VectorXd::Zero(cp_goal_A.rows()), x0, ns, 200, 150, max_radius);
+      std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
+          cp_goal_A, VectorXd::Zero(cp_goal_A.rows()),
+          cp_A, cp_b, x0, ns, max_radius);
 
-      Eigen::VectorXd wrench_sample, wrench_best;
+      std::cout << "Found " << wrench_samples.size() << " feasible solutions." << std::endl;
       double control_stability_margin = -1;
-      for (int s = 0; s < ns; ++s) { // make sure they sum to one
-        // create the sample
-        wrench_sample = wrench_samples.middleRows(s, 1).normalized().transpose();
+      VectorXd wrench_best;
+      for (int s = 0; s < wrench_samples.size(); ++s) {
         std::cout << "[WrenchStamping]    Sample #" << s << ": ";
         // check if the sample is within any other cones
         bool infeasible_sample = false;
         for (int i = 0; i < cp_A.size(); ++i) {
-          Eigen::VectorXd cp_b = cp_A[i]*wrench_sample;
+          Eigen::VectorXd cp_b = cp_A[i]*wrench_samples[s];
           if (cp_b.maxCoeff() <= 0) {
             std::cout << i << "th cone infeasible." << std::endl;
             infeasible_sample = true;
@@ -1046,13 +1062,13 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         // compute its distance to all other cone projections
         double min_dist = 999999.9;
         for (int i = 0; i < cp_A.size(); ++i) {
-          double dist = Poly::distP2Polyhedron(wrench_sample, cp_A[i],
-              Eigen::VectorXd::Zero(cp_A[i].rows()), Eigen::VectorXd::Zero(wrench_sample.rows()));
+          double dist = Poly::distP2Polyhedron(wrench_samples[s], cp_A[i],
+              Eigen::VectorXd::Zero(cp_A[i].rows()), Eigen::VectorXd::Zero(wrench_samples[s].rows()));
           if (dist < min_dist) min_dist = dist;
         }
         if (min_dist > control_stability_margin) {
           control_stability_margin = min_dist;
-          wrench_best = wrench_sample;
+          wrench_best = wrench_samples[s];
         }
         std::cout << "min_dist:" << min_dist << std::endl;
       }
