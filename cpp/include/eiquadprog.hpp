@@ -110,7 +110,8 @@ G << 2.1, 0.0, 1.0,
 
 #include "Eigen/Dense"
 
-#define min(a,b)            (((a) < (b)) ? (a) : (b))
+// (Yifan) change its name to avoid confliction with min() in random.h
+#define min2(a,b)            (((a) < (b)) ? (a) : (b))
 
 namespace Eigen {
 
@@ -292,7 +293,7 @@ l1: iter++;
         iaexcl[i] = true;
         sum = CI.col(i).dot(x) + ci0(i);
         s(i) = sum;
-        psi += min(0.0, sum);
+        psi += min2(0.0, sum);
     }
 #ifdef TRACE_SOLVER
   print_vector("s", s, mi);
@@ -374,7 +375,7 @@ l2a:/* Step 2a: determine step direction */
     t2 = inf; /* +inf */
 
   /* the step is chosen as the minimum of t1 and t2 */
-  t = min(t1, t2);
+  t = min2(t1, t2);
 #ifdef TRACE_SOLVER
   std::cerr << "Step sizes: " << t << " (t1 = " << t1 << ", t2 = " << t2 << ") ";
 #endif
