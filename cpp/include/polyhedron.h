@@ -253,6 +253,21 @@ Eigen::MatrixXd convhull(const Eigen::MatrixXd &points);
  */
 bool convhull(const std::vector<double> &vectors, int dim, int num, std::vector<double> *results);
 /**
+ * Compute the polytope center, the center of the largest inscribed sphere to
+ * the polytope
+ *
+ * @param[in]  A     Ax <= b
+ * @param[in]  b     Ax <= b
+ * @param[in]  xl    xl <= x <= xu
+ * @param[in]  xu    xl <= x <= xu
+ * @param      xc    The found center
+ *
+ * @return     Radius of the found inscribed sphere
+ */
+double polytopeCenter(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xc);
+
+/**
  * Compute the Minkowski sum of a bunch of vectors.
  *
  * @param[in]  vectors  Each row represents a vector (the end point. The
@@ -275,6 +290,27 @@ bool minkowskiSum(const Eigen::MatrixXd &poly1, const Eigen::MatrixXd &poly2, Ei
 bool lpfeasibility(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
     Eigen::VectorXd *xs);
 
+/**
+ * Linear programming.
+ *   min C'x
+ *   s.t. Ax <= b
+ *        Ae x == be
+ *        xl <= x <= xu
+ * Elements of xl and xu can be inf or NaN to indicate no constraint. Only
+ * when isfinite() return true would the bound be considered.
+ *
+ * @param[in]  C             cost to be minimized
+ * @param[in]  A             Inequality constraints, can be empty
+ * @param[in]  b
+ * @param[in]  Ae            Equality constraints, can be empty
+ * @param[in]  be
+ * @param[in]  xl            Lower bound of variable, can be empty.
+ * @param[in]  xu            Upper bound of variable, can be empty.
+ * @param      xs            Stores the solution
+ * @param      optimal_cost  The optimal cost
+ *
+ * @return     True if the problem is feasible
+ */
 bool lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
     const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,
     const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xs,

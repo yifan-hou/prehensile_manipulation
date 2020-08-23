@@ -21,14 +21,33 @@ int main(int argc, char *argv[]) {
           -1, 0, -1;
   b_lp << 1, 1;
   Ae_lp << 0, 1, 0;
-  be_lp << 0;
+  be_lp << 0.9;
   xu_lp << 1, 1, 1;
   xl_lp << -1, -1, -1;
-  C_lp << -1, 0, -1;
+  C_lp << 1, 0, 2;
   bool lp_feasible = Poly::lp(C_lp, A_lp, b_lp, Ae_lp, be_lp, xl_lp, xu_lp, &xs_lp, &optimal_cost_lp);
   std::cout << "Feasible: " << lp_feasible << std::endl;
   std::cout << "Solution: " << xs_lp.transpose() << std::endl;
   std::cout << "optimal cost:" << optimal_cost_lp << std::endl;
+
+  std::cout << "############################################\n";
+  std::cout << "    Polytope center\n";
+  std::cout << "############################################\n";
+  Eigen::MatrixXd A_pc(2,3);
+  Eigen::VectorXd b_pc(2), xu_pc(3), xl_pc(3);
+  Eigen::VectorXd xs_pc(3);
+  A_pc << 0.7071, 0, 0.7071,
+          -0.7071, 0, -0.7071;
+  b_pc << 0.0, 0.7071;
+  // xu_pc << 1, 1, 1;
+  // xl_pc << -1, -1, -1;
+  xl_pc = Eigen::VectorXd(0);
+  xu_pc = Eigen::VectorXd(0);
+  std::cout << "calling:" << std::endl;
+  double pc_radius = Poly::polytopeCenter(A_pc, b_pc, xl_pc, xu_pc, &xs_pc);
+  std::cout << "pc_radius: " << pc_radius << std::endl;
+  std::cout << "xs_pc: " << xs_pc.transpose() << std::endl;
+
   return 0;
 
   // std::cout << "############################################\n";

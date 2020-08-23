@@ -7,11 +7,11 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <cmath>
 #include <string.h>
 
 #include <vector>
 #include <Eigen/LU>
-
 
 #include "libqhullcpp/QhullLinkedList.h"
 #include "libqhullcpp/QhullVertex.h"
@@ -861,18 +861,57 @@ bool Poly::convhull(const std::vector<double> &vectors, int dim, int num,
   return true;
 }
 
-// double Poly::polytopeCenter(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen::VectorXd *xc) {
-//   Eigen::MatrixXd A_ext = Eigen::MatrixXd::Zero(A.rows() + 1, A.cols() + 1);
-//   A_ext.block(0, 0, A.rows(), A.cols()) = A;
-//   A_ext.rightCols(1) = Eigen::VectorXd::Ones(A_ext.rows());
-//   A_ext(A.rows(), A.cols()) = -1;
-//   Eigen::VectorXd b_ext(b.rows() + 1);
-//   b_ext << b, 0;
 
-//   // todo
+// Solve:
+//   Max:  r
+//   S.t.  Vi' (x - Pi) >= r,   i = 1,...,n
+// Rewrite as
+//   Max: r
+//   s.t.  Ax + r <= b
+// Ax <= b describes the polytope. Rows of A must be normalized.
+// xl, xu are additional bounds on x.
+double Poly::polytopeCenter(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xc) {
+  /**
+   * construct the LP with variable [x, r]
+   *  min: [0 -1] [x r]'
+   *  s.t. [A 1] [x r]' <= b
+   *       xl <= x <= xu
+   *       r >= 0
+   */
+  // Constraints
+  int dim = A.cols();
+  int dim_ext = A.cols() + 1;
+  Eigen::MatrixXd A_ext = Eigen::MatrixXd::Zero(A.rows(), dim + 1);
+  A_ext.block(0, 0, A.rows(), dim) = A;
+  A_ext.rightCols(1) = Eigen::VectorXd::Ones(A_ext.rows());
+  // bounds
+  Eigen::VectorXd xl_ext = Eigen::VectorXd(dim_ext) * nan("");
+  Eigen::VectorXd xu_ext = Eigen::VectorXd(dim_ext) * nan("");
+  if (xl.rows() > 0) {
+    xl_ext.head(dim) = xl;
+  }
+  if (xu.rows() > 0) {
+    xu_ext.head(dim) = xu;
+  }
+  xl_ext(dim) = 0; // r >= 0
 
-//   return 0;
-// }
+  // costs
+  Eigen::VectorXd C = Eigen::VectorXd::Zero(dim_ext);
+  C(dim) = -1; // max r
+
+  Eigen::MatrixXd Ae_ext(0, dim_ext);
+  Eigen::VectorXd be_ext(0);
+  Eigen::VectorXd xc_ext = Eigen::VectorXd::Zero(dim_ext);
+  double optimal_cost;
+  bool success = lp(C, A_ext, b, Ae_ext, be_ext, xl_ext, xu_ext, &xc_ext, &optimal_cost);
+  if (success) {
+    *xc = xc_ext.head(dim);
+    return -optimal_cost;
+  } else {
+    return -1;
+  }
+}
 
 bool Poly::minkowskiSumOfVectors(const Eigen::MatrixXd &vectors, Eigen::MatrixXd *results) {
   /**
@@ -1024,10 +1063,6 @@ bool Poly::lpfeasibility(const Eigen::MatrixXd &A,
 
 }
 
-// min C'x
-// s.t. Ax <= b
-//      Ae x == be
-//      xl <= x <= xu
 bool Poly::lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
     const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,
     const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xs, double *optimal_cost) {
@@ -1037,18 +1072,24 @@ bool Poly::lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::V
   glp_init_smcp(&parm);
   parm.presolve = GLP_OFF;
   parm.msg_lev = GLP_MSG_ERR; // error and warning only
-
   int *ia, *ja;
   double *ar;
   int rows = A.rows();
   int cols = A.cols();
   int rows_e = Ae.rows();
   int cols_e = Ae.cols();
-  int rows_l = xl.rows();
-  int rows_r = xu.rows();
   assert(cols_e == cols);
 
-  int size = rows * cols + rows_e * cols_e + rows_l + rows_r;
+  Eigen::VectorXd xu_expand = Eigen::VectorXd(cols) * nan("");
+  Eigen::VectorXd xl_expand = Eigen::VectorXd(cols) * nan("");
+  if (xu.rows() > 0) {
+    xu_expand = xu;
+  }
+  if (xl.rows() > 0) {
+    xl_expand = xl;
+  }
+
+  int size = rows * cols + rows_e * cols_e;
   ia = new int[size + 1000];
   ja = new int[size + 1000];
   ar = new double[size + 1000];
@@ -1071,30 +1112,26 @@ bool Poly::lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::V
     glp_set_row_bnds(lp, rows+r, GLP_FX, be(r-1), be(r-1)); // equality =
   }
 
-  /* variable bounds and cost function */
+  /* cost function */
   glp_add_cols(lp, cols);
+  /* variable bounds */
   for (int c = 1; c <= cols; ++c) {
     glp_set_obj_coef(lp, c, C(c-1)); // cost function
-  }
-  if ((xl.rows() > 0) && (xu.rows() > 0)) { // double bounded
-    for (int c = 1; c <= cols; ++c) {
-      glp_set_col_bnds(lp, c, GLP_DB, xl(c-1), xu(c-1));
-    }
-  } else if (xl.rows() > 0) {
-    for (int c = 1; c <= cols; ++c) {
-      glp_set_col_bnds(lp, c, GLP_LO, xl(c-1), 0.0); // lower-bounded
-    }
-  } else if (xu.rows() > 0) {
-    for (int c = 1; c <= cols; ++c) {
-      glp_set_col_bnds(lp, c, GLP_UP, 0.0, xu(c-1)); // upper-bounded
-    }
-  } else {
-    for (int c = 1; c <= cols; ++c) {
-      glp_set_col_bnds(lp, c, GLP_FR, 0.0, 0.0); // no boundary
+    if (isfinite(xl_expand(c-1))) {
+      if (isfinite(xu_expand(c-1))) {
+        glp_set_col_bnds(lp, c, GLP_DB, xl_expand(c-1), xu_expand(c-1)); // double bounded
+      } else {
+        glp_set_col_bnds(lp, c, GLP_LO, xl_expand(c-1), 0.0); // lower-bounded
+      }
+    } else {
+      if (isfinite(xu_expand(c-1))) {
+        glp_set_col_bnds(lp, c, GLP_UP, 0.0, xu_expand(c-1)); // upper-bounded
+      } else {
+        glp_set_col_bnds(lp, c, GLP_FR, 0.0, 0.0); // no boundary
+      }
     }
   }
-
-  // fill in coefficient matrix
+  /* fill in coefficient matrix */
   int id = 0;
   for (int r = 1; r <= rows; ++r) {
     for (int c = 1; c <= cols; ++c) {
@@ -1112,8 +1149,7 @@ bool Poly::lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::V
   /**
    * solve problem
    */
-  // debug: print the problem
-  glp_write_prob(lp, 0, "problem.txt");
+  // glp_write_prob(lp, 0, "problem.txt");
   glp_simplex(lp, &parm);
   int result = glp_get_status(lp);
 
