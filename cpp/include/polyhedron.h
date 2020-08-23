@@ -57,8 +57,19 @@ Eigen::VectorXd projectP2Hyperplane(const Eigen::VectorXd &p, const Eigen::Vecto
  */
 double distRay2ConeFromOutside(const Eigen::VectorXd &p, const Eigen::MatrixXd &A, const Eigen::MatrixXd &R);
 
+/**
+ * Compute the distance between a point and a polyhedron using QP.
+ *
+ * @param[in]  p          The query point
+ * @param[in]  A          Polyhedron description, A x <= b
+ * @param[in]  b          Polyhedron description, A x <= b
+ * @param[in]  x0         Initial guess for QP
+ * @param      x_closest  The point in the polyhedron that is the closest to p
+ *
+ * @return     { description_of_the_return_value }
+ */
 double distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
-    const Eigen::VectorXd &b, const Eigen::VectorXd &x0);
+    const Eigen::VectorXd &b, const Eigen::VectorXd &x0, Eigen::VectorXd *x_closest = nullptr);
 
 /**
  * Hit and Run sampling in a polytope. It converges to a uniform sampling
@@ -136,6 +147,7 @@ bool getFacetFromPPL(const PPL::C_Polyhedron &ph, Eigen::MatrixXd *A, Eigen::Vec
 
 bool vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
         const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be, Eigen::MatrixXd *R);
+bool vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,  Eigen::MatrixXd *R);
 
 /**
  * Facet enumeration. Given a polyhedron R = [m M]:
@@ -263,5 +275,8 @@ bool minkowskiSum(const Eigen::MatrixXd &poly1, const Eigen::MatrixXd &poly2, Ei
 bool lpfeasibility(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
     Eigen::VectorXd *xs);
 
-
+bool lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,
+    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xs,
+    double *optimal_cost);
 }

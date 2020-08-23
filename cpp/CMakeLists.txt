@@ -55,8 +55,8 @@ target_link_libraries(sharedgraspinglib polylib timer hfvc)
 # add_executable(qhulltest src/testQHull.cpp)
 # target_link_libraries(qhulltest ${qhullLibs})
 
-# add_executable(polytest src/testpoly.cpp)
-# target_link_libraries(polytest polylib)
+add_executable(polytest src/testpoly.cpp)
+target_link_libraries(polytest polylib)
 
 pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
 target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib)

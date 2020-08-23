@@ -10,6 +10,27 @@ int main(int argc, char *argv[]) {
   Eigen::VectorXd emptyV(0);
   Eigen::MatrixXd emptyM(0,0);
 
+  std::cout << "############################################\n";
+  std::cout << "    Linear Programming\n";
+  std::cout << "############################################\n";
+  Eigen::MatrixXd A_lp(2,3), Ae_lp(1,3);
+  Eigen::VectorXd b_lp(2), be_lp(1), xu_lp(3), xl_lp(3), C_lp(3);
+  Eigen::VectorXd xs_lp(3);
+  double optimal_cost_lp;
+  A_lp << 1, 0, 1,
+          -1, 0, -1;
+  b_lp << 1, 1;
+  Ae_lp << 0, 1, 0;
+  be_lp << 0;
+  xu_lp << 1, 1, 1;
+  xl_lp << -1, -1, -1;
+  C_lp << -1, 0, -1;
+  bool lp_feasible = Poly::lp(C_lp, A_lp, b_lp, Ae_lp, be_lp, xl_lp, xu_lp, &xs_lp, &optimal_cost_lp);
+  std::cout << "Feasible: " << lp_feasible << std::endl;
+  std::cout << "Solution: " << xs_lp.transpose() << std::endl;
+  std::cout << "optimal cost:" << optimal_cost_lp << std::endl;
+  return 0;
+
   // std::cout << "############################################\n";
   // std::cout << "    Distance to cone\n";
   // std::cout << "############################################\n";
@@ -124,7 +145,6 @@ int main(int argc, char *argv[]) {
   std::cout << "A:\n" << A.format(CleanFmt) << std::endl;
   std::cout << "b:\n" << b.format(CleanFmt) << std::endl;
   std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
-  return 0;
   // if (!Poly::facetEnumeration(R, &A, &b)) return -1;
 
   // std::cout << "Facet Enumeration:\n";
@@ -275,7 +295,6 @@ int main(int argc, char *argv[]) {
   std::cout << "R2:\n" << R2.format(CleanFmt) << std::endl;
   std::cout << "R:\n" << R.format(CleanFmt) << std::endl;
 
-  return 0;
 
   std::cout << "############################################\n";
   std::cout << "    coneIntersection\n";
@@ -409,7 +428,6 @@ int main(int argc, char *argv[]) {
   std::cout << "Minkowski Sum of poly123 and poly4:\n";
   Poly::minkowskiSum(results_123, mink_poly4,  &results_1234);
   std::cout << "rows: " << results_1234.rows() << std::endl;
-
 
 
   std::cout << "\nDone." << std::endl;

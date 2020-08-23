@@ -123,7 +123,7 @@ double Poly::distRay2ConeFromOutside(const Eigen::VectorXd &p, const Eigen::Matr
 //  s.t.
 //     Ax <= b
 double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
-    const Eigen::VectorXd &b, const Eigen::VectorXd &x0) {
+    const Eigen::VectorXd &b, const Eigen::VectorXd &x0, Eigen::VectorXd *x_closest) {
   // prepare the QP
   //  min 0.5 * x G0 x + g0 x
   //  s.t.
@@ -141,8 +141,45 @@ double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A
   double cost = solve_quadprog(G0, g0,
       Eigen::MatrixXd(kDim, 0), Eigen::VectorXd(0), // no equality constraints
       -A.transpose(), b, x);
+  if (x_closest != nullptr)
+    *x_closest = x;
   return (x - p).norm();
 }
+
+// double Poly::getAwayFromPolyhedrons(
+//     const std::vector<Eigen::MatrixXd> &A2, const std::vector<Eigen::VectorXd> &b2,
+//     const Eigen::MatrixXd &A1, const Eigen::VectorXd &b1,
+//     Eigen::VectorXd *x) {
+//   /**
+//    * Compute the closest point in each P2
+//    */
+//   int num_of_P2 = A2.size();
+//   int dim = x->rows();
+//   Eigen::MatrixXd closestPoints(dim, num_of_P2);
+//   Eigen::VectorXd x_closest;
+//   for (int p2 = 0; p2 < A2.size(); ++p2) {
+//     double dist = distP2Polyhedron(*x, A2[p2], b2[p2], Eigen::VectorXd::Zero(dim), &x_closest);
+//     if (dist < 0) return -1; // input x must be feasible
+//     closestPoints.middleCols(p2, 1) = x_closest;
+//   }
+
+//   /**
+//    * Formulate the QP
+//    */
+
+//   // solve the QP
+//   Eigen::VectorXd x = x0;
+//   Eigen::MatrixXd G0 = Eigen::MatrixXd::Identity(kDim, kDim);
+//   Eigen::VectorXd g0 = -p.transpose();
+//   double cost = solve_quadprog(G0, g0,
+//       Eigen::MatrixXd(kDim, 0), Eigen::VectorXd(0), // no equality constraints
+//       -A.transpose(), b, x);
+//   if (x_closest != nullptr)
+//     *x_closest = x;
+//   return (x - p).norm();
+// }
+
+
 
 Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
     const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard, int runup, double max_radius) {
@@ -244,7 +281,7 @@ std::vector<Eigen::VectorXd> Poly::sampleInP1OutOfP2(const Eigen::MatrixXd &A1,
   }
   for (int s = 0; s < N; ++s) {
     u = sample();
-    u = u - u.dot(vec_origin)*vec_origin; // optional
+    u = u - u.dot(vec_origin)*vec_origin; // (TODO) optional
     u.normalize();
     z = A1*u;
     c = (b1 - A1*x0).cwiseQuotient(z);
@@ -605,6 +642,13 @@ bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   return getVertexFromPPL(ph, R);
 }
 
+bool Poly::vertexEnumeration(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,  Eigen::MatrixXd *R) {
+  Eigen::MatrixXd Ae(0, A.cols());
+  Eigen::VectorXd be(0);
+  return vertexEnumeration(A, b, Ae, be, R);
+}
+
+
 bool Poly::facetEnumeration(const Eigen::MatrixXd &R_input, Eigen::MatrixXd *A, Eigen::VectorXd *b) {
   /**
    * Scale input matrix to make it numerically more stable
@@ -817,6 +861,19 @@ bool Poly::convhull(const std::vector<double> &vectors, int dim, int num,
   return true;
 }
 
+// double Poly::polytopeCenter(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, Eigen::VectorXd *xc) {
+//   Eigen::MatrixXd A_ext = Eigen::MatrixXd::Zero(A.rows() + 1, A.cols() + 1);
+//   A_ext.block(0, 0, A.rows(), A.cols()) = A;
+//   A_ext.rightCols(1) = Eigen::VectorXd::Ones(A_ext.rows());
+//   A_ext(A.rows(), A.cols()) = -1;
+//   Eigen::VectorXd b_ext(b.rows() + 1);
+//   b_ext << b, 0;
+
+//   // todo
+
+//   return 0;
+// }
+
 bool Poly::minkowskiSumOfVectors(const Eigen::MatrixXd &vectors, Eigen::MatrixXd *results) {
   /**
    * The algorithm:
@@ -913,7 +970,6 @@ bool Poly::lpfeasibility(const Eigen::MatrixXd &A,
   ia = new int[size + 1000];
   ja = new int[size + 1000];
   ar = new double[size + 1000];
-  double z, x1, x2;
 
   /* create problem */
   lp = glp_create_prob();
@@ -954,7 +1010,123 @@ bool Poly::lpfeasibility(const Eigen::MatrixXd &A,
 
   if ((result == GLP_OPT) || (result == GLP_FEAS)) {
     // feasible
-    // z = glp_get_obj_val(lp);
+    // double z = glp_get_obj_val(lp);
+    for (int d = 0; d < cols; ++d) {
+      (*xs)(d) = glp_get_col_prim(lp, d + 1);
+    }
+    // std::cout << "z: " << z << std::endl;
+    // std::cout << "solution: " << xs.transpose() << std::endl;
+    return true;
+  } else {
+    return false;
+    // std::cout << "Infeasible." << std::endl;
+  }
+
+}
+
+// min C'x
+// s.t. Ax <= b
+//      Ae x == be
+//      xl <= x <= xu
+bool Poly::lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,
+    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xs, double *optimal_cost) {
+  /* declare variables */
+  glp_prob *lp;
+  glp_smcp parm;
+  glp_init_smcp(&parm);
+  parm.presolve = GLP_OFF;
+  parm.msg_lev = GLP_MSG_ERR; // error and warning only
+
+  int *ia, *ja;
+  double *ar;
+  int rows = A.rows();
+  int cols = A.cols();
+  int rows_e = Ae.rows();
+  int cols_e = Ae.cols();
+  int rows_l = xl.rows();
+  int rows_r = xu.rows();
+  assert(cols_e == cols);
+
+  int size = rows * cols + rows_e * cols_e + rows_l + rows_r;
+  ia = new int[size + 1000];
+  ja = new int[size + 1000];
+  ar = new double[size + 1000];
+
+  /**
+   * Create problem
+   */
+  lp = glp_create_prob();
+  glp_set_obj_dir(lp, GLP_MIN); // minimization, not maximization
+
+  /**
+   * Fill problem
+   */
+  /* sign and right-hand-side of constraints */
+  glp_add_rows(lp, rows + rows_e);
+  for (int r = 1; r <= rows; ++r) {
+    glp_set_row_bnds(lp, r, GLP_UP, 0.0, b(r-1)); // upper bound, <=
+  }
+  for (int r = 1; r <= rows_e; ++r) {
+    glp_set_row_bnds(lp, rows+r, GLP_FX, be(r-1), be(r-1)); // equality =
+  }
+
+  /* variable bounds and cost function */
+  glp_add_cols(lp, cols);
+  for (int c = 1; c <= cols; ++c) {
+    glp_set_obj_coef(lp, c, C(c-1)); // cost function
+  }
+  if ((xl.rows() > 0) && (xu.rows() > 0)) { // double bounded
+    for (int c = 1; c <= cols; ++c) {
+      glp_set_col_bnds(lp, c, GLP_DB, xl(c-1), xu(c-1));
+    }
+  } else if (xl.rows() > 0) {
+    for (int c = 1; c <= cols; ++c) {
+      glp_set_col_bnds(lp, c, GLP_LO, xl(c-1), 0.0); // lower-bounded
+    }
+  } else if (xu.rows() > 0) {
+    for (int c = 1; c <= cols; ++c) {
+      glp_set_col_bnds(lp, c, GLP_UP, 0.0, xu(c-1)); // upper-bounded
+    }
+  } else {
+    for (int c = 1; c <= cols; ++c) {
+      glp_set_col_bnds(lp, c, GLP_FR, 0.0, 0.0); // no boundary
+    }
+  }
+
+  // fill in coefficient matrix
+  int id = 0;
+  for (int r = 1; r <= rows; ++r) {
+    for (int c = 1; c <= cols; ++c) {
+      id = (r-1)*cols + c;
+      ia[id] = r, ja[id] = c, ar[id] = A(r-1, c-1);
+    }
+  }
+  for (int r = 1; r <= rows_e; ++r) {
+    for (int c = 1; c <= cols_e; ++c) {
+      id = (r + rows - 1)*cols + c;
+      ia[id] = r + rows, ja[id] = c, ar[id] = Ae(r-1, c-1);
+    }
+  }
+  glp_load_matrix(lp, id, ia, ja, ar);
+  /**
+   * solve problem
+   */
+  // debug: print the problem
+  glp_write_prob(lp, 0, "problem.txt");
+  glp_simplex(lp, &parm);
+  int result = glp_get_status(lp);
+
+  /* housekeeping */
+  glp_delete_prob(lp);
+  glp_free_env();
+  delete [] ia;
+  delete [] ja;
+  delete [] ar;
+
+  if ((result == GLP_OPT) || (result == GLP_FEAS)) {
+    // feasible
+    *optimal_cost = glp_get_obj_val(lp);
     for (int d = 0; d < cols; ++d) {
       (*xs)(d) = glp_get_col_prim(lp, d + 1);
     }
