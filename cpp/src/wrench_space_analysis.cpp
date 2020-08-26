@@ -20,7 +20,7 @@ typedef Matrix<double, 6, 1> Vector6d;
 
 double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     MatrixXd eCone_allFix_r, MatrixXd hCone_allFix_r,
-    const VectorXd &F_G,
+    VectorXd F_G,
     const double kContactForce, const double kFrictionE, const double kFrictionH,
     const double kCharacteristicLength,
     MatrixXd G, const VectorXd &b_G,
@@ -77,6 +77,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   Jac_h = Jac_h * Kv_inv;
   eCone_allFix_r = eCone_allFix_r * Kf;
   hCone_allFix_r = hCone_allFix_r * Kf;
+  F_G = Kf * F_G;
   if (flag_given_goal_velocity) {
     G.leftCols(kDim) = G.leftCols(kDim) * Kv_inv;
     G.rightCols(kDim) = G.rightCols(kDim) * Kv_inv;
@@ -468,7 +469,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
 void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
     MatrixXd eCone_allFix_r, MatrixXd hCone_allFix_r,
-    const VectorXd &F_G, const double kContactForce,
+    VectorXd F_G, const double kContactForce,
     const double kFrictionE, const double kFrictionH,
     const double kCharacteristicLength, const int kNumSlidingPlanes,
     const MatrixXi &e_cs_modes, const std::vector<MatrixXi> &e_ss_modes,
@@ -524,6 +525,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   Jac_h = Jac_h * Kv_inv;
   eCone_allFix_r = eCone_allFix_r * Kf;
   hCone_allFix_r = hCone_allFix_r * Kf;
+  F_G = Kf * F_G;
   if (flag_given_goal_velocity) {
     G.leftCols(kDim) = G.leftCols(kDim) * Kv_inv;
     G.rightCols(kDim) = G.rightCols(kDim) * Kv_inv;
@@ -742,7 +744,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
           h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
           std::cout << "[WrenchStamping]    Checking id: " << e_sss_i << ", " << h_sss_i;
           std::cout << " (e: " << e_sss_mode.transpose() << ", h: " << h_sss_mode.transpose() << ")\t";
-          std::cout << e_s_modes[e_sss_i].rows() << " s modes:";
 
           getConstraintOfTheMode(Jac_e, Jac_h, e_sss_mode, h_sss_mode, &N, &Nu);
 
@@ -909,9 +910,29 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       Eigen::MatrixXd cp_goal_A;
       Eigen::MatrixXd cone_of_the_mode, cone_projection, cp_A_temp;
       std::cout << "[WrenchStamping]  3.1 Compute cone of the modes." << std::endl;
+
+      Timer timer_3;
+      double time_robustness = 0;
       for (int c = 0; c < e_cones_VFeasible.size(); ++c) {
         std::cout << "[WrenchStamping]    Cone " << c << ": " << e_modes_VFeasible[c].transpose() << ": ";
         // compute cone of the modes
+        // Fe + G - Fh
+        // timer_3.tic();
+        // std::cout << "computing robustness: # " << e_cones_VFeasible[c].rows() + hCone_allFix_r.rows()  << std::endl;
+        // PPL::C_Polyhedron ph3(6, PPL::EMPTY);
+        // Eigen::MatrixXd R3(e_cones_VFeasible[c].rows() + hCone_allFix_r.rows() + 1, e_cones_VFeasible[c].cols() + 1);
+        // R3.leftCols(1) = Eigen::VectorXd::Ones(R3.rows());
+        // R3(R3.rows() - 1, 0) = 0;
+        // R3.block(0, 1, e_cones_VFeasible[c].rows(), e_cones_VFeasible[c].cols()) = e_cones_VFeasible[c];
+        // R3.block(e_cones_VFeasible[c].rows(), 1, hCone_allFix_r.rows(), hCone_allFix_r.cols()) = - hCone_allFix_r;
+        // R3.block(R3.rows()-1, 1, 1, F_G.rows()) = F_G.transpose();
+        // Poly::constructPPLPolyFromV(R3, &ph3);
+        // ph3.minimized_constraints();
+        // std::cout << "computing robustness: Done" << std::endl;
+        // double robustness_new_time = timer_3.toc();
+        // time_robustness += robustness_new_time;
+
+
         PPL::C_Polyhedron ph1(6, PPL::EMPTY);
         Eigen::MatrixXd R1(e_cones_VFeasible[c].rows(), e_cones_VFeasible[c].cols() + 1);
         R1 << Eigen::VectorXd::Zero(e_cones_VFeasible[c].rows()), e_cones_VFeasible[c];
@@ -924,6 +945,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
 
         ph1.minimized_constraints();
         ph2.minimized_constraints();
+
         ph1.intersection_assign(ph2);
         ph1.minimized_generators();
 
@@ -1038,39 +1060,34 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       Eigen::VectorXd x0 = cone_projection_goal_r.colwise().mean().transpose();
       std::cout << "\ndebug: x0: " << x0.transpose() << "\n\n";
       double max_radius = 2;
+      VectorXd cp_goal_b = VectorXd::Zero(cp_goal_A.rows());
       std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
-          cp_goal_A, VectorXd::Zero(cp_goal_A.rows()),
+          cp_goal_A, cp_goal_b,
           cp_A, cp_b, x0, ns, max_radius);
 
       std::cout << "Found " << wrench_samples.size() << " feasible solutions." << std::endl;
       double control_stability_margin = -1;
-      VectorXd wrench_best;
+      VectorXd wrench_s, wrench_best;
+      VectorXd xl = -VectorXd::Ones(cp_goal_A.cols());
+      VectorXd xu = VectorXd::Ones(cp_goal_A.cols());
       for (int s = 0; s < wrench_samples.size(); ++s) {
         std::cout << "[WrenchStamping]    Sample #" << s << ": ";
-        // check if the sample is within any other cones
-        bool infeasible_sample = false;
-        for (int i = 0; i < cp_A.size(); ++i) {
-          Eigen::VectorXd cp_b = cp_A[i]*wrench_samples[s];
-          if (cp_b.maxCoeff() <= 0) {
-            std::cout << i << "th cone infeasible." << std::endl;
-            infeasible_sample = true;
-            break;
-          }
+        wrench_s = wrench_samples[s];
+        // Refine this sample
+        double min_dist = Poly::getAwayFromPolyhedrons(
+            cp_A, cp_b, cp_goal_A, cp_goal_b, xl, xu,
+            &wrench_s);
+        if (min_dist < 0) {
+          std::cout << " infeasible." << std::endl;
+          continue;
         }
-        if (infeasible_sample) continue;
 
-        // compute its distance to all other cone projections
-        double min_dist = 999999.9;
-        for (int i = 0; i < cp_A.size(); ++i) {
-          double dist = Poly::distP2Polyhedron(wrench_samples[s], cp_A[i],
-              Eigen::VectorXd::Zero(cp_A[i].rows()), Eigen::VectorXd::Zero(wrench_samples[s].rows()));
-          if (dist < min_dist) min_dist = dist;
-        }
+        std::cout << " offset in optimization: " << (wrench_samples[s] - wrench_s).norm();
         if (min_dist > control_stability_margin) {
           control_stability_margin = min_dist;
-          wrench_best = wrench_samples[s];
+          wrench_best = wrench_s;
         }
-        std::cout << "min_dist:" << min_dist << std::endl;
+        std::cout << ", min_dist:" << min_dist << std::endl;
       }
       if (control_stability_margin < 0) {
         std::cout << "[WrenchStamping] 3. Force control has no solution." << std::endl;
@@ -1106,6 +1123,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         std::cout << "  time_stats_hybrid_servoing: " << time_stats_hybrid_servoing << " ms\n";
         std::cout << "  time_stats_velocity_filtering: " << time_stats_velocity_filtering << " ms\n";
         std::cout << "  time_stats_projection: " << time_stats_projection << " ms\n";
+        std::cout << "  time_stats_robustness: " << time_robustness << " ms\n";
         std::cout << "  time_stats_force_control: " << time_stats_force_control << " ms\n";
         std::cout << "  Total: " << time_stats_initialization + time_stats_hybrid_servoing + time_stats_velocity_filtering
             + time_stats_projection + time_stats_force_control << " ms\n";

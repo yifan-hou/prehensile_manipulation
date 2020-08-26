@@ -33,18 +33,20 @@ int main(int argc, char *argv[]) {
   std::cout << "############################################\n";
   std::cout << "    Polytope center\n";
   std::cout << "############################################\n";
-  Eigen::MatrixXd A_pc(2,3);
-  Eigen::VectorXd b_pc(2), xu_pc(3), xl_pc(3);
+  Eigen::MatrixXd A_pc(2,3), A1_pc(1, 3);
+  Eigen::VectorXd b_pc(2), xu_pc(3), xl_pc(3), b1_pc(1);
   Eigen::VectorXd xs_pc(3);
   A_pc << 0.7071, 0, 0.7071,
           -0.7071, 0, -0.7071;
   b_pc << 0.0, 0.7071;
+  A1_pc << 0, 1, 0;
+  b1_pc << -0.2;
   // xu_pc << 1, 1, 1;
   // xl_pc << -1, -1, -1;
   xl_pc = Eigen::VectorXd(0);
   xu_pc = Eigen::VectorXd(0);
   std::cout << "calling:" << std::endl;
-  double pc_radius = Poly::polytopeCenter(A_pc, b_pc, xl_pc, xu_pc, &xs_pc);
+  double pc_radius = Poly::inscribedSphere(A_pc, b_pc, xl_pc, xu_pc, A1_pc, b1_pc, &xs_pc);
   std::cout << "pc_radius: " << pc_radius << std::endl;
   std::cout << "xs_pc: " << xs_pc.transpose() << std::endl;
 

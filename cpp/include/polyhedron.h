@@ -72,6 +72,25 @@ double distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
     const Eigen::VectorXd &b, const Eigen::VectorXd &x0, Eigen::VectorXd *x_closest = nullptr);
 
 /**
+ * Finds a point in P1 that is furthest away from P2.
+ *
+ * @param[in]  A2    A 2
+ * @param[in]  b2    The b 2
+ * @param[in]  A1    A 1
+ * @param[in]  b1    The b 1
+ * @param[in]  xl    { parameter_description }
+ * @param[in]  xu    { parameter_description }
+ * @param      x     { parameter_description }
+ *
+ * @return     The away from polyhedrons.
+ */
+double getAwayFromPolyhedrons(
+    const std::vector<Eigen::MatrixXd> &A2, const std::vector<Eigen::VectorXd> &b2,
+    const Eigen::MatrixXd &A1, const Eigen::VectorXd &b1,
+    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu,
+    Eigen::VectorXd *x);
+
+/**
  * Hit and Run sampling in a polytope. It converges to a uniform sampling
  *
  * @param[in]  A        Polytope description, Ax <= b.
@@ -253,8 +272,9 @@ Eigen::MatrixXd convhull(const Eigen::MatrixXd &points);
  */
 bool convhull(const std::vector<double> &vectors, int dim, int num, std::vector<double> *results);
 /**
- * Compute the polytope center, the center of the largest inscribed sphere to
- * the polytope
+ * Compute the center of the largest inscribed sphere to the polytope.
+ * Ax <= b may not be bounded. xu, xl boundary only constraints the sphere center,
+ * not the sphere itself.
  *
  * @param[in]  A     Ax <= b
  * @param[in]  b     Ax <= b
@@ -264,8 +284,9 @@ bool convhull(const std::vector<double> &vectors, int dim, int num, std::vector<
  *
  * @return     Radius of the found inscribed sphere
  */
-double polytopeCenter(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
-    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xc);
+double inscribedSphere(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu,
+    const Eigen::MatrixXd &A1, const Eigen::VectorXd &b1, Eigen::VectorXd *xc);
 
 /**
  * Compute the Minkowski sum of a bunch of vectors.

@@ -42,7 +42,7 @@
 //  e_mode_goal, h_mode_goal: a particular goal mode
 double wrenchSpaceAnalysis_2d(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,
-    const Eigen::VectorXd &F_G,
+    Eigen::VectorXd F_G,
     const double kContactForce, const double kFrictionE, const double kFrictionH,
     const double kCharacteristicLength,
     Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
@@ -66,7 +66,7 @@ double wrenchSpaceAnalysis_2d(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
 //  e_mode_goal, h_mode_goal: a particular goal mode
 void wrenchSpaceAnalysis(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
     Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,
-    const Eigen::VectorXd &F_G,
+    Eigen::VectorXd F_G,
     const double kContactForce, const double kFrictionE, const double kFrictionH,
     const double kCharacteristicLength, const int kNumSlidingPlanes,
     const Eigen::MatrixXi &e_cs_modes, const std::vector<Eigen::MatrixXi> &e_ss_modes,

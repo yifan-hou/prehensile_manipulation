@@ -146,40 +146,38 @@ double Poly::distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A
   return (x - p).norm();
 }
 
-// double Poly::getAwayFromPolyhedrons(
-//     const std::vector<Eigen::MatrixXd> &A2, const std::vector<Eigen::VectorXd> &b2,
-//     const Eigen::MatrixXd &A1, const Eigen::VectorXd &b1,
-//     Eigen::VectorXd *x) {
-//   /**
-//    * Compute the closest point in each P2
-//    */
-//   int num_of_P2 = A2.size();
-//   int dim = x->rows();
-//   Eigen::MatrixXd closestPoints(dim, num_of_P2);
-//   Eigen::VectorXd x_closest;
-//   for (int p2 = 0; p2 < A2.size(); ++p2) {
-//     double dist = distP2Polyhedron(*x, A2[p2], b2[p2], Eigen::VectorXd::Zero(dim), &x_closest);
-//     if (dist < 0) return -1; // input x must be feasible
-//     closestPoints.middleCols(p2, 1) = x_closest;
-//   }
-
-//   /**
-//    * Formulate the QP
-//    */
-
-//   // solve the QP
-//   Eigen::VectorXd x = x0;
-//   Eigen::MatrixXd G0 = Eigen::MatrixXd::Identity(kDim, kDim);
-//   Eigen::VectorXd g0 = -p.transpose();
-//   double cost = solve_quadprog(G0, g0,
-//       Eigen::MatrixXd(kDim, 0), Eigen::VectorXd(0), // no equality constraints
-//       -A.transpose(), b, x);
-//   if (x_closest != nullptr)
-//     *x_closest = x;
-//   return (x - p).norm();
-// }
-
-
+// x must be feasible. For each P2, compute the closest point p2 to it, then form a half space constraint:
+//    v'(x - p2) > 0
+// where v = normalize(x - p2).
+// This constraint can be written as Ax < b, where
+//    A = -V',
+//    b = -V'p2
+double Poly::getAwayFromPolyhedrons(
+    const std::vector<Eigen::MatrixXd> &A2, const std::vector<Eigen::VectorXd> &b2,
+    const Eigen::MatrixXd &A1, const Eigen::VectorXd &b1,
+    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu,
+    Eigen::VectorXd *x) {
+  /**
+   * Compute the closest point in each P2
+   */
+  int num_of_P2 = A2.size();
+  int dim = x->rows();
+  Eigen::MatrixXd A(num_of_P2, dim);
+  Eigen::VectorXd b(num_of_P2);
+  Eigen::VectorXd x_closest, v;
+  for (int p2 = 0; p2 < A2.size(); ++p2) {
+    double dist = distP2Polyhedron(*x, A2[p2], b2[p2], Eigen::VectorXd::Zero(dim), &x_closest);
+    if (dist < 0) return -1; // input x must be feasible
+    v = *x - x_closest;
+    v.normalize();
+    A.middleRows(p2, 1) = -v.transpose();
+    b(p2) = -v.dot(x_closest);
+  }
+  /**
+   * Solve for the largest inscribed sphere
+   */
+  return inscribedSphere(A, b, xl, xu, A1, b1, x);
+}
 
 Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
     const Eigen::VectorXd &b, const Eigen::VectorXd &x0, int N, int discard, int runup, double max_radius) {
@@ -865,13 +863,16 @@ bool Poly::convhull(const std::vector<double> &vectors, int dim, int num,
 // Solve:
 //   Max:  r
 //   S.t.  Vi' (x - Pi) >= r,   i = 1,...,n
+//         A1 x <= b1
 // Rewrite as
 //   Max: r
 //   s.t.  Ax + r <= b
+//         A1 x <= b1
 // Ax <= b describes the polytope. Rows of A must be normalized.
 // xl, xu are additional bounds on x.
-double Poly::polytopeCenter(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
-    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xc) {
+double Poly::inscribedSphere(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
+    const Eigen::VectorXd &xl, const Eigen::VectorXd &xu,
+    const Eigen::MatrixXd &A1, const Eigen::VectorXd &b1, Eigen::VectorXd *xc) {
   /**
    * construct the LP with variable [x, r]
    *  min: [0 -1] [x r]'
@@ -882,9 +883,13 @@ double Poly::polytopeCenter(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   // Constraints
   int dim = A.cols();
   int dim_ext = A.cols() + 1;
-  Eigen::MatrixXd A_ext = Eigen::MatrixXd::Zero(A.rows(), dim + 1);
+  Eigen::MatrixXd A_ext = Eigen::MatrixXd::Zero(A.rows() + A1.rows(), dim + 1);
   A_ext.block(0, 0, A.rows(), dim) = A;
-  A_ext.rightCols(1) = Eigen::VectorXd::Ones(A_ext.rows());
+  A_ext.block(0, dim, A.rows(), 1) = Eigen::VectorXd::Ones(A.rows());
+  A_ext.block(A.rows(), 0, A1.rows(), dim) = A1;
+  Eigen::VectorXd b_ext = Eigen::VectorXd::Zero(A.rows() + A1.rows());
+  b_ext.head(A.rows()) = b;
+  b_ext.tail(A1.rows()) = b1;
   // bounds
   Eigen::VectorXd xl_ext = Eigen::VectorXd(dim_ext) * nan("");
   Eigen::VectorXd xu_ext = Eigen::VectorXd(dim_ext) * nan("");
@@ -904,7 +909,7 @@ double Poly::polytopeCenter(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   Eigen::VectorXd be_ext(0);
   Eigen::VectorXd xc_ext = Eigen::VectorXd::Zero(dim_ext);
   double optimal_cost;
-  bool success = lp(C, A_ext, b, Ae_ext, be_ext, xl_ext, xu_ext, &xc_ext, &optimal_cost);
+  bool success = lp(C, A_ext, b_ext, Ae_ext, be_ext, xl_ext, xu_ext, &xc_ext, &optimal_cost);
   if (success) {
     *xc = xc_ext.head(dim);
     return -optimal_cost;
