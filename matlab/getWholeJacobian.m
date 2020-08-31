@@ -19,7 +19,7 @@
 %
 
 
-function [N_e, T_e, N_h, T_h, eCone, eTCone, hCone hTCone] = getWholeJacobian(CP_W_e, CN_W_e, ...
+function [N_e, T_e, N_h, T_h, eCone, eTCone, hCone, hTCone] = getWholeJacobian(CP_W_e, CN_W_e, ...
         CP_H_h, CN_H_h, adj_WH, adj_HW, kNumSlidingPlanes, kFrictionE, kFrictionH)
 
 kDim = size(CP_W_e, 1);

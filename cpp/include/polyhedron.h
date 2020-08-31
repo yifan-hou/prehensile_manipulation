@@ -72,7 +72,8 @@ double distP2Polyhedron(const Eigen::VectorXd &p, const Eigen::MatrixXd &A,
     const Eigen::VectorXd &b, const Eigen::VectorXd &x0, Eigen::VectorXd *x_closest = nullptr);
 
 /**
- * Finds a point in P1 that is furthest away from P2.
+ * Finds a point in P1 that is furthest away from P2. If P2 is empty, returns the
+ * center of P1.
  *
  * @param[in]  A2    A 2
  * @param[in]  b2    The b 2

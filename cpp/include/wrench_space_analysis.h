@@ -26,6 +26,9 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
+
+
+#define MAX_CONTROL_MARGIN 2.0
 // Geometrical parameters:
 //  Jac_e, Jac_h
 //  eCone_allFix_r, hCone_allFix_r: each row denotes a generator
@@ -108,11 +111,13 @@ void getConstraintOfTheMode(
  * @param[in]  Jt                      2xkDim rows of Jt for this contact
  * @param[in]  Jn                      1xkDim row of Jn for this contact
  * @param[in]  friction                The friction
+ * @param      g_sampled               The sliding generators from one contact
  *
- * @return     The sliding generators from one contact.
+ * @return     true if no error.
  */
-Eigen::MatrixXd getSlidingGeneratorsFromOneContact(const Eigen::MatrixXd &vel_samples_on_contact,
-    const Eigen::MatrixXd &Jt, const Eigen::MatrixXd &Jn, double friction);
+bool getSlidingGeneratorsFromOneContact(const Eigen::MatrixXd &vel_samples_on_contact,
+    const Eigen::MatrixXd &Jt, const Eigen::MatrixXd &Jn, double friction,
+    std::vector<Eigen::MatrixXd> *g_sampled);
 
 /**
  * @brief      Finds identifier in modes.

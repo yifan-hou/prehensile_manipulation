@@ -29,8 +29,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     int print_level) {
   if (print_level > 0)
     std::cout << "[wrenchSpaceAnalysis_2d] Calling..\n";
-  // std::cout << "Jac_e: " << Jac_e << std::endl;
-  // std::cout << "Jac_h: " << Jac_h << std::endl;
   // std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
   // std::cout << "hCone_allFix_r: " << hCone_allFix_r << std::endl;
   // std::cout << "F_G: " << F_G << std::endl;
@@ -313,7 +311,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     // get the inequality representations for the cone projections
     if(!Poly::polytopeFacetEnumeration(polytope_projection, &pp_A, &pp_b)) {
       std::cerr << "Error: polytopeFacetEnumeration return error." << std::endl;
-      std::cout << "[debug] polytope_projection: " << polytope_projection << std::endl;
+      std::cout << "polytope_projection: " << polytope_projection << std::endl;
       exit(1);
     }
     if (print_level > 0) std::cout << polytope_projection.rows() << " vertices.";
@@ -496,6 +494,14 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   // std::cout << "b_G: " << b_G.size() << std::endl;
   // std::cout << "e_mode_goal: " << e_mode_goal.size() << std::endl;
   // std::cout << "h_mode_goal: " << h_mode_goal.size() << std::endl;
+  // std::cout << "eCone_allFix_r:\n" << eCone_allFix_r << std::endl;
+  // std::cout << "hCone_allFix_r:\n" << hCone_allFix_r << std::endl;
+  // std::cout << "F_G:\n" << F_G << std::endl;
+  // std::cout << "kContactForce:" << kContactForce << std::endl;
+  // std::cout << "kFrictionE:" << kFrictionE << std::endl;
+  // std::cout << "kFrictionH:" << kFrictionH << std::endl;
+  // std::cout << "kCharacteristicLength:" << kCharacteristicLength << std::endl;
+  // std::cout << "kNumSlidingPlanes:" << kNumSlidingPlanes << std::endl;
   // getchar();
   Timer timer;
   timer.tic();
@@ -651,7 +657,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       getConstraintOfTheMode(Jac_e, Jac_h,
           e_sss_mode_goal, h_sss_mode_goal,
           &N, &Nu);
-
       if (!solvehfvc_newer(N, G, b_G, kDimActualized, kDimUnActualized, &action)) {
         std::cout << "[WrenchStamping]    HFVC has no solution." << std::endl;
         continue;
@@ -670,14 +675,11 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
       MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
       MatrixXd R_a_inv = action.R_a.inverse();
-
       // Crashing check
 
       time_stats_hybrid_servoing = timer.toc();
       timer.tic();
 
-      // this might be much faster:
-      //    MatrixXd R = A_allFix * V_control_directions_r.transpose();
       MatrixXd A_V_cone;
       Poly::coneFacetEnumeration(V_control_directions_r, &A_V_cone);
       MatrixXd A_AF_V(A_V_cone.rows() + A_allFix.rows(), A_allFix.cols());
@@ -695,7 +697,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
        * Debug HS
        *
        */
-
       // Eigen::MatrixXd N0C(N.rows() + action.C.rows(), N.cols());
       // N0C << N, action.C;
       // Eigen::VectorXd b_N0C = Eigen::VectorXd::Zero(N0C.rows());
@@ -766,8 +767,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
             // check inequalities
             Eigen::MatrixXd contact_normal_proj = Nu*null_NC; // this is a linear space, not cone
             Eigen::VectorXd contact_normal_sol = Nu*sol_NC;
-            // std::cout << "debug: contact_normal_proj = " << contact_normal_proj << std::endl;
-            // std::cout << "debug: contact_normal_sol = " << contact_normal_sol << std::endl;
             for (int i = 0; i < Nu.rows(); ++i) {
               if (contact_normal_proj.middleRows(i, 1).norm() < TOL) {
                 if (contact_normal_sol(i) < -TOL) {
@@ -782,13 +781,13 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
             continue;
           }
 
-          // prepare to get the cone
+          // get the generators for the sticking contacts
           Eigen::MatrixXd e_cone_base = getConeOfTheMode(eCone_allFix_r, e_sss_mode, kNumSlidingPlanes);
           // First, decide where to get velocity samples.
           // If samples from contact, fill up g_sampled directly.
           // If samples from kernel, fill in vel_samples_in_kernel
           Eigen::MatrixXd vel_samples_in_kernel = Eigen::MatrixXd(0, 2*kDim);
-          Eigen::MatrixXd g_sampled = Eigen::MatrixXd(0, kDim);
+          std::vector<Eigen::MatrixXd> g_sampled;
           if (null_NC.norm() < TOL) {
             // unique solution
             std::cout << "Unique Solution. " << std::endl;
@@ -822,6 +821,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
                 }
               }
             }
+            if (contact_ids.size() == 0) std::cout << "0 ";
             std::cout << std::endl;
             // sample velocities
             //  1. no sliding: g_sampled = empty.
@@ -844,8 +844,9 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
                   + sample_grid * contact_kernels[0].transpose();
               // normalize, get cones
               double friction = (contact_ids[0] < kNumEContacts)? kFrictionE:kFrictionH;
-              g_sampled = getSlidingGeneratorsFromOneContact(vel_samples_on_contact,
-                  Jt.middleRows(2*contact_ids[0], 2), Jn.middleRows(contact_ids[0], 1), friction);
+              getSlidingGeneratorsFromOneContact(vel_samples_on_contact,
+                  Jt.middleRows(2*contact_ids[0], 2), Jn.middleRows(contact_ids[0], 1),
+                  friction, &g_sampled);
             } else {
               // sample from kernel
               double mag = sol_NC.norm();
@@ -858,40 +859,39 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
             }
           }
 
-          if ((g_sampled.rows() == 0) && (vel_samples_in_kernel.rows() != 0)) {
+          if ((g_sampled.size() == 0) && (vel_samples_in_kernel.rows() != 0)) {
             // samples are drawn from kernel, in vel_samples_in_kernel
             // use it to fill up g_sampled
 
             // project kernel to every sliding contacts
-            std::vector<Eigen::MatrixXd> g_sampled_each_contact;
-            std::vector<int> g_sampled_rows;
-            int g_sampled_rows_total = 0;
-            for (int i = 0; i < kNumEContacts; ++i) {
-              if (e_sss_mode(i) == 0) {
-                Eigen::MatrixXd contact_tangent_proj = Nt.middleRows(2*i, 2)*vel_samples_in_kernel.transpose();
-                if (contact_tangent_proj.norm() < 10*TOL) continue;
-                double friction = kFrictionE;
-                g_sampled_each_contact.push_back(getSlidingGeneratorsFromOneContact(contact_tangent_proj.transpose(),
-                    Jt.middleRows(2*i, 2), Jn.middleRows(i, 1), friction));
-                g_sampled_rows.push_back(g_sampled_each_contact.back().rows());
-                g_sampled_rows_total += g_sampled_rows.back();
+            for (int ks = 0; ks < vel_samples_in_kernel.rows(); ++ks) {
+              std::vector<double> g_one_sample;
+              for (int i = 0; i < kNumEContacts; ++i) {
+                if (e_sss_mode(i) == 0) {
+                  Eigen::VectorXd contact_tangent_proj = Nt.middleRows(2*i, 2)*vel_samples_in_kernel.middleRows(ks,1).transpose();
+                  std::vector<Eigen::MatrixXd> g_samples_contact_i;
+                  getSlidingGeneratorsFromOneContact(contact_tangent_proj.transpose(),
+                    Jt.middleRows(2*i, 2), Jn.middleRows(i, 1), kFrictionE, &g_samples_contact_i);
+                  if(g_samples_contact_i.size() > 0)
+                    for (int ii = 0; ii < g_samples_contact_i[0].cols(); ++ii)
+                      g_one_sample.push_back(g_samples_contact_i[0](0, ii));
+                }
               }
-            }
-
-            g_sampled = Eigen::MatrixXd(g_sampled_rows_total, kDim);
-            int g_sampled_rows_acc = 0;
-            for (int i = 0; i < g_sampled_each_contact.size(); ++i) {
-              g_sampled.middleRows(g_sampled_rows_acc, g_sampled_rows[i]) = g_sampled_each_contact[i];
-              g_sampled_rows_acc += g_sampled_rows[i];
+              int ng = g_one_sample.size()/kDim;
+              Eigen::MatrixXd g_sampled_k = Eigen::MatrixXd::Map(g_one_sample.data(), kDim, ng);
+              g_sampled.push_back(g_sampled_k.transpose());
             }
           }
           // save the cone(s)
-          Eigen::MatrixXd e_cone(e_cone_base.rows() + g_sampled.rows(), kDim);
-          e_cone << e_cone_base, g_sampled;
-          e_cones_VFeasible.push_back(e_cone);
-          e_modes_VFeasible.push_back(e_sss_mode);
-          h_modes_VFeasible.push_back(h_sss_mode);
-          if (e_sss_i == goal_id_e) goal_id = e_cones_VFeasible.size() - 1;
+          for (int s = 0; s < g_sampled.size(); ++s) {
+            Eigen::MatrixXd e_cone(e_cone_base.rows() + g_sampled[s].rows(), kDim);
+            e_cone << e_cone_base, g_sampled[s];
+            e_cones_VFeasible.push_back(e_cone);
+            e_modes_VFeasible.push_back(e_sss_mode);
+            h_modes_VFeasible.push_back(h_sss_mode);
+            if (e_sss_i == goal_id_e) goal_id = e_cones_VFeasible.size() - 1;
+          }
+          if (e_sss_i == goal_id_e) assert(g_sampled.size() == 1);
         }
       }
       // done with inner SSS loop
@@ -904,9 +904,9 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
        */
       // projection cones of the modes onto force-controlled subspace
       std::cout << "[WrenchStamping] 3. Compute force control and control-stability-margin." << std::endl;
-      // std::vector<Eigen::MatrixXd> cones_projection_r;
       std::vector<Eigen::MatrixXd> cp_A; // A x <= 0
       Eigen::MatrixXd cone_projection_goal_r;
+      std::vector<Eigen::MatrixXd> cones_projection_r;
       Eigen::MatrixXd cp_goal_A;
       Eigen::MatrixXd cone_of_the_mode, cone_projection, cp_A_temp;
       std::cout << "[WrenchStamping]  3.1 Compute cone of the modes." << std::endl;
@@ -946,6 +946,26 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         ph1.minimized_constraints();
         ph2.minimized_constraints();
 
+        // MatrixXd A_debug;
+        // VectorXd b_debug;
+        // VectorXd center;
+        // Poly::getFacetFromPPL(ph1, &A_debug, &b_debug);
+        // std::cout << "\n\nph1:\n";
+        // std::cout << "debug: A_debug:\n" << A_debug << std::endl;
+        // std::cout << "debug: b_debug:\n" << b_debug << std::endl;
+        // double radius = Poly::inscribedSphere(A_debug, b_debug, -VectorXd::Ones(6), VectorXd::Ones(6),
+        //     MatrixXd::Zero(0, 6), VectorXd(0), &center);
+        // std::cout << "debug: radius: " << radius << ", center:\n" << center << std::endl;
+        // Poly::getFacetFromPPL(ph2, &A_debug, &b_debug);
+        // std::cout << "\n\nph2:\n";
+        // std::cout << "debug: hCone_allFix_r:\n" << hCone_allFix_r << std::endl;
+        // std::cout << "debug: A_debug:\n" << A_debug << std::endl;
+        // std::cout << "debug: b_debug:\n" << b_debug << std::endl;
+        // radius = Poly::inscribedSphere(A_debug, b_debug, -VectorXd::Ones(6), VectorXd::Ones(6),
+        //     MatrixXd::Zero(0, 6), VectorXd(0), &center);
+        // std::cout << "debug: radius: " << radius << ", center:\n" << center << std::endl;
+        // getchar();
+
         ph1.intersection_assign(ph2);
         ph1.minimized_generators();
 
@@ -957,6 +977,19 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
           assert(c != goal_id);
           continue;
         }
+        // debug
+        // ph1.minimized_constraints();
+        // MatrixXd A_debug;
+        // VectorXd b_debug;
+        // VectorXd center;
+        // Poly::getFacetFromPPL(ph1, &A_debug, &b_debug);
+        // std::cout << "debug: A_debug:\n" << A_debug << std::endl;
+        // std::cout << "debug: b_debug:\n" << b_debug << std::endl;
+        // double radius = Poly::inscribedSphere(A_debug, b_debug, -VectorXd::Ones(6), VectorXd::Ones(6),
+        //     MatrixXd::Zero(0, 6), VectorXd(0), &center);
+        // std::cout << "debug: radius: " << radius << ", center:\n" << center << std::endl;
+        // getchar();
+
         /**
          * Projection to force controlled subspace
          */
@@ -976,18 +1009,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         c_A_temp = c_A_temp * R_a_inv;
         cp_A_temp = c_A_temp.leftCols(action.n_af);
         cp_A_temp.rowwise().normalize();
-
-        // // construct the force controlled subspace
-        // MatrixXd R_F_lines(F_control_directions_r.rows(), F_control_directions_r.cols() + 1);
-        // R_F_lines << 2*VectorXd::Ones(F_control_directions_r.rows()), F_control_directions_r;
-        // PPL::Generator_System gs_F;
-        // Poly::constructPPLGeneratorsFromV(R_F_lines, &gs_F);
-        // PPL::C_Polyhedron ph_F(6, PPL::EMPTY);
-        // ph_F.add_generators(gs_F);
-
-        // // Projection by intersection
-        // ph1.intersection_assign(ph_F);
-
 
         // clean up R_mode
         // 1. get rid of point origin
@@ -1009,15 +1030,16 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         cone_of_the_mode = R_.rightCols(R_.cols()-1);
         cone_of_the_mode.rowwise().normalize();
 
+        cone_projection = cone_of_the_mode * F_control_directions_r.transpose();
         // std::cout << cone_projection.rows() << " generators.";
         if (goal_id == c) {
           std::cout << " (id: Goal)" << std::endl;
           // generators projection
-          cone_projection_goal_r = cone_of_the_mode * F_control_directions_r.transpose();
+          cone_projection_goal_r = cone_projection;
           cone_projection_goal_r.rowwise().normalize();
           cp_goal_A = cp_A_temp;
         } else {
-          // cones_projection_r.push_back(cone_projection);
+          cones_projection_r.push_back(cone_projection);
           cp_A.push_back(cp_A_temp);
           std::cout << " (id:" << cp_A.size() - 1 << ") ";;
           std::cout << " A rows: " << cp_A_temp.rows() << std::endl;
@@ -1027,21 +1049,21 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       assert(cone_projection_goal_r.rows() >= action.n_af); // ideally we should check its rank
 
       // get rid of cones that are not adjacent to goal cone
-      std::vector<MatrixXd> cp_A_selected;
-      std::cout << "reducing irrelevant cones. Total number of cones before: " << cp_A.size() << std::endl;
-      for (int i = 0; i < cp_A.size(); ++i) {
-        VectorXd xs = VectorXd::Zero(cp_goal_A.cols());
-        MatrixXd cp_all_A(cp_goal_A.rows() + cp_A[i].rows(), cp_goal_A.cols());
-        cp_all_A << cp_goal_A, cp_A[i];
-        bool is_feasible = Poly::lpfeasibility(cp_all_A, -1e-7*Eigen::VectorXd::Ones(cp_all_A.rows()), &xs);
-        std::cout << "is_feasible: " << is_feasible << ", xs: " << xs.transpose() << std::endl;
-        if (is_feasible && xs.norm() > TOL) {
-          cp_A_selected.push_back(cp_A[i]);
-        } else {
-        }
-      }
-      cp_A = cp_A_selected;
-      std::cout << "Total number of cones after: " << cp_A.size() << std::endl;
+      // std::vector<MatrixXd> cp_A_selected;
+      // std::cout << "reducing irrelevant cones. Total number of cones before: " << cp_A.size() << std::endl;
+      // for (int i = 0; i < cp_A.size(); ++i) {
+      //   VectorXd xs = VectorXd::Zero(cp_goal_A.cols());
+      //   MatrixXd cp_all_A(cp_goal_A.rows() + cp_A[i].rows(), cp_goal_A.cols());
+      //   cp_all_A << cp_goal_A, cp_A[i];
+      //   bool is_feasible = Poly::lpfeasibility(cp_all_A, -1e-7*Eigen::VectorXd::Ones(cp_all_A.rows()), &xs);
+      //   std::cout << "is_feasible: " << is_feasible << ", xs: " << xs.transpose() << std::endl;
+      //   if (is_feasible && xs.norm() > TOL) {
+      //     cp_A_selected.push_back(cp_A[i]);
+      //   } else {
+      //   }
+      // }
+      // cp_A = cp_A_selected;
+      // std::cout << "Total number of cones after: " << cp_A.size() << std::endl;
 
       time_stats_projection = timer.toc();
       timer.tic();
@@ -1054,16 +1076,34 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       else if (action.n_af == 2) ns = 10;
       else if (action.n_af == 3) ns = 20;
       else if (action.n_af == 4) ns = 50;
-      else if (action.n_af == 5) ns = 200;
+      else if (action.n_af == 5) ns = 100;
       std::vector<VectorXd> cp_b;
       for (int i = 0; i < cp_A.size(); ++i) cp_b.push_back(VectorXd::Zero(cp_A[i].rows()));
       Eigen::VectorXd x0 = cone_projection_goal_r.colwise().mean().transpose();
-      std::cout << "\ndebug: x0: " << x0.transpose() << "\n\n";
       double max_radius = 2;
       VectorXd cp_goal_b = VectorXd::Zero(cp_goal_A.rows());
-      std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
-          cp_goal_A, cp_goal_b,
-          cp_A, cp_b, x0, ns, max_radius);
+      // std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
+      //     cp_goal_A, cp_goal_b, cp_A, cp_b, x0, ns, max_radius);
+
+      Eigen::MatrixXd wrench_samples_eigen = Poly::hitAndRunSampleInPolytope(
+        cp_goal_A, cp_goal_b, x0, ns, 100, 100, max_radius);
+      std::vector<VectorXd> wrench_samples;
+      for (int i = 0; i < wrench_samples_eigen.rows(); ++i)
+        wrench_samples.push_back(wrench_samples_eigen.middleRows(i, 1).transpose());
+
+      std::cout << "debug: cone_projection_goal_r:\n" << cone_projection_goal_r << std::endl;
+      // std::cout << "debug: cp_goal_A:\n" << cp_goal_A << std::endl;
+      // std::cout << "debug: cp_goal_b:\n" << cp_goal_b.transpose() << std::endl;
+      for (int i = 0; i < cp_A.size(); ++i) {
+        std::cout << "debug: cones_projection_r " << i << ":\n" << cones_projection_r[i] << std::endl;
+        // std::cout << "debug: cp_b " << i << ":\n" << cp_b[i].transpose() << std::endl;
+      }
+      std::cout << "debug: x0:\n" << x0.transpose() << std::endl;
+      std::cout << "debug: wrench_samples:\n";
+      for (int i = 0; i < wrench_samples.size(); ++i) {
+        std::cout << wrench_samples[i].transpose() << std::endl;
+      }
+      // return;
 
       std::cout << "Found " << wrench_samples.size() << " feasible solutions." << std::endl;
       double control_stability_margin = -1;
@@ -1073,20 +1113,48 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       for (int s = 0; s < wrench_samples.size(); ++s) {
         std::cout << "[WrenchStamping]    Sample #" << s << ": ";
         wrench_s = wrench_samples[s];
+
+        double cost_before = 999;
+        for (int i = 0; i < cp_A.size(); ++i) {
+          double temp = Poly::distP2Polyhedron(wrench_s, cp_A[i], cp_b[i],
+            Eigen::VectorXd::Zero(cp_goal_A.cols()));
+          if (temp < cost_before) cost_before = temp;
+        }
+
         // Refine this sample
-        double min_dist = Poly::getAwayFromPolyhedrons(
-            cp_A, cp_b, cp_goal_A, cp_goal_b, xl, xu,
-            &wrench_s);
+        double min_dist;
+        min_dist = Poly::getAwayFromPolyhedrons(
+            cp_A, cp_b, cp_goal_A, cp_goal_b, xl, xu, &wrench_s);
+        // std::cout << "\nDebug: getAwayFromPolyhedrons\n";
+        // std::cout << "x0: " << wrench_s.transpose() << std::endl;
+        // std::cout << "cp_A.size():\n" << cp_A.size() << std::endl;
+        // std::cout << "cp_b.size():\n" << cp_b.size() << std::endl;
+        // std::cout << "cp_goal_A:\n" << cp_goal_A << std::endl;
+        // std::cout << "cp_goal_b:\n" << cp_goal_b << std::endl;
+        // std::cout << "xl: " << xl.transpose() << std::endl;
+        // std::cout << "xu: " << xu.transpose() << std::endl;
+        // std::cout << "wrench_s: " << wrench_s.transpose() << std::endl;
+        // getchar();
         if (min_dist < 0) {
           std::cout << " infeasible." << std::endl;
+          // assert(false);
           continue;
         }
 
-        std::cout << " offset in optimization: " << (wrench_samples[s] - wrench_s).norm();
+        double cost_after = 999;
+        for (int i = 0; i < cp_A.size(); ++i) {
+          double temp = Poly::distP2Polyhedron(wrench_s, cp_A[i], cp_b[i],
+            Eigen::VectorXd::Zero(cp_goal_A.cols()));
+          if (temp < cost_after) cost_after = temp;
+        }
+
+        // std::cout << "\nBefore optimization: " << wrench_samples[s].transpose() << std::endl;
+        // std::cout << "After optimization: " << wrench_s.transpose() << std::endl;
         if (min_dist > control_stability_margin) {
           control_stability_margin = min_dist;
           wrench_best = wrench_s;
         }
+        std::cout << " cost before: " << cost_before << ", cost after: " << cost_after;
         std::cout << ", min_dist:" << min_dist << std::endl;
       }
       if (control_stability_margin < 0) {
@@ -1107,7 +1175,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       // Eigen::VectorXd V = Eigen::VectorXd::Zero(kDimActualized);
       // V.tail(action.n_av) = action.w_av;
       // Eigen::VectorXd V_T = R_a_inv*V;
-      // Eigen::VectorXd F_T = action.R_a.topRows(action.n_af).transpose() * action.eta_af;
+      Eigen::VectorXd F_T = F_control_directions_r.transpose() * action.eta_af;
       if (print_level > 0) {
         std::cout << " 4. Results:" << std::endl;
         // std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
@@ -1116,7 +1184,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         std::cout << "   w_av:\n" << action.w_av << std::endl;
         std::cout << "   eta_af:\n" << action.eta_af << std::endl;
         // std::cout << "   V_T:" << V_T.transpose() << std::endl;
-        // std::cout << "   F_T:" << F_T.transpose() << std::endl;
+        std::cout << "   F_T:" << F_T.transpose() << std::endl;
 
         std::cout << "Timing statistics:\n";
         std::cout << "  time_stats_initialization: " << time_stats_initialization << " ms\n";
@@ -1466,17 +1534,16 @@ void getConstraintOfTheMode(
   }
 }
 
-Eigen::MatrixXd getSlidingGeneratorsFromOneContact(const Eigen::MatrixXd &vel_samples_on_contact,
-    const Eigen::MatrixXd &Jt, const Eigen::MatrixXd &Jn, double friction) {
-    int kDim = Jt.cols();
+bool getSlidingGeneratorsFromOneContact(const Eigen::MatrixXd &vel_samples_on_contact,
+    const Eigen::MatrixXd &Jt, const Eigen::MatrixXd &Jn, double friction,
+    std::vector<Eigen::MatrixXd> *g_sampled) {
     if (vel_samples_on_contact.norm() < 100*TOL) {
-        return Eigen::MatrixXd(0, kDim);
+        return true;
     }
-    Eigen::MatrixXd g_sampled(vel_samples_on_contact.rows(), kDim);
     for (int i = 0; i < vel_samples_on_contact.rows(); ++i) {
-      g_sampled.middleRows(i, 1) = (friction * vel_samples_on_contact.middleRows(i, 1).normalized() * Jt + Jn)/(std::sqrt(1+friction*friction));
+      g_sampled->push_back((friction * vel_samples_on_contact.middleRows(i, 1).normalized() * Jt + Jn)/(std::sqrt(1+friction*friction)));
   }
-  return g_sampled;
+  return true;
 }
 
 int findIdInModes(const Eigen::VectorXi &target_mode, const Eigen::MatrixXi &modes) {

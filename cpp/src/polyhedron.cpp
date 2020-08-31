@@ -162,21 +162,35 @@ double Poly::getAwayFromPolyhedrons(
    */
   int num_of_P2 = A2.size();
   int dim = x->rows();
-  Eigen::MatrixXd A(num_of_P2, dim);
-  Eigen::VectorXd b(num_of_P2);
-  Eigen::VectorXd x_closest, v;
-  for (int p2 = 0; p2 < A2.size(); ++p2) {
-    double dist = distP2Polyhedron(*x, A2[p2], b2[p2], Eigen::VectorXd::Zero(dim), &x_closest);
-    if (dist < 0) return -1; // input x must be feasible
-    v = *x - x_closest;
-    v.normalize();
-    A.middleRows(p2, 1) = -v.transpose();
-    b(p2) = -v.dot(x_closest);
+  if (num_of_P2 > 0) {
+    Eigen::MatrixXd A(num_of_P2, dim);
+    Eigen::VectorXd b(num_of_P2);
+    Eigen::VectorXd x_closest, v;
+    for (int p2 = 0; p2 < A2.size(); ++p2) {
+      double dist = distP2Polyhedron(*x, A2[p2], b2[p2], Eigen::VectorXd::Zero(dim), &x_closest);
+      if (dist < 0) return -1; // input x must be feasible
+      v = *x - x_closest;
+      v.normalize();
+      A.middleRows(p2, 1) = -v.transpose();
+      b(p2) = -v.dot(x_closest);
+    }
+    /**
+     * Solve for the largest inscribed sphere
+     */
+    return inscribedSphere(A, b, xl, xu, A1, b1, x);
+  } else {
+    // no P2. Return the center of P1
+    assert(A1.rows() > 0); //P1 cannot also be empty
+    Eigen::MatrixXd A = A1;
+    Eigen::VectorXd b = b1;
+    // normalize A, b
+    for (int i = 0; i < A1.rows(); ++i) {
+      double norm = A1.middleRows(i, 1).norm();
+      A.middleRows(i, 1) /= norm;
+      b(i) /= norm;
+    }
+    return inscribedSphere(A, b, xl, xu, Eigen::MatrixXd(0, dim), Eigen::VectorXd(0), x);
   }
-  /**
-   * Solve for the largest inscribed sphere
-   */
-  return inscribedSphere(A, b, xl, xu, A1, b1, x);
 }
 
 Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
@@ -268,8 +282,8 @@ std::vector<Eigen::VectorXd> Poly::sampleInP1OutOfP2(const Eigen::MatrixXd &A1,
     exit(1);
   }
 
-  Eigen::MatrixXd covar = Eigen::MatrixXd::Identity(dim,dim);
-  RUT::normal_random_variable sample { covar };
+  // Eigen::MatrixXd covar = 1000.0*Eigen::MatrixXd::Identity(dim,dim);
+  // RUT::normal_random_variable sample { covar };
   Eigen::VectorXd vec_origin = x0.normalized();
   Eigen::VectorXd u, z, c; // temps
   std::vector<Eigen::VectorXd> X;
@@ -278,8 +292,15 @@ std::vector<Eigen::VectorXd> Poly::sampleInP1OutOfP2(const Eigen::MatrixXd &A1,
     P2_ranking.push_back(std::make_pair (0, i));
   }
   for (int s = 0; s < N; ++s) {
-    u = sample();
-    u = u - u.dot(vec_origin)*vec_origin; // (TODO) optional
+    // u = Eigen::VectorXd::Random(dim);
+    // u = sample();
+    while (true) {
+      u = Eigen::VectorXd::Random(dim);
+      if (u.norm() < 1.0) {
+        break;
+      }
+    }
+    // u = u - u.dot(vec_origin)*vec_origin; // (TODO) optional
     u.normalize();
     z = A1*u;
     c = (b1 - A1*x0).cwiseQuotient(z);
@@ -375,10 +396,9 @@ std::vector<Eigen::VectorXd> Poly::sampleInP1OutOfP2(const Eigen::MatrixXd &A1,
         break;
       }
     } // end all P2
-    // std::cout << "Segments: ";
+    // std::cout << "Finished processing all P2. Segments: ";
     // for (int ii = 0; ii < segments.size(); ++ii) std::cout << segments[ii] << ", ";
     // std::cout << std::endl;
-    // getchar();
     if (segments.size() == 0) {
       std::sort(P2_ranking.begin(), P2_ranking.end(), int_comparator_descending);
       continue;
@@ -394,8 +414,15 @@ std::vector<Eigen::VectorXd> Poly::sampleInP1OutOfP2(const Eigen::MatrixXd &A1,
       }
     }
     // std::cout << "Distance: " << distance << std::endl;
+    // std::cout << "x: " << (x0 + distance*u).transpose() << std::endl;
+    // getchar();
     X.push_back(x0 + distance*u);
   } // end one direction
+  // std::cout << "P2_ranking: " << std::endl;
+  // for (int i = 0; i < P2_ranking.size(); ++i) {
+  //   std::cout << "id: " << P2_ranking[i].second <<  ", #: " << P2_ranking[i].first << ", ";
+  // }
+  // std::cout << std::endl;
   return X;
 }
 

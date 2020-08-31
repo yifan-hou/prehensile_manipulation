@@ -50,6 +50,34 @@ int main(int argc, char *argv[]) {
   std::cout << "pc_radius: " << pc_radius << std::endl;
   std::cout << "xs_pc: " << xs_pc.transpose() << std::endl;
 
+  std::cout << "############################################\n";
+  std::cout << "    sampleInP1OutOfP2\n";
+  std::cout << "############################################\n";
+  Eigen::MatrixXd A1_si(2,3);
+  Eigen::VectorXd b1_si(2);
+  A1_si << 0, 0, 1,
+           0, 0, -1;
+  b1_si << 1, 1;
+  std::vector<Eigen::MatrixXd> A2_si;
+  std::vector<Eigen::VectorXd> b2_si;
+  A2_si.push_back(Eigen::MatrixXd::Zero(1, 3));
+  b2_si.push_back(Eigen::VectorXd(1));
+  A2_si[0] << 0, 1, 0;
+  b2_si[0] << 0;
+  A2_si.push_back(Eigen::MatrixXd::Zero(1, 3));
+  b2_si.push_back(Eigen::VectorXd::Zero(1));
+  A2_si[1] << 0, -1, 0;
+  b2_si[1] << -1;
+  Eigen::VectorXd x0_si = Eigen::VectorXd::Zero(3);
+
+  std::cout << "calling:" << std::endl;
+  std::vector<Eigen::VectorXd> samples = Poly::sampleInP1OutOfP2(
+    A1_si, b1_si, A2_si, b2_si, x0_si, 100, 4.0);
+  std::cout << "samples: " << std::endl;
+  for (int i = 0; i < samples.size(); ++i) {
+    std::cout << "samples[i]: " << samples[i].transpose() << std::endl;
+  }
+
   return 0;
 
   // std::cout << "############################################\n";
