@@ -28,7 +28,7 @@
 
 
 
-#define MAX_CONTROL_MARGIN 2.0
+#define MIN_DIST_IMPROVEMENT 0.005
 // Geometrical parameters:
 //  Jac_e, Jac_h
 //  eCone_allFix_r, hCone_allFix_r: each row denotes a generator

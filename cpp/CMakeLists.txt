@@ -47,7 +47,7 @@ add_library(polylib SHARED src/polyhedron.cpp)
 target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${GLPKLIB} ${RobotUtilLib})
 
 add_library(sharedgraspinglib SHARED src/wrench_space_analysis.cpp)
-target_link_libraries(sharedgraspinglib polylib timer hfvc)
+target_link_libraries(sharedgraspinglib polylib timer hfvc ${RobotUtilLib})
 
 ##
 ## Tests
