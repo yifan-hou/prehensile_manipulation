@@ -130,3 +130,8 @@ bool getSlidingGeneratorsFromOneContact(const Eigen::MatrixXd &vel_samples_on_co
  */
 int findIdInModes(const Eigen::VectorXi &target_mode, const Eigen::MatrixXi &modes);
 
+double forceControl(double kContactForce, int n_af, int sample_ns, int sample_discard,
+    int sample_runup, int ransac_num, int ins_num_iter,
+    const Eigen::MatrixXd &pp_goal_A, const Eigen::VectorXd &pp_goal_b,
+    const std::vector<Eigen::MatrixXd> &pps_A, const std::vector<Eigen::VectorXd> &pps_b,
+    Eigen::VectorXd *wrench_best);
