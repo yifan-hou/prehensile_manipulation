@@ -89,7 +89,10 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
   // for crashing check
   MatrixXd cone_allFix_r;
-  Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r);
+  if (!Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
 
   // divide the big matrices
   // Jn: nContacts x 6,  Nn: nContacts x 12,  Jacobian for the normals
@@ -131,10 +134,16 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   for (int ii = 0; ii < e_modes.rows(); ++ii) {
     e_mode_ii = e_modes.middleRows(ii, 1).transpose();
     e_cone_ii = kContactForce * getConeOfTheMode_2d(eCone_allFix_r, e_mode_ii);
-    Poly::minkowskiSumOfVectors(e_cone_ii, &e_polytope_ii);
+    if (!Poly::minkowskiSumOfVectors(e_cone_ii, &e_polytope_ii)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
 
     // gravity offset
-    Poly::offsetPolytope(&e_polytope_ii, F_G);
+    if (!Poly::offsetPolytope(&e_polytope_ii, F_G)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
 
     bool is_goal_e = true;
     if (flag_given_goal_mode) {
@@ -149,13 +158,22 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     for (int jj = 0; jj < h_modes.rows(); ++jj) {
       h_mode_jj = h_modes.middleRows(jj, 1).transpose();
       h_cone_jj = - kContactForce * getConeOfTheMode_2d(hCone_allFix_r, h_mode_jj);
-      Poly::minkowskiSumOfVectors(h_cone_jj, &h_polytope_jj);
+      if (!Poly::minkowskiSumOfVectors(h_cone_jj, &h_polytope_jj)) {
+        std::cout << "BUG: polyhedron computation return false." << std::endl;
+        exit(-1);
+      }
 
       if (print_level > 0)
         std::cout << "  ii:" << ii << ", jj:" << jj << ", e mode:" << e_mode_ii.transpose() << ", h mode:" << h_mode_jj.transpose();
 
-      Poly::minkowskiSum(e_polytope_ii, h_polytope_jj, &polytope_ij_sum);
-      Poly::polytopeFacetEnumeration(polytope_ij_sum, &polytope_ij_sum_A, &polytope_ij_sum_b);
+      if (!Poly::minkowskiSum(e_polytope_ii, h_polytope_jj, &polytope_ij_sum)) {
+        std::cout << "BUG: polyhedron computation return false." << std::endl;
+        exit(-1);
+      }
+      if (!Poly::polytopeFacetEnumeration(polytope_ij_sum, &polytope_ij_sum_A, &polytope_ij_sum_b)) {
+        std::cout << "BUG: polyhedron computation return false." << std::endl;
+        exit(-1);
+      }
 
 
       if (polytope_ij_sum_b.minCoeff() <= 1e-5 ) {
@@ -249,7 +267,10 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 
   // Crashing check
   MatrixXd R;
-  Poly::coneIntersection(cone_allFix_r, V_control_directions_r, &R); // this line has errors sometimes
+  if (!Poly::coneIntersection(cone_allFix_r, V_control_directions_r, &R)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
   if (R.rows() > 0) {
     std::cout << "[WrenchStamping]    Crashing." << std::endl;
     return -1;
@@ -315,7 +336,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     if(!Poly::polytopeFacetEnumeration(polytope_projection, &pp_A, &pp_b)) {
       std::cerr << "Error: polytopeFacetEnumeration return error." << std::endl;
       std::cout << "polytope_projection: " << polytope_projection << std::endl;
-      exit(1);
+      exit(-1);
     }
     if (print_level > 0) std::cout << polytope_projection.rows() << " vertices.";
 
@@ -546,8 +567,14 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   // save the H-representation of the cone of the all-fixed mode
   MatrixXd Ae_allFix;
   MatrixXd Ah_allFix;
-  Poly::coneFacetEnumeration(eCone_allFix_r, &Ae_allFix);
-  Poly::coneFacetEnumeration(hCone_allFix_r, &Ah_allFix);
+  if (!Poly::coneFacetEnumeration(eCone_allFix_r, &Ae_allFix)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+  if (!Poly::coneFacetEnumeration(hCone_allFix_r, &Ah_allFix)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
   MatrixXd A_allFix(Ae_allFix.rows() + Ah_allFix.rows(), Ae_allFix.cols());
   A_allFix << Ae_allFix, Ah_allFix;
   // do minimized_constraints here?
@@ -681,7 +708,10 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       timer.tic();
 
       MatrixXd A_V_cone;
-      Poly::coneFacetEnumeration(V_control_directions_r, &A_V_cone);
+      if (!Poly::coneFacetEnumeration(V_control_directions_r, &A_V_cone)) {
+        std::cout << "BUG: polyhedron computation return false." << std::endl;
+        exit(-1);
+      }
       MatrixXd A_AF_V(A_V_cone.rows() + A_allFix.rows(), A_allFix.cols());
       A_AF_V << A_V_cone, A_allFix;
       VectorXd xs = VectorXd::Zero(A_V_cone.cols());
@@ -927,12 +957,18 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         R_cl.block(0, 1, e_cones_VFeasible[c].rows(), e_cones_VFeasible[c].cols()) = e_cones_VFeasible[c];
         R_cl.block(e_cones_VFeasible[c].rows(), 1, hCone_allFix_r.rows(), hCone_allFix_r.cols()) = - hCone_allFix_r;
         R_cl.block(R_cl.rows()-1, 1, 1, F_G.rows()) = F_G.transpose();
-        Poly::constructPPLPolyFromV(R_cl, &ph_closure);
+        if (!Poly::constructPPLPolyFromV(R_cl, &ph_closure)) {
+          std::cout << "BUG: polyhedron computation return false." << std::endl;
+          exit(-1);
+        }
         ph_closure.minimized_constraints();
         // compute the distance from the origin to the facets
         MatrixXd A_cl;
         VectorXd b_cl;
-        Poly::getFacetFromPPL(ph_closure, &A_cl, &b_cl);
+        if (!Poly::getFacetFromPPL(ph_closure, &A_cl, &b_cl)) {
+          std::cout << "BUG: polyhedron computation return false." << std::endl;
+          exit(-1);
+        }
 
         if (b_cl.minCoeff() <= 1e-5 ) {
           if (print_level > 0) std::cout << " F-Infeasible." << std::endl;
@@ -958,12 +994,18 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         MatrixXd R1(e_cones_VFeasible[c].rows() + 1, e_cones_VFeasible[c].cols() + 1);
         R1 << VectorXd::Zero(e_cones_VFeasible[c].rows()), e_cones_VFeasible[c],
               1, F_G.transpose();
-        Poly::constructPPLPolyFromV(R1, &ph1);
+        if(!Poly::constructPPLPolyFromV(R1, &ph1)) {
+          std::cout << "BUG: polyhedron computation return false." << std::endl;
+          exit(-1);
+        }
 
         PPL::C_Polyhedron ph2(6, PPL::EMPTY);
         MatrixXd R2(hCone_allFix_r.rows(), hCone_allFix_r.cols() + 1);
         R2 << VectorXd::Zero(hCone_allFix_r.rows()), hCone_allFix_r;
-        Poly::constructPPLPolyFromV(R2, &ph2);
+        if (!Poly::constructPPLPolyFromV(R2, &ph2)) {
+          std::cout << "BUG: polyhedron computation return false." << std::endl;
+          exit(-1);
+        }
 
         ph1.minimized_constraints();
         ph2.minimized_constraints();
@@ -973,10 +1015,13 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
 
         // check intersection results
         MatrixXd p_R;
-        Poly::getVertexFromPPL(ph1, &p_R);
+        if (!Poly::getVertexFromPPL(ph1, &p_R)) {
+          std::cout << "BUG: polyhedron computation return false." << std::endl;
+          exit(-1);
+        }
         if (!((p_R.rows() > 0) && (p_R.rightCols(p_R.cols()-1).norm() > TOL))) {
           std::cout << "BUG!! Empty intersection with a positive G-Margin." << std::endl;
-          exit(1);
+          exit(-1);
         }
 
         /**
@@ -990,13 +1035,19 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         MatrixXd R_V_lines(V_control_directions_r.rows(), V_control_directions_r.cols() + 1);
         R_V_lines << 2*VectorXd::Ones(V_control_directions_r.rows()), V_control_directions_r;
         PPL::Generator_System gs_V;
-        Poly::constructPPLGeneratorsFromV(R_V_lines, &gs_V);
+        if (!Poly::constructPPLGeneratorsFromV(R_V_lines, &gs_V)) {
+          std::cout << "BUG: polyhedron computation return false." << std::endl;
+          exit(-1);
+        }
         ph1.add_generators(gs_V);
         ph1.minimized_constraints();
         // Extract the colunms for the projected space
         MatrixXd cylinder_A;
         VectorXd cylinder_b;
-        Poly::getFacetFromPPL(ph1, &cylinder_A, &cylinder_b);
+        if (!Poly::getFacetFromPPL(ph1, &cylinder_A, &cylinder_b)) {
+          std::cout << "BUG: polyhedron computation return false." << std::endl;
+          exit(-1);
+        }
         cylinder_A = cylinder_A * R_a_inv;
         MatrixXd pp_A;
         VectorXd pp_b;
@@ -1059,7 +1110,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
           MatrixXd(0, action.n_af), VectorXd(0), &x0);
       if (radius < 0) {
         std::cout << "BUG: can not find an internal point" << std::endl;
-        exit(1);
+        exit(-1);
       }
       // # line search doesn't work well for high dim. go back to hit-and-run
       // std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
