@@ -274,8 +274,8 @@ Eigen::MatrixXd convhull(const Eigen::MatrixXd &points);
 bool convhull(const std::vector<double> &vectors, int dim, int num, std::vector<double> *results);
 /**
  * Compute the center of the largest inscribed sphere to the polytope.
- * Ax <= b may not be bounded. xu, xl boundary only constraints the sphere center,
- * not the sphere itself.
+ * Ax <= b may not be bounded. xu, xl boundary and A1, b1 only constraint the
+ * sphere center, not the sphere itself.
  *
  * @param[in]  A     Ax <= b
  * @param[in]  b     Ax <= b
@@ -283,7 +283,7 @@ bool convhull(const std::vector<double> &vectors, int dim, int num, std::vector<
  * @param[in]  xu    xl <= x <= xu
  * @param      xc    The found center
  *
- * @return     Radius of the found inscribed sphere
+ * @return     Radius of the found inscribed sphere; -1 if no solution
  */
 double inscribedSphere(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
     const Eigen::VectorXd &xl, const Eigen::VectorXd &xu,
