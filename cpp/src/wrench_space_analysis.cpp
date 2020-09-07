@@ -175,7 +175,6 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
         exit(-1);
       }
 
-
       if (polytope_ij_sum_b.minCoeff() <= 1e-5 ) {
         if (print_level > 0) std::cout << " F-Infeasible." << std::endl;
         continue;
@@ -367,54 +366,66 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   }
   if (print_level > 0)
     std::cout << "[WrenchStamping]  4.2 Sample wrenches and find feasible ones." << std::endl;
-  // sample wrenches in the projection of the goal polytope
-  int ns = 0;
-  if (action.n_af == 1) ns = 5;
-  else if (action.n_af == 2) ns = 20;
-  else ns = 50;
+  int sample_ns = 50;
+  int sample_discard = 100;
+  int sample_runup = 100;
+  int ransac_num = 100;
+  int ins_num_iter = 2;
+  VectorXd wrench_best;
+  double control_stability_margin = forceControl(kContactForce, action.n_af,
+      sample_ns, sample_discard, sample_runup, ransac_num, ins_num_iter,
+      pp_goal_A, pp_goal_b, pps_A, pps_b, &wrench_best);
 
-  // int discard = 10;
-  // int runup = 10;
-  // MatrixXd wrench_samples = Poly::hitAndRunSampleInPolytope(pp_goal_A, pp_goal_b,
-  //     pp_goal_point, ns, discard, runup);
-  std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
-      pp_goal_A, pp_goal_b,
-      pps_A, pps_b, pp_goal_point, ns);
+  // // sample wrenches in the projection of the goal polytope
+  // int ns = 0;
+  // if (action.n_af == 1) ns = 5;
+  // else if (action.n_af == 2) ns = 20;
+  // else ns = 50;
 
-  // std::cout << "wrench_samples: \n" << wrench_samples << std::endl;
-  // std::cout << "wrench_sample_norms: \n" << wrench_samples.rowwise().norm() << std::endl;
-  VectorXd wrench_sample, wrench_best;
-  double control_stability_margin = -1;
-  for (int s = 0; s < ns; ++s) { // make sure they sum to one
-    // create the sample
-    wrench_sample = wrench_samples[s];
-    if (print_level > 0)
-      std::cout << "[WrenchStamping]    Sample #" << s << ": ";
-    // check if the sample is within any other polytopes
-    bool infeasible_sample = false;
-    for (int i = 0; i < pps_A.size(); ++i) {
-      VectorXd Ax = pps_A[i]*wrench_sample - pps_b[i];
-      if (Ax.maxCoeff() <= 0) {
-        // the sample is within another polytope
-        if (print_level > 0) std::cout << i << "th polytope infeasible." << std::endl;
-        infeasible_sample = true;
-        break;
-      }
-    }
-    if (infeasible_sample) continue;
+  // // int discard = 10;
+  // // int runup = 10;
+  // // MatrixXd wrench_samples = Poly::hitAndRunSampleInPolytope(pp_goal_A, pp_goal_b,
+  // //     pp_goal_point, ns, discard, runup);
+  // std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
+  //     pp_goal_A, pp_goal_b,
+  //     pps_A, pps_b, pp_goal_point, ns);
 
-    // compute its distance to all other projections
-    double min_dist = 999999.9;
-    for (int i = 0; i < pps_A.size(); ++i) {
-      double dist = Poly::distP2Polyhedron(wrench_sample, pps_A[i], pps_b[i], VectorXd::Random(kDim));
-      if (dist < min_dist) min_dist = dist;
-    }
-    if (min_dist > control_stability_margin) {
-      control_stability_margin = min_dist;
-      wrench_best = wrench_sample;
-    }
-    if (print_level > 0) std::cout << "min_dist:" << min_dist << std::endl;
-  }
+  // // std::cout << "wrench_samples: \n" << wrench_samples << std::endl;
+  // // std::cout << "wrench_sample_norms: \n" << wrench_samples.rowwise().norm() << std::endl;
+  // VectorXd wrench_sample, wrench_best;
+  // double control_stability_margin = -1;
+  // for (int s = 0; s < ns; ++s) { // make sure they sum to one
+  //   // create the sample
+  //   wrench_sample = wrench_samples[s];
+  //   if (print_level > 0)
+  //     std::cout << "[WrenchStamping]    Sample #" << s << ": ";
+  //   // check if the sample is within any other polytopes
+  //   bool infeasible_sample = false;
+  //   for (int i = 0; i < pps_A.size(); ++i) {
+  //     VectorXd Ax = pps_A[i]*wrench_sample - pps_b[i];
+  //     if (Ax.maxCoeff() <= 0) {
+  //       // the sample is within another polytope
+  //       if (print_level > 0) std::cout << i << "th polytope infeasible." << std::endl;
+  //       infeasible_sample = true;
+  //       break;
+  //     }
+  //   }
+  //   if (infeasible_sample) continue;
+
+  //   // compute its distance to all other projections
+  //   double min_dist = 999999.9;
+  //   for (int i = 0; i < pps_A.size(); ++i) {
+  //     double dist = Poly::distP2Polyhedron(wrench_sample, pps_A[i], pps_b[i], VectorXd::Random(kDim));
+  //     if (dist < min_dist) min_dist = dist;
+  //   }
+  //   if (min_dist > control_stability_margin) {
+  //     control_stability_margin = min_dist;
+  //     wrench_best = wrench_sample;
+  //   }
+  //   if (print_level > 0) std::cout << "min_dist:" << min_dist << std::endl;
+  // }
+
+
   if (control_stability_margin < 0) {
     std::cout << "[WrenchStamping] 4. Force control has no solution." << std::endl;
     return -1;
@@ -943,6 +954,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       std::cout << "[WrenchStamping]  3.1 Compute cone of the modes." << std::endl;
 
       Timer timer_g_margin;
+      double geometrical_stability_margin = 0;
       double time_g_margin = 0;
       for (int c = 0; c < e_cones_VFeasible.size(); ++c) {
         std::cout << "[WrenchStamping]    Cone " << c << ": " << e_modes_VFeasible[c].transpose() << ": ";
@@ -978,14 +990,14 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
         // The polyhedron contains the origin.
         // compute the stability margin
         // margin = min(b./normByRow(A));
-        double margin = 9999;
+        geometrical_stability_margin = 9999;
         for (int i = 0; i < b_cl.rows(); ++i) {
           double A_row_norm = A_cl.middleRows(i, 1).norm();
           assert(A_row_norm > 1e-7);
           double margin_new = b_cl(i)/A_row_norm;
-          if (margin_new < margin) margin = margin_new;
+          if (margin_new < geometrical_stability_margin) geometrical_stability_margin = margin_new;
         }
-        if (print_level > 0) std::cout << " margin: " << margin;
+        if (print_level > 0) std::cout << " geometrical_stability_margin: " << geometrical_stability_margin;
 
         std::cout << std::endl;
         time_g_margin += timer_g_margin.toc();
@@ -1092,142 +1104,17 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       timer.tic();
 
       std::cout << "[WrenchStamping]  3.2 Sample wrenches and find feasible ones." << std::endl;
-      // some parameters
-      VectorXd xl = -kContactForce * VectorXd::Ones(action.n_af);
-      VectorXd xu = kContactForce * VectorXd::Ones(action.n_af);
-      // sample wrenches in the projection of the goal cone
-      int NInitialPoints = 0;
-      if (action.n_af == 1) NInitialPoints = 1;
-      else if (action.n_af == 2) NInitialPoints = 3;
-      else if (action.n_af == 3) NInitialPoints = 3;
-      else if (action.n_af == 4) NInitialPoints = 3;
-      else if (action.n_af == 5) NInitialPoints = 3;
 
-      double max_radius = kContactForce * sqrt(action.n_af) + 1e-7;
-      // get an internal point
-      VectorXd x0;
-      double radius = Poly::inscribedSphere(pp_goal_A, pp_goal_b, xl, xu,
-          MatrixXd(0, action.n_af), VectorXd(0), &x0);
-      if (radius < 0) {
-        std::cout << "BUG: can not find an internal point" << std::endl;
-        exit(-1);
-      }
-      // # line search doesn't work well for high dim. go back to hit-and-run
-      // std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
-      //     cp_goal_A, cp_goal_b, cp_A, cp_b, x0, ns, max_radius);
-      int ns = 100;
-      MatrixXd wrench_samples_eigen = Poly::hitAndRunSampleInPolytope(
-        pp_goal_A, pp_goal_b, x0, ns, 500, 500, max_radius);
+      int sample_ns = 100;
+      int sample_discard = 500;
+      int sample_runup = 500;
+      int ransac_num = 200;
+      int ins_num_iter = 3;
+      VectorXd wrench_best;
+      double control_stability_margin = forceControl(kContactForce, action.n_af,
+          sample_ns, sample_discard, sample_runup, ransac_num, ins_num_iter,
+          pp_goal_A, pp_goal_b, pps_A, pps_b, &wrench_best);
 
-      // sample n1 set of NInitialPoints points, use the most sparse one
-      int n1 = 200;
-      double max_dist_points = 0;
-      std::vector<int> ids_best;
-      Timer tempTimer;
-      tempTimer.tic();
-      for (int i = 0; i < n1; ++i) {
-        std::vector<int> ids;
-        for (int j = 0; j < NInitialPoints; ++j) {
-          ids.push_back(RUT::randi(ns));
-        }
-        // evaluate the minimal distance among the points
-        double min_dist_points = 99999;
-        for (int ii = 0; ii < NInitialPoints; ++ii) {
-          for (int jj = ii + 1; jj < NInitialPoints; ++jj) {
-            double dist = (wrench_samples_eigen.middleRows(ids[ii] ,1) - wrench_samples_eigen.middleRows(ids[jj] ,1)).norm();
-            if (dist < min_dist_points) min_dist_points = dist;
-          }
-        }
-        // compare with the best so far
-        if (min_dist_points > max_dist_points) {
-          max_dist_points = min_dist_points;
-          ids_best = ids;
-        }
-      }
-      double time_added = tempTimer.toc();
-      std::cout << "max_dist_points " << max_dist_points << std::endl;
-      std::cout << "time added: " << time_added << std::endl;
-      std::vector<VectorXd> wrench_samples;
-      for (int i = 0; i < NInitialPoints; ++i)
-        wrench_samples.push_back(wrench_samples_eigen.middleRows(ids_best[i], 1).transpose());
-
-      double control_stability_margin = -1;
-      VectorXd wrench_s, wrench_best;
-      std::vector<VectorXd> wrench_ball_centers;
-      std::vector<double> wrench_ball_radius;
-      for (int s = 0; s < wrench_samples.size(); ++s) {
-        std::cout << "[WrenchStamping]    Sample #" << s << ": ";
-        wrench_s = wrench_samples[s];
-
-        // // check if it is close to existing balls
-        // bool too_close = false;
-        // for (int i = 0; i < wrench_ball_centers.size(); ++i) {
-        //   // std::cout << "(wrench_s - wrench_ball_centers[i]).norm(): " << (wrench_s - wrench_ball_centers[i]).norm() << std::endl;
-        //   // std::cout << "wrench_ball_radius[i]: " << wrench_ball_radius[i] << std::endl;
-        //   if ((wrench_s - wrench_ball_centers[i]).norm() < wrench_ball_radius[i]) {
-        //     std::cout << " too close." << std::endl;
-        //     too_close = true;
-        //     break;
-        //   }
-        // }
-        // if (too_close) continue;
-
-        // compute cost before optimization
-        // double cost_before = 999;
-        // for (int i = 0; i < cp_A.size(); ++i) {
-        //   double temp = Poly::distP2Polyhedron(wrench_s, cp_A[i], cp_b[i],
-        //     VectorXd::Zero(cp_goal_A.cols()));
-        //   if (temp < cost_before) cost_before = temp;
-        // }
-
-        // Refine this sample by iteratively computing inscribed sphere
-        double min_dist;
-        min_dist = Poly::getAwayFromPolyhedrons(
-            pps_A, pps_b, pp_goal_A, pp_goal_b, xl, xu, &wrench_s);
-        double min_dist_new;
-        for (int iter = 0; iter < 3; ++iter) {
-          min_dist_new = Poly::getAwayFromPolyhedrons(
-            pps_A, pps_b, pp_goal_A, pp_goal_b, xl, xu, &wrench_s);
-          std::cout << min_dist_new - min_dist << ", ";
-          double improvement = min_dist_new - min_dist;
-          min_dist = min_dist_new;
-          if (improvement < MIN_DIST_IMPROVEMENT) break;
-        }
-        // std::cout << "x0: " << wrench_samples[s].transpose() << std::endl;
-        // std::cout << "wrench_s: " << wrench_s.transpose() << std::endl;
-        // std::cout << "wrench_s - x0: " << (wrench_samples[s] - wrench_s).norm() << std::endl;
-
-        // std::cout << "\nDebug: getAwayFromPolyhedrons\n";
-        // std::cout << "cp_A.size():\n" << cp_A.size() << std::endl;
-        // std::cout << "cp_b.size():\n" << cp_b.size() << std::endl;
-        // std::cout << "cp_goal_A:\n" << cp_goal_A << std::endl;
-        // std::cout << "cp_goal_b:\n" << cp_goal_b << std::endl;
-        // std::cout << "xl: " << xl.transpose() << std::endl;
-        // std::cout << "xu: " << xu.transpose() << std::endl;
-        // getchar();
-        if (min_dist < 0) {
-          std::cout << " infeasible." << std::endl;
-          // assert(false);
-          continue;
-        }
-
-        // double cost_after = 999;
-        // for (int i = 0; i < cp_A.size(); ++i) {
-        //   double temp = Poly::distP2Polyhedron(wrench_s, cp_A[i], cp_b[i],
-        //     VectorXd::Zero(cp_goal_A.cols()));
-        //   if (temp < cost_after) cost_after = temp;
-        // }
-
-        // record this wrench ball
-        wrench_ball_centers.push_back(wrench_s);
-        wrench_ball_radius.push_back((wrench_s - wrench_samples[s]).norm());
-        if (min_dist > control_stability_margin) {
-          control_stability_margin = min_dist;
-          wrench_best = wrench_s;
-        }
-        // std::cout << " cost before: " << cost_before << ", cost after: " << cost_after;
-        std::cout << " min_dist:" << min_dist << std::endl;
-      }
       if (control_stability_margin < 0) {
         std::cout << "[WrenchStamping] 3. Force control has no solution." << std::endl;
         continue;
@@ -1249,7 +1136,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
       VectorXd F_T = F_control_directions_r.transpose() * action.eta_af;
       if (print_level > 0) {
         std::cout << " 4. Results:" << std::endl;
-        // std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
+        std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
         std::cout << "   control_stability_margin: " << control_stability_margin << std::endl;
         std::cout << "   R_a:\n" << action.R_a << std::endl;
         std::cout << "   w_av:\n" << action.w_av << std::endl;
@@ -1633,3 +1520,149 @@ int findIdInModes(const VectorXi &target_mode, const MatrixXi &modes) {
   return -1;
 }
 
+double forceControl(double kContactForce, int n_af, int sample_ns, int sample_discard,
+    int sample_runup, int ransac_num, int ins_num_iter,
+    const MatrixXd &pp_goal_A, const VectorXd &pp_goal_b,
+    const std::vector<MatrixXd> &pps_A, const std::vector<VectorXd> &pps_b,
+    VectorXd *wrench_best) {
+  /**
+   * Setup some parameters
+   */
+  VectorXd xl = -kContactForce * VectorXd::Ones(n_af);
+  VectorXd xu = kContactForce * VectorXd::Ones(n_af);
+  // sample wrenches in the projection of the goal cone
+  int NInitialPoints = 0;
+  if (n_af == 1) NInitialPoints = 1;
+  else if (n_af == 2) NInitialPoints = 3;
+  else if (n_af == 3) NInitialPoints = 3;
+  else if (n_af == 4) NInitialPoints = 3;
+  else if (n_af == 5) NInitialPoints = 3;
+
+  double max_radius = kContactForce * sqrt(n_af) + 1e-7;
+
+  // get an internal point
+  VectorXd x0;
+  double radius = Poly::inscribedSphere(pp_goal_A, pp_goal_b, xl, xu,
+      MatrixXd(0, n_af), VectorXd(0), &x0);
+  if (radius < 0) {
+    std::cout << "BUG: can not find an internal point" << std::endl;
+    exit(-1);
+  }
+  // # line search doesn't work well for high dim. go back to hit-and-run
+  // std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
+  //     cp_goal_A, cp_goal_b, cp_A, cp_b, x0, sample_ns, max_radius);
+
+  MatrixXd wrench_samples_eigen = Poly::hitAndRunSampleInPolytope(
+    pp_goal_A, pp_goal_b, x0, sample_ns, sample_discard, sample_runup, max_radius);
+
+  // Ransac
+  // sample n1 set of NInitialPoints points, use the most sparse one
+  double max_dist_points = 0;
+  std::vector<int> ids_best;
+  Timer tempTimer;
+  tempTimer.tic();
+  for (int i = 0; i < ransac_num; ++i) {
+    std::vector<int> ids;
+    for (int j = 0; j < NInitialPoints; ++j) {
+      ids.push_back(RUT::randi(sample_ns));
+    }
+    // evaluate the minimal distance among the points
+    double min_dist_points = 99999;
+    for (int ii = 0; ii < NInitialPoints; ++ii) {
+      for (int jj = ii + 1; jj < NInitialPoints; ++jj) {
+        double dist = (wrench_samples_eigen.middleRows(ids[ii] ,1) - wrench_samples_eigen.middleRows(ids[jj] ,1)).norm();
+        if (dist < min_dist_points) min_dist_points = dist;
+      }
+    }
+    // compare with the best so far
+    if (min_dist_points > max_dist_points) {
+      max_dist_points = min_dist_points;
+      ids_best = ids;
+    }
+  }
+  double time_added = tempTimer.toc();
+  std::cout << "max_dist_points " << max_dist_points << std::endl;
+  std::cout << "time added: " << time_added << std::endl;
+  std::vector<VectorXd> wrench_samples;
+  for (int i = 0; i < NInitialPoints; ++i)
+    wrench_samples.push_back(wrench_samples_eigen.middleRows(ids_best[i], 1).transpose());
+
+  double control_stability_margin = -1;
+  VectorXd wrench_s;
+  std::vector<VectorXd> wrench_ball_centers;
+  std::vector<double> wrench_ball_radius;
+  for (int s = 0; s < wrench_samples.size(); ++s) {
+    std::cout << "[wrenchSpaceAnalysis/forceControl]    Sample #" << s << ": ";
+    wrench_s = wrench_samples[s];
+
+    // // check if it is close to existing balls
+    // bool too_close = false;
+    // for (int i = 0; i < wrench_ball_centers.size(); ++i) {
+    //   // std::cout << "(wrench_s - wrench_ball_centers[i]).norm(): " << (wrench_s - wrench_ball_centers[i]).norm() << std::endl;
+    //   // std::cout << "wrench_ball_radius[i]: " << wrench_ball_radius[i] << std::endl;
+    //   if ((wrench_s - wrench_ball_centers[i]).norm() < wrench_ball_radius[i]) {
+    //     std::cout << " too close." << std::endl;
+    //     too_close = true;
+    //     break;
+    //   }
+    // }
+    // if (too_close) continue;
+
+    // compute cost before optimization
+    // double cost_before = 999;
+    // for (int i = 0; i < cp_A.size(); ++i) {
+    //   double temp = Poly::distP2Polyhedron(wrench_s, cp_A[i], cp_b[i],
+    //     VectorXd::Zero(cp_goal_A.cols()));
+    //   if (temp < cost_before) cost_before = temp;
+    // }
+
+    // Refine this sample by iteratively computing inscribed sphere
+    double min_dist;
+    min_dist = Poly::getAwayFromPolyhedrons(
+        pps_A, pps_b, pp_goal_A, pp_goal_b, xl, xu, &wrench_s);
+    double min_dist_new;
+    for (int iter = 0; iter < ins_num_iter; ++iter) {
+      min_dist_new = Poly::getAwayFromPolyhedrons(
+        pps_A, pps_b, pp_goal_A, pp_goal_b, xl, xu, &wrench_s);
+      std::cout << min_dist_new - min_dist << ", ";
+      double improvement = min_dist_new - min_dist;
+      min_dist = min_dist_new;
+      if (improvement < MIN_DIST_IMPROVEMENT) break;
+    }
+    // std::cout << "x0: " << wrench_samples[s].transpose() << std::endl;
+    // std::cout << "wrench_s: " << wrench_s.transpose() << std::endl;
+    // std::cout << "wrench_s - x0: " << (wrench_samples[s] - wrench_s).norm() << std::endl;
+
+    // std::cout << "\nDebug: getAwayFromPolyhedrons\n";
+    // std::cout << "cp_A.size():\n" << cp_A.size() << std::endl;
+    // std::cout << "cp_b.size():\n" << cp_b.size() << std::endl;
+    // std::cout << "cp_goal_A:\n" << cp_goal_A << std::endl;
+    // std::cout << "cp_goal_b:\n" << cp_goal_b << std::endl;
+    // std::cout << "xl: " << xl.transpose() << std::endl;
+    // std::cout << "xu: " << xu.transpose() << std::endl;
+    // getchar();
+    if (min_dist < 0) {
+      std::cout << " infeasible." << std::endl;
+      // assert(false);
+      continue;
+    }
+
+    // double cost_after = 999;
+    // for (int i = 0; i < cp_A.size(); ++i) {
+    //   double temp = Poly::distP2Polyhedron(wrench_s, cp_A[i], cp_b[i],
+    //     VectorXd::Zero(cp_goal_A.cols()));
+    //   if (temp < cost_after) cost_after = temp;
+    // }
+
+    // record this wrench ball
+    wrench_ball_centers.push_back(wrench_s);
+    wrench_ball_radius.push_back((wrench_s - wrench_samples[s]).norm());
+    if (min_dist > control_stability_margin) {
+      control_stability_margin = min_dist;
+      *wrench_best = wrench_s;
+    }
+    // std::cout << " cost before: " << cost_before << ", cost after: " << cost_after;
+    std::cout << " min_dist:" << min_dist << std::endl;
+  }
+  return control_stability_margin;
+}
