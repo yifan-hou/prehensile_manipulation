@@ -137,7 +137,39 @@ for m = 1:eh_cone_feasible_mode_count
     fprintf("= Hybrid Servoing & Crashing Check =\n");
     fprintf("====================================\n");
     N_all = Jacs{m};
+
+%     Debug
+    % test
+    disp('Test new algorithm');
+    N = N_all;
+    
+    U = null(N)';
+    M = [zeros(3); eye(3)];
+    U_ = U*M;
+    disp('U_:');
+    disp(U_);
+    C = pinv(U_);
+    disp('C:');
+    disp(C);
+    C = normalizeByCol(C);
+    disp('Singular value:');
+    disp(svd(U_*C));
+    
+    C0 = null(null(U_)');
+    disp('C0');
+    disp(C0);
+    disp('Singular value:');
+    disp(svd(U_*C0));
+
     [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, G, b_G);
+    Cv = Cv*M;
+    Cv = normalizeByRow(Cv);
+    disp('Cv original iterative algorithm');
+    disp(Cv');
+    disp('Singular value:');
+    disp(svd(U_*Cv'));
+    disp('');
+
     if isempty(n_av)
         disp("Failure: Hybrid Servoing returns no solution.")
         if goal_mode_is_given
