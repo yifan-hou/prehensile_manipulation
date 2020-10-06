@@ -1,0 +1,35 @@
+# int print_level
+
+##
+## print_level:
+##  0: minimal print to screen.
+##  1: show key information in each iteraton.
+##
+print_level: 1
+
+
+#define MIN_DIST_IMPROVEMENT 0.005
+force_control:
+  initial_point_sampling:
+  ##
+  ## num_points1 ~ num_points5: number of seeds to try for optimization.
+  ## The last number is the dimensionality of the force-controlled space.
+  ## In general, you need more points to cover higher dimensional space.
+  ##
+    num_points1: 3
+    num_points2: 3
+    num_points3: 5
+    num_points4: 8
+    num_points5: 8
+    sample_points: 
+      # int sample_ns = 100;
+      # int sample_discard = 500;
+      # int sample_runup = 500;
+      # int ransac_num = 200;
+  optimization:
+      # int ins_num_iter = 3;
+  ##
+  ## min_dist_improvement: Stop inscribed sphere iterations if cost improvement
+  ## from the last iteration is smaller than this number
+  ##
+  min_dist_improvement: 0.005

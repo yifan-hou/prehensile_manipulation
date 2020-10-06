@@ -1,15 +1,14 @@
 #include "wrench_space_analysis.h"
-#include "timer.h"
-#include "solvehfvc.h"
 
 #include <list>
 #include <string>
 #include <algorithm>
 #include <iostream>
+#include <timer.h>
 
 #include <RobotUtilities/utilities.h>
 
-// #include "solvehfvc.h"
+#include "solvehfvc.h"
 #include "polyhedron.h"
 
 
@@ -21,15 +20,20 @@ using namespace Eigen;
 typedef Matrix<double, 6, 6> Matrix6d;
 typedef Matrix<double, 6, 1> Vector6d;
 
-double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
+WrenchSpaceAnalysis::WrenchSpaceAnalysis() {
+  // get parameters
+}
+
+WrenchSpaceAnalysis::~WrenchSpaceAnalysis() {}
+
+double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     MatrixXd eCone_allFix_r, MatrixXd hCone_allFix_r,
     VectorXd F_G,
     const double kContactForce, const double kFrictionE, const double kFrictionH,
     const double kCharacteristicLength,
     MatrixXd G, const VectorXd &b_G,
     const MatrixXi &e_modes, const MatrixXi &h_modes,
-    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal,
-    int print_level) {
+    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal) {
   if (print_level > 0)
     std::cout << "[wrenchSpaceAnalysis_2d] Calling..\n";
   // std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
@@ -500,7 +504,7 @@ double wrenchSpaceAnalysis_2d(MatrixXd Jac_e, MatrixXd Jac_h,
 }
 
 
-void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
+void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
     MatrixXd eCone_allFix_r, MatrixXd hCone_allFix_r,
     VectorXd F_G, const double kContactForce,
     const double kFrictionE, const double kFrictionH,
@@ -509,8 +513,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
     const MatrixXi &h_cs_modes, const std::vector<MatrixXi> &h_ss_modes,
     MatrixXd G, const VectorXd &b_G,
     const MatrixXi &e_cs_modes_goal, const std::vector<MatrixXi> &e_ss_modes_goal,
-    const MatrixXi &h_cs_modes_goal, const std::vector<MatrixXi> &h_ss_modes_goal,
-    int print_level) {
+    const MatrixXi &h_cs_modes_goal, const std::vector<MatrixXi> &h_ss_modes_goal) {
 
   std::cout << "[wrenchSpaceAnalysis] Calling..\n";
   // std::cout << "G:\n" << G << std::endl;
@@ -914,8 +917,9 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
                   getSlidingGeneratorsFromOneContact(contact_tangent_proj.transpose(),
                     Jt.middleRows(2*i, 2), Jn.middleRows(i, 1), kFrictionE, &g_samples_contact_i);
                   if(g_samples_contact_i.size() > 0)
-                    for (int ii = 0; ii < g_samples_contact_i[0].cols(); ++ii)
+                    for (int ii = 0; ii < g_samples_contact_i[0].cols(); ++ii) {
                       g_one_sample.push_back(g_samples_contact_i[0](0, ii));
+                    }
                 }
               }
               int ng = g_one_sample.size()/kDim;
@@ -1105,11 +1109,6 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
 
       std::cout << "[WrenchStamping]  3.2 Sample wrenches and find feasible ones." << std::endl;
 
-      int sample_ns = 100;
-      int sample_discard = 500;
-      int sample_runup = 500;
-      int ransac_num = 200;
-      int ins_num_iter = 3;
       VectorXd wrench_best;
       double control_stability_margin = forceControl(kContactForce, action.n_af,
           sample_ns, sample_discard, sample_runup, ransac_num, ins_num_iter,
@@ -1159,7 +1158,7 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   return;
 }
 
-bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes,
+bool WrenchSpaceAnalysis::modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes,
     MatrixXi *sss_modes, std::vector<MatrixXi> *s_modes) {
   int num_cs_modes = cs_modes.rows();
   int num_contacts = cs_modes.cols();
@@ -1245,8 +1244,7 @@ bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_mode
   return true;
 }
 
-
-MatrixXd getConeOfTheMode_2d(const MatrixXd &cone_allFix,
+MatrixXd WrenchSpaceAnalysis::getConeOfTheMode_2d(const MatrixXd &cone_allFix,
     const VectorXi &modes) {
   int num_contacts = modes.size();
   std::vector<double> generators; // concatenation of all generators
@@ -1278,7 +1276,7 @@ MatrixXd getConeOfTheMode_2d(const MatrixXd &cone_allFix,
 
 // MatrixXd getConeOfTheMode(const MatrixXd &cone_allFix,
 //     const VectorXi &sss_mode, const VectorXi &s_mode, int kNumSlidingPlanes) {
-MatrixXd getConeOfTheMode(const MatrixXd &cone_allFix,
+MatrixXd WrenchSpaceAnalysis::getConeOfTheMode(const MatrixXd &cone_allFix,
     const VectorXi &sss_mode, int kNumSlidingPlanes) {
 
   int num_contacts = sss_mode.size();
@@ -1320,7 +1318,7 @@ MatrixXd getConeOfTheMode(const MatrixXd &cone_allFix,
   return MatrixXd::Map(generators.data(), 6, num_generators).transpose();
 }
 
-void getConstraintOfTheMode_2d(
+void WrenchSpaceAnalysis::getConstraintOfTheMode_2d(
     const MatrixXd &J_e_AF, const MatrixXd &J_h_AF,
     const VectorXi &mode_e, const VectorXi &mode_h,
     MatrixXd *N, MatrixXd *Nu) {
@@ -1419,7 +1417,7 @@ void getConstraintOfTheMode_2d(
 
 
 // for now, only implemented the bilateral part for hybrid servoing
-void getConstraintOfTheMode(
+void WrenchSpaceAnalysis::getConstraintOfTheMode(
     const MatrixXd &J_e_AF, const MatrixXd &J_h_AF,
     const VectorXi &sss_mode_e, const VectorXi &sss_mode_h,
     MatrixXd *N, MatrixXd *Nu) {
@@ -1492,19 +1490,20 @@ void getConstraintOfTheMode(
   }
 }
 
-bool getSlidingGeneratorsFromOneContact(const MatrixXd &vel_samples_on_contact,
+bool WrenchSpaceAnalysis::getSlidingGeneratorsFromOneContact(
+    const MatrixXd &vel_samples_on_contact,
     const MatrixXd &Jt, const MatrixXd &Jn, double friction,
     std::vector<MatrixXd> *g_sampled) {
     if (vel_samples_on_contact.norm() < 100*TOL) {
         return true;
     }
     for (int i = 0; i < vel_samples_on_contact.rows(); ++i) {
-      g_sampled->push_back((friction * vel_samples_on_contact.middleRows(i, 1).normalized() * Jt + Jn)/(std::sqrt(1+friction*friction)));
+      g_sampled->push_back(( - friction * vel_samples_on_contact.middleRows(i, 1).normalized() * Jt + Jn)/(std::sqrt(1+friction*friction)));
   }
   return true;
 }
 
-int findIdInModes(const VectorXi &target_mode, const MatrixXi &modes) {
+int WrenchSpaceAnalysis::findIdInModes(const VectorXi &target_mode, const MatrixXi &modes) {
   assert(modes.cols() == target_mode.size());
   int dim = modes.cols();
   for (int row = 0; row < modes.rows(); ++row) {
@@ -1520,7 +1519,7 @@ int findIdInModes(const VectorXi &target_mode, const MatrixXi &modes) {
   return -1;
 }
 
-double forceControl(double kContactForce, int n_af, int sample_ns, int sample_discard,
+double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af, int sample_ns, int sample_discard,
     int sample_runup, int ransac_num, int ins_num_iter,
     const MatrixXd &pp_goal_A, const VectorXd &pp_goal_b,
     const std::vector<MatrixXd> &pps_A, const std::vector<VectorXd> &pps_b,

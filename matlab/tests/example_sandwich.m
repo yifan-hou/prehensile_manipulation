@@ -65,11 +65,11 @@ kNumSlidingPlanes = 1; % for 2D problem
 %% 0, 1 or 2
 %%
 
-% Palm Pivot
-G = [0 0 1 0 0 0];
-b_G = [0.1];
-e_mode = int8([0; 1]); % sf
-h_mode = int8([1; 1]); % ff
+% % Palm Pivot
+% G = [0 0 1 0 0 0];
+% b_G = [0.1];
+% e_mode = int8([0; 1]); % sf
+% h_mode = int8([1; 1]); % ff
 
 % % Palm Slide
 % G = [1 0 0 0 0 0];
@@ -83,14 +83,14 @@ h_mode = int8([1; 1]); % ff
 % e_mode = int8([0; 1]); % sf
 % h_mode = int8([0; 1]); % sf
 
-% % Palm Pivot slide
-% adj_WH = SE32Adj(R_WH, p_WH);
-% GO = [1 0 -p_W_e2(2)]*adj_WH;
-% G = [GO 0 0 0;
-%      0 0 1 0 0 0];
-% b_G = [-0.1; 0.5];
-% e_mode = int8([0; 3]); % sl
-% h_mode = int8([1; 1]); % ff
+% Palm Pivot slide
+adj_WH = SE22Adj(R_WH, p_WH);
+GO = [1 0 -p_W_e2(2)]*adj_WH;
+G = [GO 0 0 0;
+     0 0 1 0 0 0];
+b_G = [-0.1; 0.5];
+e_mode = int8([0; 3]); % sl
+h_mode = int8([1; 1]); % ff
 
 % % Test three contacts
 % G = [1 0 0 0 0 0];

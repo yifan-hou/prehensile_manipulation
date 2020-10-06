@@ -357,11 +357,6 @@ bool solvehfvc_newer(const MatrixXd &N,
    * Step three: get rowspace of NC
    * Check if rowspace of G belongs to rowspace of NC
    */
-  // MatrixXd NC(N.rows()+C.rows(), N.cols());
-  // NC << N, C;
-  // int rank_NC = RUT::rowSpace(&NC); // todo: maybe we don't need this?
-  // assert(rank_NC = rank_N + rank_C);
-  // MatrixXd NCG(NC.rows()+G.rows(), N.cols());
   MatrixXd NCG(N.rows() + C.rows() + G.rows(), N.cols());
   NCG << N, C, G;
   int rank_NCG = RUT::rowSpace(&NCG);
@@ -370,6 +365,7 @@ bool solvehfvc_newer(const MatrixXd &N,
 
   /**
    * Step four: find a solution to NG
+   *  (TODO) looks like we only need a solution to G
    */
   MatrixXd NG(N.rows()+G.rows(), N.cols());
   NG << N, G;
