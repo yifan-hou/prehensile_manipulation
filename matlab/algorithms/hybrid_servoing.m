@@ -38,15 +38,18 @@
 %   TODO in c++:
 %         handle n_av_min=0 return in c++ code
 
-function [C, b_C] = hybrid_servoing(dims, J, G, b_G, num_seeds)
+function [C, b_C, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds)
+time.velocity = 0;
+time.force = 0;
+tic;
 kNumSeeds = num_seeds;
 
 % constants
-kDimActualized      = dims.Actualized;
-kDimUnActualized    = dims.UnActualized;
+n_a = dims.Actualized;
+n_u = dims.UnActualized;
 
 kDimLambda       = size(J, 1);
-kDimGeneralized  = kDimActualized + kDimUnActualized;
+n  = n_a + n_u;
 
 JG = [J; G];
 
@@ -56,6 +59,14 @@ rank_JG = rank(JG);
 n_av_min = rank_JG - rank_J;
 
 n_av = n_av_min;
+n_af = n_a - n_av;
+if (n_af == 0)
+    % no need for HFVC; all velocity control. Can not satisfy guard
+    % condition
+    C = [];
+    b_C = [];
+    return;
+end
 if n_av_min == 0
     % infeasible goal
     C = [];
@@ -66,16 +77,23 @@ end
 % b_JG = [zeros(size(N, 1), 1); b_G];
 JG_nullspace_basis = null(JG);
 basis_c = null([JG_nullspace_basis';
-        eye(kDimUnActualized), zeros(kDimUnActualized,kDimActualized)]);
+        eye(n_u), zeros(n_u,n_a)]);
 
-if (rank_J + kDimActualized < kDimGeneralized)
+
+if (rank_J + n_a < n)
     % not prehensile, infeasible
     C = [];
     b_C = [];
     return;
 end
 
-n_c = rank_JG - kDimUnActualized;
+n_c = rank_JG - n_u;
+if (size(basis_c, 2) > n_c)
+    % has uncontrollable DOF, infeasible
+    C = [];
+    b_C = [];
+    return;
+end
 b_JG = [zeros(kDimLambda, 1); b_G];
 % if rank([JG b_JG]) > rank_JG
 %     % Goal is infeasible
@@ -145,11 +163,56 @@ end
 k_best = k_all(:,:,best_id);
 c_best = (basis_c*k_best)';
 
-R_a = [null(c_best(:, kDimUnActualized+1:end))';
-        c_best(:, kDimUnActualized+1:end)];
-T = blkdiag(eye(kDimUnActualized), R_a);
+R_a = [null(c_best(:, n_u+1:end))';
+        c_best(:, n_u+1:end)];
+T = blkdiag(eye(n_u), R_a);
 
 w_av = c_best*v_star;
 
 C = T(end - n_av + 1:end, :);
 b_C = w_av;
+
+time_velocity = toc;
+
+
+
+
+% Force
+tic;
+% unactuated dimensions
+H = [eye(n_u), zeros(n_u, n_a)];
+% Newton's laws
+T_inv = T^-1;
+M_newton = [zeros(n_u, kDimLambda) H*T_inv; ...
+            T*J' eye(n)];
+b_newton = [zeros(size(H,1), 1); -T*Fg];
+
+M_free = M_newton(:, [1:kDimLambda+n_u, kDimLambda+n_u+n_af+1:end]);
+M_eta_af = M_newton(:, [kDimLambda+n_u+1:kDimLambda+n_u+n_af]);
+
+% prepare the QP
+%   variables: [free_force, dual_free_force, eta_af]
+n_free = kDimLambda + n_u + n_av;
+n_dual_free = size(M_newton, 1);
+% 0.5 x'Qx + f'x
+qp.Q = diag([zeros(1, n_free + n_dual_free), ones(1, n_af)]);
+qp.f = zeros(n_free + n_dual_free + n_af, 1);
+
+% Aeq = beq
+qp.Aeq = [2*eye(n_free), M_free', zeros(n_free, n_af);
+          M_free, zeros(size(M_free, 1)), M_eta_af];
+qp.beq = [zeros(n_free, 1); b_newton];
+
+% Ax<b
+qp.A = [A zeros(size(A,1), size(qp.Aeq,2) - size(A,2))];
+qp.b = b_A;
+
+options = optimoptions('quadprog', 'Display', 'none');
+x = quadprog(qp.Q, qp.f, qp.A, qp.b, qp.Aeq, qp.beq, [], [], [],options);
+
+eta_af = x(n_free + n_dual_free + 1:end);
+
+time.velocity = time_velocity;
+time.force = toc;
+
+

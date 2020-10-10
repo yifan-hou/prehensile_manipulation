@@ -6,7 +6,7 @@
 %   2. vt >= 0 for left sliding, vt <= 0 for right sliding.
 % Nue: the equality constraints that are actually active unilateral constraints
 %   1. vn >= 0 for sticking and sliding
-function J = getJacobianFromContacts3D(mode_e, mode_h, Normal_e, Normal_h, Tangent_e, Tangent_h)
+function [J, normal_ids] = getJacobianFromContacts3D(mode_e, mode_h, Normal_e, Normal_h, Tangent_e, Tangent_h)
 
 Ne = length(mode_e);
 Nh = length(mode_h);
@@ -22,8 +22,11 @@ Jh = zeros(nRowsH, 6);
 NEcount = 1;
 NHcount = 1;
 
+normal_ids = [];
+
 for i = 1:Ne
     Je(NEcount, :) = Normal_e(i, :);
+    normal_ids = [normal_ids NEcount];
     NEcount = NEcount + 1;
     if mode_e(i) == 1
         Je(NEcount:NEcount + 1, :) = Tangent_e(2*i-1:2*i, :);
@@ -33,6 +36,7 @@ end
 
 for i = 1:Nh
     Jh(NHcount, :) = Normal_h(i, :);
+    normal_ids = [normal_ids NHcount + nRowsE];
     NHcount = NHcount + 1;
     if mode_h(i) == 1
         Jh(NHcount:NHcount + 1, :) = Tangent_h(2*i-1:2*i, :);

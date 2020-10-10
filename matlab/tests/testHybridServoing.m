@@ -2,8 +2,13 @@ clc;clear;
 addpath ..
 addpath ../algorithms
 
+
+warning('off', 'MATLAB:rankDeficientMatrix');
+
+
+
 % Parameters
-NSamples = 100;
+NSamples = 10;
 num_seeds = 5;
 
 % list of contact points and contact normals
@@ -17,7 +22,7 @@ configs2D(1).ne = 1; configs2D(1).nh = 1;
 configs2D(1).ehmodes = [1 1;
                         2 1;
                         3 1];
-configs2D(1).ng = [1 2 1];
+configs2D(1).ng = [1 2 2];
 
 configs2D(2).ne = 1; configs2D(2).nh = 2;
 configs2D(2).ehmodes = [1 1 1;
@@ -47,10 +52,13 @@ kHMaxY = 0.1;
 kFrictionH = 0.7; % shouldn't matter
 kFrictionE = 0.3; % shouldn't matter
 
+Fg = [0 10 0 0 0 0]';
 
 Js = cell(20 * NSamples);
 Gs = cell(20 * NSamples);
 b_Gs = cell(20 * NSamples);
+As = cell(20 * NSamples);
+b_As = cell(20 * NSamples);
 count = 1;
 
 for s = 1:size(configs2D, 1)
@@ -80,24 +88,31 @@ for s = 1:size(configs2D, 1)
             [N_e, T_e, N_h, T_h, eCone, eTCone, hCone, hTCone] = getWholeJacobian(p_We, n_We, ...
                 p_Hh, n_Hh, adj_WH, adj_HW, 1, kFrictionE, kFrictionH);
 
-            [N, Nu] = getJacobianFromContacts(emodes, hmodes, N_e, N_h, T_e, T_h);
+            [N, Nu, normal_ids] = getJacobianFromContacts(emodes, hmodes, N_e, N_h, T_e, T_h);
 
             % goal
             G = rand(ng, 6);
             b_G = rand(ng, 1);
-            % save
+            % guard condition
+            nLambda = size(N,1);
+            A = eye(nLambda);
+            A = -A(normal_ids, :);
+            b_A = -5*ones(size(A,1),1);
 
+            % save
             Js{count} = N;
             Gs{count} = G;
             b_Gs{count} = b_G;
+            As{count} = A;
+            b_As{count} = b_A;
+
             count = count + 1;
         end
     end
 end
 
 count = count - 1;
-disp('Total number of problems: ');
-disp(count);
+
 
 C1s = cell(count);
 C2s = cell(count);
@@ -106,29 +121,37 @@ dims.Actualized = 3;
 dims.UnActualized = 3;
 
 % 1. OCHS
-tic;
+time1.velocity = 0;
+time1.force = 0;
 for p = 1:count
     J = Js{p};
     G = Gs{p};
     b_G = b_Gs{p};
+    A = As{p};
+    b_A = b_As{p};
 
     % ochs
-    [C, b_C] = ochs(dims, J, G, b_G);
+    [C, b_C, time] = ochs(dims, J, G, b_G, Fg, A, b_A);
     C1s{p} = C;
+    time1.velocity = time1.velocity + time.velocity;
+    time1.force = time1.force + time.force;
 end
-time1 = toc;
 
 % 2. old hybrid servoing, seeds = 3
-tic;
+time2.velocity = 0;
+time2.force = 0;
 for p = 1:count
     J = Js{p};
     G = Gs{p};
     b_G = b_Gs{p};
+    A = As{p};
+    b_A = b_As{p};
 
-    [C, b_C] = hybrid_servoing(dims, J, G, b_G, num_seeds);
+    [C, b_C, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds);
     C2s{p} = C;
+    time2.velocity = time2.velocity + time.velocity;
+    time2.force = time2.force + time.force;
 end
-time2 = toc;
 
 %% Evaluation
 number_of_solved1 = 0;
@@ -168,8 +191,13 @@ for p = 1:count
     disp(['score 1: ' num2str(score1) ', score2: ' num2str(score2)]);
 end
 
-disp(['time 1: ' num2str(time1*1000) ', time2: ' num2str(time2*1000)]);
-disp(['Speedup: ' num2str(time2/time1)]);
+disp(['time 1: velocity = ' num2str(time1.velocity*1000/number_of_solved1) ', force = ' num2str(time1.force*1000/number_of_solved1)]);
+disp(['time 2: velocity = ' num2str(time2.velocity*1000/number_of_solved2) ', force = ' num2str(time2.force*1000/number_of_solved2)]);
+disp(['Speedup velocity: ' num2str(time2.velocity*number_of_solved1/time1.velocity/number_of_solved2)]);
+disp(['Speedup force: ' num2str(time2.force*number_of_solved1/time1.force/number_of_solved2)]);
+disp(['Speedup overall: ' num2str((time2.force+time2.velocity)*number_of_solved1/(time1.force+time1.velocity)/number_of_solved1)]);
+disp('Total number of problems: ');
+disp(count);
 disp(['Solved problems 1: ' num2str(number_of_solved1) ', 2: ' num2str(number_of_solved2)]);
 disp(['Optimal solutions 1: ' num2str(number_of_optimal1) ', 2: ' num2str(number_of_optimal2)]);
 disp(['Aver cond 1: ' num2str(average_cond_of_solved_problems1/count) ', 2: ' num2str(average_cond_of_solved_problems2/count)]);

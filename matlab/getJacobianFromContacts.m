@@ -6,7 +6,7 @@
 %   2. vt >= 0 for left sliding, vt <= 0 for right sliding.
 % Nue: the equality constraints that are actually active unilateral constraints
 %   1. vn >= 0 for sticking and sliding
-function [N, Nu, Nue] = getJacobianFromContacts(mode_e, mode_h, Normal_e, Normal_h, Tangent_e, Tangent_h)
+function [N, Nu, normal_ids] = getJacobianFromContacts(mode_e, mode_h, Normal_e, Normal_h, Tangent_e, Tangent_h)
 
 Ne = length(mode_e);
 Nh = length(mode_h);
@@ -16,15 +16,14 @@ nRows = 2*sum(mode_e == 1) + sum(mode_e >= 2) + ...
         2*sum(mode_h == 1) + sum(mode_h >= 2);
 nRows_u = sum(mode_e == 0) + sum(mode_e >= 2) + ...
           sum(mode_h == 0) + sum(mode_h >= 2);
-nRows_ue = sum(mode_e >= 1) + sum(mode_h >= 1);
 
 N = zeros(nRows, 6);
 Nu = zeros(nRows_u, 6);
-Nue = zeros(nRows_ue, 6);
+
+normal_ids = [];
 
 Ncount = 0;
 Ncount_u = 0;
-Ncount_ue = 0;
 for i = 1:Ne
     if mode_e(i) == 0
         % separating
@@ -34,8 +33,7 @@ for i = 1:Ne
     end
     Ncount = Ncount + 1;
     N(Ncount, 1:3) = Normal_e(i, :);
-    Ncount_ue = Ncount_ue + 1;
-    Nue(Ncount_ue, 1:3) = Normal_e(i, :);
+    normal_ids = [normal_ids Ncount];
     if mode_e(i) == 1
         % fixed
         Ncount = Ncount + 1;
@@ -60,8 +58,7 @@ for i = 1:Nh
     end
     Ncount = Ncount + 1;
     N(Ncount, :) = [-Normal_h(i, :), Normal_h(i, :)];
-    Ncount_ue = Ncount_ue + 1;
-    Nue(Ncount_ue, :) = [-Normal_h(i, :), Normal_h(i, :)];
+    normal_ids = [normal_ids Ncount];
     if mode_h(i) == 1
         % fixed
         Ncount = Ncount + 1;
