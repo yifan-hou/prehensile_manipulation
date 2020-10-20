@@ -59,6 +59,12 @@ git clone git@github.com:yifan-hou/matlablibrary.git
 ```
 add to path
 
+## Setup file
+```shell
+source /path/to/prehensile_manipulation/setup.bash
+echo 'source /path/to/prehensile_manipulation/setup.bash' >> ~/.bashrc
+```
+
 # Build
 Inside the cpp folder,
 ```

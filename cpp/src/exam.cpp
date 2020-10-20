@@ -386,5 +386,5 @@ int main(void) {
   wsa.wrenchStamping(Jac_e, Jac_h, eCone_allFix, hCone_allFix,
       F_G, kContactForce, kFrictionE, kFrictionH, kCharacteristicLength, kNumSlidingPlanes,
       e_cs_modes, e_ss_modes, h_cs_modes, h_ss_modes, G, b_G,
-      e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal, print_level);
+      e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal);
 }

@@ -7,29 +7,26 @@
 ##
 print_level: 1
 
-
-#define MIN_DIST_IMPROVEMENT 0.005
+##
+## The five elements corresponds to dimension 1~5 of the force-controlled
+## space.
 force_control:
-  initial_point_sampling:
-  ##
-  ## num_points1 ~ num_points5: number of seeds to try for optimization.
-  ## The last number is the dimensionality of the force-controlled space.
-  ## In general, you need more points to cover higher dimensional space.
-  ##
-    num_points1: 3
-    num_points2: 3
-    num_points3: 5
-    num_points4: 8
-    num_points5: 8
-    sample_points: 
-      # int sample_ns = 100;
-      # int sample_discard = 500;
-      # int sample_runup = 500;
-      # int ransac_num = 200;
+  initial_seed_sampling:
+    ##
+    ## num_seeds: number of seeds to try for optimization.
+    ##
+    num_seeds: [3, 3, 5, 8, 8] # [3,3,3,3,3]
+    ## Hit-and-run sampling
+    hitAndRun:
+        num_points: [10, 50, 50, 100, 100] # sample_ns
+        num_discard: [100, 100, 100, 500, 500] # sample_discard
+        num_runup: [100, 100, 100, 500, 500] # sample_runup;
+    ransac:
+        num: [100,100,100,200,200]
   optimization:
-      # int ins_num_iter = 3;
-  ##
-  ## min_dist_improvement: Stop inscribed sphere iterations if cost improvement
-  ## from the last iteration is smaller than this number
-  ##
-  min_dist_improvement: 0.005
+        ins_num_iter: [2,2,2,3,3]
+        ##
+        ## min_dist_improvement: Stop inscribed sphere iterations if cost improvement
+        ## from the last iteration is smaller than this number
+        ##
+        min_dist_improvement: 0.005

@@ -46,7 +46,7 @@ public:
     //  e_ss_modes, h_ss_modes: a std vector, each element is a (number of modes x number of total sliding directions) matrix describing the stick-sliding modes for a particular cs modes.
     // Optional arguments (use an empty matrix to denote an unused argument):
     //  A, b: additional force constraint
-    //  G, b_G: goal velocity description
+    //  G, b_G: goal velocity description: Gv = b_G
     //  e_mode_goal, h_mode_goal: a particular goal mode
     double wrenchStamping_2d(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
         Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,
@@ -132,14 +132,27 @@ private:
      */
     int findIdInModes(const Eigen::VectorXi &target_mode, const Eigen::MatrixXi &modes);
 
-    double forceControl(double kContactForce, int n_af, int sample_ns, int sample_discard,
-        int sample_runup, int ransac_num, int ins_num_iter,
+    /**
+     * Force control for wrench stamping. Find a wrench that satisfies:
+     *      * It is inside of the polyhedron defined by (pp_goal_A, pp_goal_b)
+     *      * Its magnitude is smaller or equal to @p kContactForce
+     * and maximize the distance towards every polyhedron in (pps_A, pps_b).
+     */
+    double forceControl(double kContactForce, int n_af,
         const Eigen::MatrixXd &pp_goal_A, const Eigen::VectorXd &pp_goal_b,
-        const std::vector<Eigen::MatrixXd> &pps_A, const std::vector<Eigen::VectorXd> &pps_b,
+        const std::vector<Eigen::MatrixXd> &pps_A,
+        const std::vector<Eigen::VectorXd> &pps_b,
         Eigen::VectorXd *wrench_best);
 
     /**
      * Parameters
      */
-
+    int print_level_;
+    std::vector<int> num_seeds_;
+    std::vector<int> hitAndRun_num_points_;
+    std::vector<int> hitAndRun_num_discard_;
+    std::vector<int> hitAndRun_num_runup_;
+    std::vector<int> ransac_num_;
+    std::vector<int> opt_ins_num_iter_;
+    double opt_min_dist_improvement_;
 };

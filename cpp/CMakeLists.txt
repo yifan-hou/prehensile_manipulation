@@ -32,6 +32,9 @@ SET(qhullLibs qhullcpp qhull_r)
 # Robot utilities
 find_library(RobotUtilLib Utilities HINTS /usr/local/lib/RobotUtilities)
 
+# yaml
+include_directories(yaml-cpp)
+find_library(YAML_LIBRARY yaml-cpp HINTS /usr/local/lib)
 
 include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(include/)
@@ -47,7 +50,8 @@ add_library(polylib SHARED src/polyhedron.cpp)
 target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${GLPKLIB} ${RobotUtilLib})
 
 add_library(sharedgraspinglib SHARED src/wrench_space_analysis.cpp)
-target_link_libraries(sharedgraspinglib polylib timer hfvc ${RobotUtilLib})
+target_link_libraries(sharedgraspinglib polylib timer hfvc ${RobotUtilLib}
+	${YAML_LIBRARY})
 
 ##
 ## Tests
