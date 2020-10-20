@@ -7,20 +7,28 @@ tic
 n_a = dims.Actualized;
 n_u = dims.UnActualized;
 n   = n_a + n_u;
+nLambda = size(J,1);
 
 M = [zeros(n_u, n_a); eye(n_a)];
 U = null(J)';
-U_bar = U*M;
-[L, D] = ldl(U_bar'*U_bar);
 
-TOL = 1e-8;
-for i = 1:size(D,1)
-    if abs(D(i,i)) < TOL
-        D = D(:, 1:i-1);
+if isempty(U)
+    % no null space. The environment already fully constrained the problem
+    C = [];
+    b_C = [];
+    return;
+end
+
+U_bar = U*M;
+U_hat = chol(U_bar'*U_bar + 1e-15*eye(n_a));
+
+TOL = 0.0001; % this tolerance has to be big.
+for i = 1:n_a
+    if (norm(U_hat(n_a-i + 1,:)) > TOL)
+        U_hat = U_hat(1:n_a-i+1, :);
         break;
     end
 end
-U_hat = (L*sqrt(D))';
 
 n_av = size(U_hat,1);
 n_af = n_a - n_av;
@@ -43,7 +51,7 @@ if rank(JC) < rank(JCG)
 end
 
 JG = [J; G];
-b_JG = [zeros(size(J,1), 1); b_G];
+b_JG = [zeros(nLambda, 1); b_G];
 % if rank([JG b_JG]) > rank(JG)
 %     % infeasible problem
 %     C = [];
@@ -60,29 +68,19 @@ time_velocity = toc;
 %% force part
 tic;
 
-M = [T*J' [zeros(n - n_av, n_av); eye(n_av)]];
-n_free = size(M,2);
-n_dual_free = size(M,1);
-
-Aeq_lp = [2*eye(n_free), M', zeros(n_free, n_af);
-          M, zeros(n_dual_free), [zeros(n_u, n_af); eye(n_af); zeros(n_av, n_af)]];
-beq_lp = [zeros(n_free, 1); -T*Fg];
-A_lp = [A zeros(size(A,1), size(Aeq_lp,2) - size(A,2))];
+Aeq_lp = [T*J' [zeros(n_u, n_a); eye(n_a)]];
+beq_lp = -T*Fg;
+A_lp = [A zeros(size(A,1), n_a)];
 b_lp = b_A;
 
-
-qp.Q = diag([zeros(1, n_free + n_dual_free), ones(1, n_af)]);
-qp.f = zeros(n_free + n_dual_free + n_af, 1);
-
-if (n_af == 0)
-    qp.Q = eye(n_free + n_dual_free + n_af);
-end
+qp.Q = eye(nLambda + n_a);
+qp.f = zeros(nLambda + n_a, 1);
 
 options = optimoptions('quadprog', 'Display', 'none');
 x = quadprog(qp.Q, qp.f, A_lp, b_lp, Aeq_lp, beq_lp, [], [], [],options);
 
+eta_af = x(nLambda + 1:nLambda + n_af);
 
-eta_af = x(n_free + n_dual_free + 1:end);
 
 time.velocity = time_velocity;
 time.force = toc;

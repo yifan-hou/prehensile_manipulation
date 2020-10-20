@@ -8,8 +8,8 @@ warning('off', 'MATLAB:rankDeficientMatrix');
 
 
 % Parameters
-NSamples = 10;
-num_seeds = 5;
+NSamples = 1000;
+num_seeds = 10;
 
 % list of contact points and contact normals
 
@@ -20,9 +20,8 @@ configs2D = repmat(config_type, 4, 1);
 
 configs2D(1).ne = 1; configs2D(1).nh = 1;
 configs2D(1).ehmodes = [1 1;
-                        2 1;
-                        3 1];
-configs2D(1).ng = [1 2 2];
+                        2 1];
+configs2D(1).ng = [1 2];
 
 configs2D(2).ne = 1; configs2D(2).nh = 2;
 configs2D(2).ehmodes = [1 1 1;
@@ -30,14 +29,12 @@ configs2D(2).ehmodes = [1 1 1;
 configs2D(2).ng = [1 2];
 
 configs2D(3).ne = 2; configs2D(3).nh = 1;
-configs2D(3).ehmodes = [2 2 1;
-                        3 3 1];
-configs2D(3).ng = [1 1];
+configs2D(3).ehmodes = [2 2 1];
+configs2D(3).ng = [1];
 
 configs2D(4).ne = 2; configs2D(4).nh = 2;
-configs2D(4).ehmodes = [2 2 1 1;
-                        3 3 1 1];
-configs2D(4).ng = [1 1];
+configs2D(4).ehmodes = [2 2 1 1];
+configs2D(4).ng = [1];
 
 kEMinX = 0;
 kEMaxX = 0.2;
@@ -52,16 +49,17 @@ kHMaxY = 0.1;
 kFrictionH = 0.7; % shouldn't matter
 kFrictionE = 0.3; % shouldn't matter
 
-Fg = [0 10 0 0 0 0]';
+Fg = [0 -10 0 0 0 0]';
 
-Js = cell(20 * NSamples);
-Gs = cell(20 * NSamples);
-b_Gs = cell(20 * NSamples);
-As = cell(20 * NSamples);
-b_As = cell(20 * NSamples);
+Js = cell(20 * NSamples, 1);
+Gs = cell(20 * NSamples, 1);
+b_Gs = cell(20 * NSamples, 1);
+As = cell(20 * NSamples, 1);
+b_As = cell(20 * NSamples, 1);
 count = 1;
 
 for s = 1:size(configs2D, 1)
+    disp(['Generating problems for setting ' num2str(s)]);
     ne = configs2D(s).ne;
     nh = configs2D(s).nh;
     for m = 1:size(configs2D(s).ehmodes, 1)
@@ -114,16 +112,17 @@ end
 count = count - 1;
 
 
-C1s = cell(count);
-C2s = cell(count);
+C1s = cell(count, 1);
+C2s = cell(count, 1);
 
 dims.Actualized = 3;
 dims.UnActualized = 3;
 
 % 1. OCHS
-time1.velocity = 0;
-time1.force = 0;
+time1.velocity = zeros(count,1);
+time1.force = zeros(count,1);
 for p = 1:count
+    disp([num2str(p) '/' num2str(count)]);
     J = Js{p};
     G = Gs{p};
     b_G = b_Gs{p};
@@ -133,14 +132,15 @@ for p = 1:count
     % ochs
     [C, b_C, time] = ochs(dims, J, G, b_G, Fg, A, b_A);
     C1s{p} = C;
-    time1.velocity = time1.velocity + time.velocity;
-    time1.force = time1.force + time.force;
+    time1.velocity(p) = time.velocity*1000;
+    time1.force(p) = time.force*1000;
 end
 
 % 2. old hybrid servoing, seeds = 3
-time2.velocity = 0;
-time2.force = 0;
+time2.velocity = zeros(count, 1);
+time2.force = zeros(count, 1);
 for p = 1:count
+    disp([num2str(p) '/' num2str(count)]);
     J = Js{p};
     G = Gs{p};
     b_G = b_Gs{p};
@@ -149,55 +149,95 @@ for p = 1:count
 
     [C, b_C, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds);
     C2s{p} = C;
-    time2.velocity = time2.velocity + time.velocity;
-    time2.force = time2.force + time.force;
+    time2.velocity(p) = time.velocity*1000;
+    time2.force(p) = time.force*1000;
 end
 
 %% Evaluation
-number_of_solved1 = 0;
 number_of_optimal1 = 0;
-average_cond_of_solved_problems1 = 0;
-number_of_solved2 = 0;
 number_of_optimal2 = 0;
-average_cond_of_solved_problems2 = 0;
 
 COND_TOL = 0.001;
+score1 = -ones(count,1);
+score2 = -ones(count,1);
 for p = 1:count
     J = Js{p};
     G = Gs{p};
     b_G = b_Gs{p};
 
-    score1 = -1;
     if ~isempty(C1s{p})
-        score1 = cond(null(J)'*C1s{p}');
-        number_of_solved1 = number_of_solved1 + 1;
-        if score1 - 1 < COND_TOL
+        score1(p) = cond(null(J)'*C1s{p}');
+        if score1(p) - 1 < COND_TOL
             number_of_optimal1 = number_of_optimal1 + 1;
         end
-        average_cond_of_solved_problems1 = average_cond_of_solved_problems1 + score1;
     end
 
-
-    score2 = -1;
     if ~isempty(C2s{p})
-        score2 = cond(null(J)'*C2s{p}');
-        number_of_solved2 = number_of_solved2 + 1;
-        if score2 - 1 < COND_TOL
+        score2(p) = cond(null(J)'*C2s{p}');
+        if score2(p) - 1 < COND_TOL
             number_of_optimal2 = number_of_optimal2 + 1;
         end
-        average_cond_of_solved_problems2 = average_cond_of_solved_problems2 + score2;
     end
 
-    disp(['score 1: ' num2str(score1) ', score2: ' num2str(score2)]);
 end
+disp('Score1  Score2');
+disp([score1 score2]);
+time1.velocity = time1.velocity(score1 > 0);
+time1.force = time1.force(score1 > 0);
+time2.velocity = time2.velocity(score2 > 0);
+time2.force = time2.force(score2 > 0);
+score1 = score1(score1 > 0);
+score2 = score2(score2 > 0);
+number_of_solved1 = length(score1);
+number_of_solved2 = length(score2);
+average_cond1 = mean(score1);
+average_cond2 = mean(score2);
+best_cond1 = min(score1);
+best_cond2 = min(score2);
+worst_cond1 = max(score1);
+worst_cond2 = max(score2);
 
-disp(['time 1: velocity = ' num2str(time1.velocity*1000/number_of_solved1) ', force = ' num2str(time1.force*1000/number_of_solved1)]);
-disp(['time 2: velocity = ' num2str(time2.velocity*1000/number_of_solved2) ', force = ' num2str(time2.force*1000/number_of_solved2)]);
-disp(['Speedup velocity: ' num2str(time2.velocity*number_of_solved1/time1.velocity/number_of_solved2)]);
-disp(['Speedup force: ' num2str(time2.force*number_of_solved1/time1.force/number_of_solved2)]);
-disp(['Speedup overall: ' num2str((time2.force+time2.velocity)*number_of_solved1/(time1.force+time1.velocity)/number_of_solved1)]);
+
+average_vel_time1 = mean(time1.velocity);
+average_vel_time2 = mean(time2.velocity);
+best_vel_time1 = min(time1.velocity);
+best_vel_time2 = min(time2.velocity);
+worst_vel_time1 = max(time1.velocity);
+worst_vel_time2 = max(time2.velocity);
+
+average_force_time1 = mean(time1.force);
+average_force_time2 = mean(time2.force);
+best_force_time1 = min(time1.force);
+best_force_time2 = min(time2.force);
+worst_force_time1 = max(time1.force);
+worst_force_time2 = max(time2.force);
+
+average_time1 = average_force_time1 + average_vel_time1;
+average_time2 = average_force_time2 + average_vel_time2;
+best_time1 = min(time1.force + time1.velocity);
+best_time2 = min(time2.force + time2.velocity);
+worst_time1 = max(time1.force + time1.velocity);
+worst_time2 = max(time2.force + time2.velocity);
+
+
 disp('Total number of problems: ');
 disp(count);
 disp(['Solved problems 1: ' num2str(number_of_solved1) ', 2: ' num2str(number_of_solved2)]);
 disp(['Optimal solutions 1: ' num2str(number_of_optimal1) ', 2: ' num2str(number_of_optimal2)]);
-disp(['Aver cond 1: ' num2str(average_cond_of_solved_problems1/count) ', 2: ' num2str(average_cond_of_solved_problems2/count)]);
+disp('Crashing Index:');
+disp(['Average cond 1: ' num2str(average_cond1) ', 2: ' num2str(average_cond2)]);
+disp(['best cond 1: ' num2str(best_cond1) ', 2: ' num2str(best_cond2)]);
+disp(['worst cond 1: ' num2str(worst_cond1) ', 2: ' num2str(worst_cond2)]);
+disp('Velocity Time');
+disp(['Average velocity time 1: ' num2str(average_vel_time1) ', 2: ' num2str(average_vel_time2)]);
+disp(['best velocity time 1: ' num2str(best_vel_time1) ', 2: ' num2str(best_vel_time2)]);
+disp(['worst velocity time 1: ' num2str(worst_vel_time1) ', 2: ' num2str(worst_vel_time2)]);
+disp('Force Time:')
+disp(['Average force time 1: ' num2str(average_force_time1) ', 2: ' num2str(average_force_time2)]);
+disp(['best force time 1: ' num2str(best_force_time1) ', 2: ' num2str(best_force_time2)]);
+disp(['worst force time 1: ' num2str(worst_force_time1) ', 2: ' num2str(worst_force_time2)]);
+disp('Speed Up')
+disp(['Average Speedup velocity: ' num2str(average_vel_time2/average_vel_time1)]);
+disp(['Average Speedup force: ' num2str(average_force_time2/average_force_time1)]);
+disp(['Average Speedup overall: ' num2str((average_force_time2 + average_vel_time2)/(average_force_time1 + average_vel_time1))]);
+
