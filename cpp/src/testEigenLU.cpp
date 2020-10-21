@@ -72,5 +72,31 @@ std::cout << "qr rank 2: " << qr_col.rank() << std::endl;
 cod.compute(B);
 std::cout << "cod rank: " << cod.rank() << std::endl;
 
+
+// test Cholesky
+double CHOL_TOL = 1e-4;
+MatrixXd U_bar = MatrixXd::Random(5, 4);
+int kDimActualized = 4;
+LDLT<MatrixXd> ldlt(U_bar.transpose()*U_bar);
+MatrixXd ldl_L(ldlt.matrixL());
+MatrixXd LTP = ldl_L.transpose() * ldlt.transpositionsP();
+VectorXd ldl_D = ldlt.vectorD();
+int n_av = 0;
+for (int i = 0; i < ldl_D.rows(); ++i) {
+  if (ldl_D[i] > CHOL_TOL)
+    n_av ++;
+}
+MatrixXd U_hat = MatrixXd::Zero(n_av, kDimActualized);
+int U_hat_count = 0;
+for (int i = 0; i < ldl_D.rows(); ++i) {
+  double diag_ele = ldl_D[i];
+  if (diag_ele > CHOL_TOL)
+    U_hat.middleRows(U_hat_count++, 1) = sqrt(diag_ele) * LTP.middleRows(i, 1);
+}
+std::cout << "U_hat:\n" << U_hat << std::endl;
+std::cout << "U_bar:\n" << U_bar << std::endl;
+std::cout << "U_bar'*U_bar:\n" << U_bar.transpose()*U_bar << std::endl;
+std::cout << "U_hat'*U_hat:\n" << U_hat.transpose()*U_hat << std::endl;
 return 0;
+
 }

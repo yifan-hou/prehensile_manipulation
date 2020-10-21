@@ -23,12 +23,20 @@ U_bar = U*M;
 U_hat = chol(U_bar'*U_bar + 1e-15*eye(n_a));
 
 TOL = 0.0001; % this tolerance has to be big.
+% for i = 1:n_a
+%     if (norm(U_hat(n_a-i + 1,:)) > TOL)
+%         U_hat = U_hat(1:n_a-i+1, :);
+%         break;
+%     end
+% end
+id = [];
 for i = 1:n_a
     if (norm(U_hat(n_a-i + 1,:)) > TOL)
-        U_hat = U_hat(1:n_a-i+1, :);
-        break;
+        id = [id i];
     end
 end
+U_hat = U_hat(id, :);
+
 
 n_av = size(U_hat,1);
 n_af = n_a - n_av;

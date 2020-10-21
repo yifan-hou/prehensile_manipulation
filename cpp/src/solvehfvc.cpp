@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <Eigen/Dense>
 #include <Eigen/LU>
 #include <vector>
 
@@ -9,6 +10,7 @@
 #include "RobotUtilities/utilities.h"
 
 #define TOL 1e-9
+#define CHOL_TOL 1e-4
 
 using std::cout;
 using std::endl;
@@ -408,4 +410,137 @@ bool solvehfvc_newer(const MatrixXd &N,
   // std::cout << "  NG*sol_homo:\n" << NG*sol_homo << std::endl;
 
   return true;
+}
+
+int solvehfvc_OCHS(const MatrixXd &J,
+  const MatrixXd &G, const VectorXd &b_G,
+  const int kDimActualized, const int kDimUnActualized,
+  HFVC *action) {
+  /* Size checking */
+  const int kDimGeneralized = kDimActualized + kDimUnActualized;
+  const int n_a = kDimActualized;
+  assert(J.cols() == kDimGeneralized);
+  assert(G.rows() == b_G.rows());
+  assert(G.cols() == kDimGeneralized);
+  assert(b_G.norm() > TOL);
+  Eigen::FullPivLU<MatrixXd> lu;
+  // Eigen::ColPivHouseholderQR<MatrixXd> lu;
+
+  /**
+   * Step one: get null space of J
+   */
+  MatrixXd J_reg = J; // regularized rows
+  MatrixXd U; // rows of U forms the null space
+  int rank_J = RUT::nullSpace(&J_reg, &U);
+  if (rank_J == kDimGeneralized) {
+    // Contact constraints leave no freedom. Infeasible problem
+    return 1;
+  }
+  /**
+   * Step two: project to controllable subspace
+   */
+  MatrixXd M_actuated_subspace =
+      MatrixXd::Identity(kDimGeneralized, kDimGeneralized).rightCols(n_a);
+  MatrixXd U_bar = U * M_actuated_subspace;
+  /**
+   * Step three: Cholesky decomposition
+   *  Extract linearly independent rows of U_bar
+   */
+  Eigen::LDLT<MatrixXd> chol(U_bar.transpose()*U_bar);
+  MatrixXd ldl_L(chol.matrixL());
+
+  MatrixXd res(chol.rows(), chol.rows());
+  res.setIdentity();
+  MatrixXd P = chol.transpositionsP() * res;
+  MatrixXd L = chol.matrixL();
+  MatrixXd LTP = L.transpose() * P;
+  VectorXd ldl_D = chol.vectorD();
+  int n_av = 0;
+  for (int i = 0; i < ldl_D.rows(); ++i) {
+    if (ldl_D[i] > CHOL_TOL)
+      n_av ++;
+  }
+  MatrixXd U_hat = MatrixXd::Zero(n_av, n_a);
+  int U_hat_count = 0;
+  for (int i = 0; i < ldl_D.rows(); ++i) {
+    double diag_ele = ldl_D[i];
+    if (diag_ele > CHOL_TOL)
+      U_hat.middleRows(U_hat_count++, 1) = sqrt(diag_ele) * LTP.middleRows(i, 1);
+  }
+  // std::cout << "LTP:\n" << LTP << std::endl;
+  // std::cout << "ldl_D:\n" << ldl_D << std::endl;
+  // std::cout << "U_bar:\n" << U_bar << std::endl;
+  // std::cout << "U_hat:\n" << U_hat << std::endl;
+  // std::cout << "U_bar'*U_bar:\n" << U_bar.transpose() * U_bar << std::endl;
+  // std::cout << "Reconstruction:\n" << LTP.transpose() * ldl_D.asDiagonal() * LTP  << std::endl;
+  // std::cout << "Reconstruction*:\n" << chol.reconstructedMatrix()  << std::endl;
+  /**
+   * Step four: solve linear system for C
+   *  Then complete R
+   */
+  int n_af = n_a - n_av;
+  lu.compute(U_hat);
+  MatrixXd C_bar = lu.solve(MatrixXd::Identity(n_av, n_av)).transpose();
+
+  MatrixXd Rv = C_bar;
+  MatrixXd Rf;
+  int rank_C = RUT::nullSpace(&Rv, &Rf);
+  assert(rank_C == n_av);
+
+  MatrixXd C = MatrixXd::Zero(n_av, kDimGeneralized);
+  C.rightCols(n_a) = Rv;
+
+  /**
+   * Step Five: get rowspace of JC
+   * Check if rowspace of G belongs to rowspace of JC
+   */
+  MatrixXd JCG(J.rows() + C.rows() + G.rows(), J.cols());
+  JCG << J, C, G;
+  int rank_JCG = RUT::rowSpace(&JCG);
+  int rank_JC = rank_J + rank_C;
+  if (rank_JCG > rank_JC) return 2;
+
+  /**
+   * Step Six: find a solution to JG
+   */
+  MatrixXd JG(J.rows()+G.rows(), J.cols());
+  JG << J, G;
+  VectorXd b_JG = VectorXd::Zero(J.rows() + b_G.rows());
+  b_JG.tail(b_G.rows()) = b_G;
+  lu.compute(JG);
+  Eigen::VectorXd v_star = lu.solve(b_JG);
+  // check if no solution
+  if ((JG*v_star - b_JG).norm() > TOL) return 3;
+  VectorXd b_C = C*v_star;
+  // Get the force-controlled directions
+  action->R_a = MatrixXd::Zero(n_a, n_a);
+  action->R_a << Rf, Rv;
+  action->n_av  = n_av;
+  action->n_af  = n_af;
+  action->w_av  = b_C;
+  action->C     = C;
+  action->b_C   = b_C;
+
+  /**
+   * Check the solution
+   */
+  // std::cout << "Velocity Command:" << std::endl;
+  // std::cout << "  C:\n" << C << std::endl;
+  // std::cout << "  b_C:\n" << b_C << std::endl;
+  // MatrixXd JC(J_reg.rows()+C.rows(), J_reg.cols());
+  // JC << J_reg, C;
+  // VectorXd b_JC = VectorXd::Zero(J_reg.rows() + b_C.rows());
+  // b_JC.tail(b_C.rows()) = b_C;
+
+  // lu.compute(JC);
+  // Eigen::MatrixXd sol_homo = lu.kernel();
+  // Eigen::VectorXd sol_sp = lu.solve(b_JC);
+  // std::cout << "JC solution:" << std::endl;
+  // std::cout << "  sol_sp:\n" << sol_sp << std::endl;
+  // std::cout << "  sol_homo:\n" << sol_homo << std::endl;
+  // std::cout << "  JG*sol_sp:\n" << JG*sol_sp << std::endl;
+  // std::cout << "  JG*sol_homo:\n" << JG*sol_homo << std::endl;
+  // getchar();
+
+  return 0;
 }

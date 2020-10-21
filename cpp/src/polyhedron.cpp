@@ -1099,6 +1099,10 @@ bool Poly::lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::V
     const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,
     const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xs, double *optimal_cost) {
   /* declare variables */
+  if (xs->rows() <= 0) {
+    std::cerr << "[lp] Error: xs is not initialized!!" << std::endl;
+    exit(-1);
+  }
   glp_prob *lp;
   glp_smcp parm;
   glp_init_smcp(&parm);
