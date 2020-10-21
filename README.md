@@ -85,7 +85,18 @@ python3 test2d.py
 ```
 
 # Modeling convention
-## 2D
+## Variables
+generalized velocity&force:
+```
+v = [v_HO, v_HH]
+f = [f_HO, f_HH]
+```
+All defined in the hand frame.
+v_HO is the object spatial velocity described in the hand frame.
+v_HH is the hand body velocity.
+f_HO, f_HH are corresponding forces.
+
+## 2D conventions
 ```
     cone edge 1,      cone edge 2
          -----\-------/------
