@@ -26,7 +26,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
-
+#include "solvehfvc.h"
 
 
 
@@ -55,7 +55,8 @@ public:
         const double kCharacteristicLength,
         Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
         const Eigen::MatrixXi &e_modes, const Eigen::MatrixXi &h_modes,
-        const Eigen::VectorXi &e_modes_goal, const Eigen::VectorXi &h_modes_goal);
+        const Eigen::VectorXi &e_modes_goal, const Eigen::VectorXi &h_modes_goal,
+        HFVC *action);
 
     // Geometrical parameters:
     //  Jac_e, Jac_h
@@ -76,11 +77,16 @@ public:
         Eigen::VectorXd F_G,
         const double kContactForce, const double kFrictionE, const double kFrictionH,
         const double kCharacteristicLength, const int kNumSlidingPlanes,
-        const Eigen::MatrixXi &e_cs_modes, const std::vector<Eigen::MatrixXi> &e_ss_modes,
-        const Eigen::MatrixXi &h_cs_modes, const std::vector<Eigen::MatrixXi> &h_ss_modes,
+        const Eigen::MatrixXi &e_cs_modes,
+        const std::vector<Eigen::MatrixXi> &e_ss_modes,
+        const Eigen::MatrixXi &h_cs_modes,
+        const std::vector<Eigen::MatrixXi> &h_ss_modes,
         Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
-        const Eigen::MatrixXi &e_cs_modes_goal, const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
-        const Eigen::MatrixXi &h_cs_modes_goal, const std::vector<Eigen::MatrixXi> &h_ss_modes_goal);
+        const Eigen::MatrixXi &e_cs_modes_goal,
+        const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+        const Eigen::MatrixXi &h_cs_modes_goal,
+        const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
+        HFVC *action);
 
 private:
     bool modeCleaning(const Eigen::MatrixXi &cs_modes, const std::vector<Eigen::MatrixXi> &ss_modes, int kNumSlidingPlanes,

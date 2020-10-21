@@ -114,9 +114,13 @@ e_mode_goal = np.array([[2, 2]]).astype('int32').T # sf
 h_mode_goal = np.array([[1, 1]]).astype('int32').T # ff
 
 
-stability_margin = ws.wrenchSpaceAnalysis_2d(J_e, J_h, eCone_allFix, hCone_allFix, F_G,
+results = ws.wrenchSpaceAnalysis_2d(J_e, J_h, eCone_allFix, hCone_allFix, F_G,
     kContactForce, kFrictionE, kFrictionH, kCharacteristicLength,
     G, b_G, e_modes, h_modes, e_mode_goal, h_mode_goal)
 
+
+stability_margin = results[0]
 print ('stability_margin = ')
 print (stability_margin)
+print ('results = ')
+print (results)

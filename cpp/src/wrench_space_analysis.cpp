@@ -9,7 +9,6 @@
 #include <RobotUtilities/utilities.h>
 #include <yaml-cpp/yaml.h>
 
-#include "solvehfvc.h"
 #include "polyhedron.h"
 
 
@@ -58,7 +57,7 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     const double kCharacteristicLength,
     MatrixXd G, const VectorXd &b_G,
     const MatrixXi &e_modes, const MatrixXi &h_modes,
-    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal) {
+    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal, HFVC *action) {
   if (print_level_ > 0)
     std::cout << "[wrenchSpaceAnalysis_2d] Calling..\n";
   // std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
@@ -271,27 +270,26 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     std::cout << "[WrenchStamping] 2. HFVC" << std::endl;
   int kDimActualized = 3;
   int kDimUnActualized = 3;
-  HFVC action;
   int hfvc_flag = solvehfvc_OCHS(N_of_the_modes[goal_id], G, b_G,
-      kDimActualized, kDimUnActualized, &action);
+      kDimActualized, kDimUnActualized, action);
   if (hfvc_flag != 0) {
     std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: " <<
         hfvc_flag << std::endl;
     return -1;
   }
-  assert(action.n_af < kDimActualized); // shouldn't be all force
-  assert(action.n_af > 0); // shouldn't be all velocity
+  assert(action->n_af < kDimActualized); // shouldn't be all force
+  assert(action->n_af > 0); // shouldn't be all velocity
   // make sure all velocity commands >= 0
-  for (int i = 0; i < action.n_av; ++i) {
-    if (action.b_C(i) < 0) {
-      action.b_C(i) = - action.b_C(i);
-      action.C.middleRows(i, 1) = - action.C.middleRows(i, 1);
-      action.R_a.middleRows(i + action.n_af, 1) = - action.R_a.middleRows(i + action.n_af, 1);
+  for (int i = 0; i < action->n_av; ++i) {
+    if (action->b_C(i) < 0) {
+      action->b_C(i) = - action->b_C(i);
+      action->C.middleRows(i, 1) = - action->C.middleRows(i, 1);
+      action->R_a.middleRows(i + action->n_af, 1) = - action->R_a.middleRows(i + action->n_af, 1);
     }
   }
-  action.w_av = action.b_C;
-  MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
-  MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
+  action->w_av = action->b_C;
+  MatrixXd V_control_directions_r = -action->R_a.bottomRows(action->n_av);
+  MatrixXd F_control_directions_r = action->R_a.topRows(action->n_af);
 
   time_stats_hybrid_servoing = timer.toc();
   timer.tic();
@@ -323,10 +321,10 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     MatrixXd Nu = Nu_of_the_modes[id]; // Nu*v >= 0
 
     // check velocity constraints
-    MatrixXd NC(N.rows() + action.C.rows(), N.cols());
-    NC << N, action.C;
+    MatrixXd NC(N.rows() + action->C.rows(), N.cols());
+    NC << N, action->C;
     VectorXd b_NC = VectorXd::Zero(NC.rows());
-    b_NC.tail(action.b_C.rows()) = action.b_C;
+    b_NC.tail(action->b_C.rows()) = action->b_C;
     VectorXd b_Nu = VectorXd::Zero(Nu.rows());
     VectorXd xs(N.cols());
     double optimal_cost;
@@ -390,7 +388,7 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       // std::cout <<  "pp_goal_b:\n" << pp_goal_b << std::endl;
       pp_goal_point = (MatrixXd::Ones(1, polytope_projection.rows()) * polytope_projection).transpose() / polytope_projection.rows();
       assert(("Assertion fail: goal polytope projection is empty", polytope_projection.norm() > 1e-5));
-      assert(("Assertion fail: goal polytope projection degenerates", polytope_projection.rows() >= action.n_af)); // ideally we should check its rank
+      assert(("Assertion fail: goal polytope projection degenerates", polytope_projection.rows() >= action->n_af)); // ideally we should check its rank
     } else {
       polytopes_projection_r.push_back(polytope_projection);
       pps_A.push_back(pp_A);
@@ -404,7 +402,7 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   if (print_level_ > 0)
     std::cout << "[WrenchStamping]  4.2 Sample wrenches and find feasible ones." << std::endl;
   VectorXd wrench_best;
-  double control_stability_margin = forceControl(kContactForce, action.n_af,
+  double control_stability_margin = forceControl(kContactForce, action->n_af,
       pp_goal_A, pp_goal_b, pps_A, pps_b, &wrench_best);
 
   // // sample wrenches in the projection of the goal polytope
@@ -464,7 +462,7 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   if (print_level_ > 0)
     std::cout << "[WrenchStamping] 4. Force control: " << wrench_best.transpose() << std::endl;
   // now we have the control stability margin
-  action.eta_af = -wrench_best; // the minus sign comes from force balance
+  action->eta_af = -wrench_best; // the minus sign comes from force balance
   // before scaling
   // R_scaled^T*eta_scaled = Kf*f
   // VectorXd f0 = action.R_a.topRows(action.n_af).transpose() * action.eta_af;
@@ -474,26 +472,26 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   VectorXd kv2_vec(6);
   kv2_vec << kv_vec, kv_vec;
   MatrixXd Kv2 = kv2_vec.asDiagonal();
-  action.R_a.topRows(action.n_af) *= Kf;
-  action.R_a.bottomRows(action.n_av) *= Kv;
-  action.C *= Kv2;
+  action->R_a.topRows(action->n_af) *= Kf;
+  action->R_a.bottomRows(action->n_av) *= Kv;
+  action->C *= Kv2;
 
   // print the results
-  MatrixXd R_a_inv = action.R_a.inverse();
+  MatrixXd R_a_inv = action->R_a.inverse();
   VectorXd V = VectorXd::Zero(kDimActualized);
-  V.tail(action.n_av) = action.w_av;
+  V.tail(action->n_av) = action->w_av;
   VectorXd V_T = R_a_inv*V;
 
   VectorXd F = VectorXd::Zero(kDimActualized);
-  F.head(action.n_af) = action.eta_af;
+  F.head(action->n_af) = action->eta_af;
   VectorXd F_T = R_a_inv*F;
 
   if (print_level_ > 0) {
     // MatrixXd N = N_of_the_modes[goal_id] * Kv2;
-    // MatrixXd NC(N.rows() + action.C.rows(), N.cols());
-    // NC << N, action.C;
+    // MatrixXd NC(N.rows() + action->C.rows(), N.cols());
+    // NC << N, action->C;
     // VectorXd b_NC = VectorXd::Zero(NC.rows());
-    // b_NC.tail(action.b_C.rows()) = action.b_C;
+    // b_NC.tail(action->b_C.rows()) = action->b_C;
     // assert(NC.norm() > 10*TOL); //otherwise lu won't be accurate
     // lu.compute(NC);
     // VectorXd sol_NC = lu.solve(b_NC);
@@ -510,9 +508,9 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     std::cout << " 5. Results:" << std::endl;
     std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
     std::cout << "   control_stability_margin: " << control_stability_margin << std::endl;
-    std::cout << "   R_a:\n" << action.R_a << std::endl;
-    std::cout << "   w_av:\n" << action.w_av << std::endl;
-    std::cout << "   eta_af:\n" << action.eta_af << std::endl;
+    std::cout << "   R_a:\n" << action->R_a << std::endl;
+    std::cout << "   w_av:\n" << action->w_av << std::endl;
+    std::cout << "   eta_af:\n" << action->eta_af << std::endl;
     std::cout << "   V_T:" << V_T.transpose() << std::endl;
     std::cout << "   F_T:" << F_T.transpose() << std::endl;
 
@@ -540,7 +538,8 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
     const MatrixXi &h_cs_modes, const std::vector<MatrixXi> &h_ss_modes,
     MatrixXd G, const VectorXd &b_G,
     const MatrixXi &e_cs_modes_goal, const std::vector<MatrixXi> &e_ss_modes_goal,
-    const MatrixXi &h_cs_modes_goal, const std::vector<MatrixXi> &h_ss_modes_goal) {
+    const MatrixXi &h_cs_modes_goal, const std::vector<MatrixXi> &h_ss_modes_goal,
+    HFVC *action) {
 
   std::cout << "[wrenchSpaceAnalysis] Calling..\n";
   // std::cout << "G:\n" << G << std::endl;
@@ -689,7 +688,6 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
   MatrixXd N;
   int kDimActualized = 6;
   int kDimUnActualized = 6;
-  HFVC action;
 
   VectorXi e_sss_mode_goal, h_sss_mode_goal;
   VectorXi e_sss_mode, h_sss_mode;
@@ -726,26 +724,26 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
           e_sss_mode_goal, h_sss_mode_goal,
           &N, &Nu);
       int hfvc_flag = solvehfvc_OCHS(N, G, b_G, kDimActualized,
-          kDimUnActualized, &action);
+          kDimUnActualized, action);
       if (hfvc_flag != 0) {
         std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: "
             << hfvc_flag << std::endl;
         continue;
       }
-      assert(action.n_af < kDimActualized);
-      assert(action.n_af > 0);
+      assert(action->n_af < kDimActualized);
+      assert(action->n_af > 0);
       // make sure all velocity commands >= 0
-      for (int i = 0; i < action.n_av; ++i) {
-        if (action.b_C(i) < 0) {
-          action.b_C(i) = - action.b_C(i);
-          action.C.middleRows(i, 1) = - action.C.middleRows(i, 1);
-          action.R_a.middleRows(i + action.n_af, 1) = - action.R_a.middleRows(i + action.n_af, 1);
+      for (int i = 0; i < action->n_av; ++i) {
+        if (action->b_C(i) < 0) {
+          action->b_C(i) = - action->b_C(i);
+          action->C.middleRows(i, 1) = - action->C.middleRows(i, 1);
+          action->R_a.middleRows(i + action->n_af, 1) = - action->R_a.middleRows(i + action->n_af, 1);
         }
       }
-      action.w_av = action.b_C;
-      MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
-      MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
-      MatrixXd R_a_inv = action.R_a.inverse();
+      action->w_av = action->b_C;
+      MatrixXd V_control_directions_r = -action->R_a.bottomRows(action->n_av);
+      MatrixXd F_control_directions_r = action->R_a.topRows(action->n_af);
+      MatrixXd R_a_inv = action->R_a.inverse();
       // Crashing check
 
       time_stats_hybrid_servoing = timer.toc();
@@ -771,10 +769,10 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
        * Debug HS
        *
        */
-      // MatrixXd N0C(N.rows() + action.C.rows(), N.cols());
-      // N0C << N, action.C;
+      // MatrixXd N0C(N.rows() + action->C.rows(), N.cols());
+      // N0C << N, action->C;
       // VectorXd b_N0C = VectorXd::Zero(N0C.rows());
-      // b_N0C.tail(action.b_C.rows()) = action.b_C;
+      // b_N0C.tail(action->b_C.rows()) = action->b_C;
       // assert(N0C.norm() > 10*TOL); //otherwise lu won't be accurate
       // lu.compute(N0C);
       // VectorXd sol_N0C = lu.solve(b_N0C);
@@ -792,16 +790,16 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
       // VectorXd kv2_vec(12);
       // kv2_vec << kv_vec, kv_vec;
       // MatrixXd Kv2 = kv2_vec.asDiagonal();
-      // action.R_a.topRows(action.n_af) *= Kf;
-      // action.R_a.bottomRows(action.n_av) *= Kv;
-      // action.C *= Kv2;
+      // action->R_a.topRows(action->n_af) *= Kf;
+      // action->R_a.bottomRows(action->n_av) *= Kv;
+      // action->C *= Kv2;
 
-      // MatrixXd R_a_inv = action.R_a.inverse();
+      // MatrixXd R_a_inv = action->R_a.inverse();
       // VectorXd V = VectorXd::Zero(kDimActualized);
-      // V.tail(action.n_av) = action.w_av;
+      // V.tail(action->n_av) = action->w_av;
       // VectorXd V_T = R_a_inv*V;
       // std::cout << "   V_T:" << V_T.transpose() << std::endl;
-      // // VectorXd F_T = action.R_a.topRows(action.n_af).transpose() * action.eta_af;
+      // // VectorXd F_T = action->R_a.topRows(action->n_af).transpose() * action->eta_af;
       // // std::cout << "   F_T:" << F_T.transpose() << std::endl;
       // return;
 
@@ -822,10 +820,10 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
 
           getConstraintOfTheMode(Jac_e, Jac_h, e_sss_mode, h_sss_mode, &N, &Nu);
 
-          MatrixXd NC(N.rows() + action.C.rows(), N.cols());
-          NC << N, action.C;
+          MatrixXd NC(N.rows() + action->C.rows(), N.cols());
+          NC << N, action->C;
           VectorXd b_NC = VectorXd::Zero(NC.rows());
-          b_NC.tail(action.b_C.rows()) = action.b_C;
+          b_NC.tail(action->b_C.rows()) = action->b_C;
           assert(NC.norm() > 10*TOL); //otherwise lu won't be accurate
           lu.compute(NC);
           VectorXd sol_NC = lu.solve(b_NC);
@@ -1097,7 +1095,7 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
         cylinder_A = cylinder_A * R_a_inv;
         MatrixXd pp_A;
         VectorXd pp_b;
-        pp_A = cylinder_A.leftCols(action.n_af);
+        pp_A = cylinder_A.leftCols(action->n_af);
         pp_b = cylinder_b;
 
         if (goal_id == c) {
@@ -1115,7 +1113,7 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
           std::cout << " A rows: " << pp_A.rows() << std::endl;
         }
       }
-      // assert(pp_goal_R.rows() >= action.n_af); // ideally we should check its rank
+      // assert(pp_goal_R.rows() >= action->n_af); // ideally we should check its rank
 
       // get rid of cones that are not adjacent to goal cone
       // std::vector<MatrixXd> cp_A_selected;
@@ -1140,7 +1138,7 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
       std::cout << "[WrenchStamping]  3.2 Sample wrenches and find feasible ones." << std::endl;
 
       VectorXd wrench_best;
-      double control_stability_margin = forceControl(kContactForce, action.n_af,
+      double control_stability_margin = forceControl(kContactForce, action->n_af,
           pp_goal_A, pp_goal_b, pps_A, pps_b, &wrench_best);
 
       if (control_stability_margin < 0) {
@@ -1149,26 +1147,26 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
       }
       double time_stats_force_control = timer.toc();
       std::cout << "[WrenchStamping] 3. Force control: " << wrench_best.transpose() << std::endl;
-      action.eta_af = - wrench_best; // the minus sign comes from force balance
+      action->eta_af = - wrench_best; // the minus sign comes from force balance
       // now we have the control stability margin
       VectorXd kv2_vec(12);
       kv2_vec << kv_vec, kv_vec;
       MatrixXd Kv2 = kv2_vec.asDiagonal();
-      action.R_a.topRows(action.n_af) *= Kf;
-      action.R_a.bottomRows(action.n_av) *= Kv;
-      action.C *= Kv2;
-      // MatrixXd R_a_inv = action.R_a.inverse();
+      action->R_a.topRows(action->n_af) *= Kf;
+      action->R_a.bottomRows(action->n_av) *= Kv;
+      action->C *= Kv2;
+      // MatrixXd R_a_inv = action->R_a.inverse();
       // VectorXd V = VectorXd::Zero(kDimActualized);
-      // V.tail(action.n_av) = action.w_av;
+      // V.tail(action->n_av) = action->w_av;
       // VectorXd V_T = R_a_inv*V;
-      VectorXd F_T = F_control_directions_r.transpose() * action.eta_af;
+      VectorXd F_T = F_control_directions_r.transpose() * action->eta_af;
       if (print_level_ > 0) {
         std::cout << " 4. Results:" << std::endl;
         std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
         std::cout << "   control_stability_margin: " << control_stability_margin << std::endl;
-        std::cout << "   R_a:\n" << action.R_a << std::endl;
-        std::cout << "   w_av:\n" << action.w_av << std::endl;
-        std::cout << "   eta_af:\n" << action.eta_af << std::endl;
+        std::cout << "   R_a:\n" << action->R_a << std::endl;
+        std::cout << "   w_av:\n" << action->w_av << std::endl;
+        std::cout << "   eta_af:\n" << action->eta_af << std::endl;
         // std::cout << "   V_T:" << V_T.transpose() << std::endl;
         std::cout << "   F_T:" << F_T.transpose() << std::endl;
 
@@ -1628,8 +1626,8 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
     }
   }
   double time_added = tempTimer.toc();
-  std::cout << "max_dist_points " << max_dist_points << std::endl;
-  std::cout << "time added: " << time_added << std::endl;
+  // std::cout << "max_dist_points " << max_dist_points << std::endl;
+  // std::cout << "time added: " << time_added << std::endl;
   std::vector<VectorXd> wrench_samples;
   for (int i = 0; i < NInitialPoints; ++i)
     wrench_samples.push_back(wrench_samples_eigen.middleRows(ids_best[i], 1).transpose());
@@ -1642,7 +1640,8 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
   std::vector<VectorXd> wrench_ball_centers;
   std::vector<double> wrench_ball_radius;
   for (int s = 0; s < NInitialPoints; ++s) {
-    std::cout << "[wrenchSpaceAnalysis/forceControl]    Sample #" << s << ": ";
+    if (print_level_ > 0)
+      std::cout << "[wrenchSpaceAnalysis/forceControl]    Sample #" << s << ": ";
     wrench_s = wrench_samples[s];
 
     // // check if it is close to existing balls
@@ -1671,7 +1670,8 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
     min_dist = Poly::getAwayFromPolyhedrons(
         pps_A, pps_b, pp_goal_A, pp_goal_b, xl, xu, &wrench_s);
     if (min_dist < 0) {
-      std::cout << " infeasible." << std::endl;
+      if (print_level_ > 0)
+        std::cout << " infeasible." << std::endl;
       continue;
     }
     double min_dist_new;
@@ -1711,7 +1711,8 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
       *wrench_best = wrench_s;
     }
     // std::cout << " cost before: " << cost_before << ", cost after: " << cost_after;
-    std::cout << " min_dist:" << min_dist << std::endl;
+    if (print_level_ > 0)
+      std::cout << " min_dist:" << min_dist << std::endl;
   }
   return control_stability_margin;
 }
