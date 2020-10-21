@@ -1,6 +1,6 @@
 % J = [J_e, 0; -J_h, J_h]: 1 normal, kNumSlidingPlanes tangential; used by contact mode enumeration
-% J_e = [N_e; T_e]   N: normal, T: tangential
-% J_h = [N_h; T_h]
+% J_e = [N_e; T_e]
+% J_h = [N_h; T_h]   N: normal, T: tangential (XY for 3D, left for 2D)
 % Each contact contributes 1 normal, 2 (1 for planar problem) tangential constraints.
 % eCone, hCone: each row is a wrench space generator created by an edge of a friction cone.
 %   3D: Each contact contributes 2d + 1 edges; the last one is a copy of the first one
@@ -144,7 +144,7 @@ for i = 1:Ne
         eConei = [CCone, cross2(ones(kEdgesPerContact, 1)*CP_W_e(:,i)', CCone)];
         T_e(i, :) = c_Wei*adj_WH;
     end
-    
+
     eTCone(kNumSlidingPlanes*(i-1)+1:kNumSlidingPlanes*i, :) = eTConei*adj_WH;
     eCone((kEdgesPerContact)*(i-1)+1:(kEdgesPerContact)*i, :) = eConei*adj_WH;
 end

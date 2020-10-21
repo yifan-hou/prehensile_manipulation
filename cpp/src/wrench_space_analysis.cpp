@@ -272,8 +272,11 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   int kDimActualized = 3;
   int kDimUnActualized = 3;
   HFVC action;
-  if (!solvehfvc_newer(N_of_the_modes[goal_id], G, b_G, kDimActualized, kDimUnActualized, &action)) {
-    std::cout << "[WrenchStamping]    HFVC has no solution." << std::endl;
+  int hfvc_flag = solvehfvc_OCHS(N_of_the_modes[goal_id], G, b_G,
+      kDimActualized, kDimUnActualized, &action);
+  if (hfvc_flag != 0) {
+    std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: " <<
+        hfvc_flag << std::endl;
     return -1;
   }
   assert(action.n_af < kDimActualized); // shouldn't be all force
@@ -324,12 +327,12 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
     NC << N, action.C;
     VectorXd b_NC = VectorXd::Zero(NC.rows());
     b_NC.tail(action.b_C.rows()) = action.b_C;
-    VectorXd b_Nu = VectorXd(Nu.rows());
-    if(!Poly::vertexEnumeration(-Nu, b_Nu, NC, b_NC, &R)) {
-      std::cerr << "Error: vertexEnumeration returns error." << std::endl;
-      return -1;
-    }
-    if (R.rows() == 0) {
+    VectorXd b_Nu = VectorXd::Zero(Nu.rows());
+    VectorXd xs(N.cols());
+    double optimal_cost;
+    bool feasible = Poly::lp(VectorXd::Zero(N.cols()), -Nu, b_Nu,
+        NC, b_NC, VectorXd(0), VectorXd(0), &xs, &optimal_cost);
+    if (!feasible) {
       // no solution
       if (id == goal_id) {
         std::cout << " Goal is infeasible. Return." << std::endl;
@@ -338,6 +341,11 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
       if (print_level_ > 0) std::cout << " infeasible." << std::endl;
       continue; // otherwise, just discard this mode
     }
+    // if(!Poly::vertexEnumeration(-Nu, b_Nu, NC, b_NC, &R)) {
+    //   std::cerr << "Error: vertexEnumeration returns error." << std::endl;
+    //   return -1;
+    // }
+    // if (R.rows() == 0) {
     // this mode is feasible. store its polytope
     feasible_ids.push_back(id);
     if (print_level_ > 0) std::cout << " stored." << std::endl;
@@ -717,8 +725,11 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
       getConstraintOfTheMode(Jac_e, Jac_h,
           e_sss_mode_goal, h_sss_mode_goal,
           &N, &Nu);
-      if (!solvehfvc_newer(N, G, b_G, kDimActualized, kDimUnActualized, &action)) {
-        std::cout << "[WrenchStamping]    HFVC has no solution." << std::endl;
+      int hfvc_flag = solvehfvc_OCHS(N, G, b_G, kDimActualized,
+          kDimUnActualized, &action);
+      if (hfvc_flag != 0) {
+        std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: "
+            << hfvc_flag << std::endl;
         continue;
       }
       assert(action.n_af < kDimActualized);

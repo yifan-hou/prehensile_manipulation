@@ -65,7 +65,7 @@ target_link_libraries(polytest polylib)
 pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
 target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib)
 
-# add_executable(lutest src/testEigenLU.cpp)
+add_executable(lutest src/testEigenLU.cpp)
 
 add_executable(ppltest src/testppl.cpp)
 target_link_libraries(ppltest ${PPLLIB} ${GMPLIB})

@@ -1,17 +1,16 @@
 import matlab.engine
 eng = matlab.engine.connect_matlab()
+
+import wrenchStampingLib as ws
 import numpy as np
 from numpy import newaxis
 
-
-import contact_modes as cm
-import wrenchStampingLib as ws
 
 # Parameters
 kFrictionH = 0.7
 kFrictionE = 0.3
 
-kContactForce = 15
+kContactForce = 50
 kObjWeight = 5
 
 kCharacteristicLength = 0.15
@@ -28,25 +27,21 @@ kCharacteristicLength = 0.15
 #     e2 |        | O       | e1
 #    =============|---> X ===========
 #
-kW = 0.0435 # object width
-kH = 0.0435 # object height
+kW = 1 # object width
+kH = 0.4 # object height
 
 # list of contact points and contact normals
-p_W_e = np.array(([kW/2, 0],
-                  [-kW/2, 0])).T
+p_W_e = np.array(([kW/2, -kH/2],
+                  [-kW/2, -kH/2])).T
 n_W_e = np.array(([0, 1],
                   [0, 1])).T
-p_H_h = np.array(([kW/2, 0],
-                  [-kW/2, 0])).T
-n_H_h = np.array(([0, -1],
-                  [0, -1])).T
+p_H_h = np.array(([[0], [0]]))
+n_H_h = np.array(([[0], [1]]))
 
-CP_W_G = np.array([0, kH/2]);
-CP_W_G = CP_W_G[:, newaxis]
+CP_W_G = np.array([[0],[0]])
 
-R_WH = np.eye(2)
-p_WH = np.array(([0, kH]))
-p_WH = p_WH[:, newaxis]
+R_WH = -np.eye(2)
+p_WH = np.array(([[0], [kH/2]]))
 
 ##
 ## Geometrical Pre-processing
@@ -76,8 +71,8 @@ eCone_allFix = np.asarray(jacs[4])
 eTCone_allFix = np.asarray(jacs[5])
 hCone_allFix = np.asarray(jacs[6])
 hTCone_allFix = np.asarray(jacs[7])
-F_G = np.asarray(jacs[8])
-
+# F_G = np.asarray(jacs[8])
+F_G = np.array([[-5],[0],[0]])
 b_e = np.zeros((N_e.shape[0], 1))
 t_e = np.zeros((eTCone_allFix.shape[0], 1))
 b_h = np.zeros((N_h.shape[0], 1))
@@ -98,22 +93,14 @@ h_modes = np.asarray(modes[1]).astype('int32').T
 ## Goal
 ##
 
-
-# # Palm Pivot
-# G = np.array([0., 0., 1., 0., 0., 0.]);
-# G = G[newaxis, :]
-# b_G = np.array([[0.1]]);
-# e_mode_goal = np.array([[0, 1]]).astype('int32').T # sf
-# h_mode_goal = np.array([[1, 1]]).astype('int32').T # ff
-
-# Right sliding
+# Palm Pivot
 G = np.array([1., 0., 0., 0., 0., 0.]);
 G = G[newaxis, :]
-b_G = np.array([[0.1]]);
+b_G = np.array([[-0.1]]);
 e_mode_goal = np.array([[2, 2]]).astype('int32').T # sf
 h_mode_goal = np.array([[1, 1]]).astype('int32').T # ff
 
-
+print_level = 0; # 0: minimal screen outputs
 stability_margin = ws.wrenchSpaceAnalysis_2d(J_e, J_h, eCone_allFix, hCone_allFix, F_G,
     kContactForce, kFrictionE, kFrictionH, kCharacteristicLength,
     G, b_G, e_modes, h_modes, e_mode_goal, h_mode_goal)

@@ -12,7 +12,6 @@ kFrictionE = 0.25
 kContactForce = 15.0
 kObjWeight = 10.0
 kCharacteristicLength = 0.15
-print_level = 1
 
 ##
 ## Geometrical Problem definition
@@ -194,4 +193,4 @@ print('all printed to file.')
 ws.wrenchSpaceAnalysis(J_e, J_h, eCone_allFix, hCone_allFix, F_G,
     kContactForce, kFrictionE, kFrictionH, kCharacteristicLength, kNumSlidingPlanes,
     e_cs_modes, e_ss_modes, h_cs_modes, h_ss_modes, G, b_G,
-    e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal, print_level)
+    e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal)

@@ -87,3 +87,11 @@ bool solvehfvc_newer(const Eigen::MatrixXd &N,
   const Eigen::MatrixXd &G, const Eigen::VectorXd &b_G,
   const int kDimActualized, const int kDimUnActualized,
   HFVC *action);
+
+// return flag:
+//    0: success
+//    1 ~ 3: no solution
+int solvehfvc_OCHS(const Eigen::MatrixXd &J,
+  const Eigen::MatrixXd &G, const Eigen::VectorXd &b_G,
+  const int kDimActualized, const int kDimUnActualized,
+  HFVC *action);

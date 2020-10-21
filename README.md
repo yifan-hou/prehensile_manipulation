@@ -84,3 +84,32 @@ A python library is now in build/ folder.
 python3 test2d.py
 ```
 
+# Modeling convention
+## 2D
+```
+    cone edge 1,      cone edge 2
+         -----\-------/------
+         |     \  N  /      |
+         |      \ ^ /       |
+ T_e <---|       \|/        | ---> right sliding
+     =============|==================
+```
+The plane is assumed to be XY plane. So Z vector is perpendicular to the whole plane.
+### Mode
+* 0 separation
+* 1 fixed
+* 2 right sliding, left friction force
+* 3 left sliding, right friction force
+
+### Jacobian
+Normal points inside of the object.
+"Left" and "right" are defined locally with respect to the contact normal.
+"Left" is computed by cross(z, normal).
+```
+J = [J_e, 0; -J_h, J_h]:
+J_e = [N_e; T_e]
+J_h = [N_h; T_h]
+```
+Each row of N_e, N_h corresponds to a contact normal.
+Each row of T_e, T_h corresponds to a contact left direction.
+
