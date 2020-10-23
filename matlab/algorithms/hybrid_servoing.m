@@ -33,14 +33,11 @@
 %   w_av: n_av x 1 vector, magnitudes of velocity controls
 %   eta_af: n_af x 1 vector,  magnitudes of force controls
 %
-%   TODO: the use of dims.slidingfriction is weird
-%         do rref on N when solving for v_star
-%   TODO in c++:
-%         handle n_av_min=0 return in c++ code
-
-function [C, b_C, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds)
+%   TODO: use J_All in force computation
+function [action, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds, J_All)
 time.velocity = 0;
 time.force = 0;
+action.C = [];
 tic;
 kNumSeeds = num_seeds;
 
@@ -48,8 +45,8 @@ kNumSeeds = num_seeds;
 n_a = dims.Actualized;
 n_u = dims.UnActualized;
 
-kDimLambda       = size(J, 1);
-n  = n_a + n_u;
+kDimLambda = size(J, 1);
+n = n_a + n_u;
 
 JG = [J; G];
 
@@ -63,14 +60,10 @@ n_af = n_a - n_av;
 if (n_af == 0)
     % no need for HFVC; all velocity control. Can not satisfy guard
     % condition
-    C = [];
-    b_C = [];
     return;
 end
 if n_av_min == 0
     % infeasible goal
-    C = [];
-    b_C = [];
     return;
 end
 
@@ -82,16 +75,12 @@ basis_c = null([JG_nullspace_basis';
 
 if (rank_J + n_a < n)
     % not prehensile, infeasible
-    C = [];
-    b_C = [];
     return;
 end
 
 n_c = rank_JG - n_u;
 if (size(basis_c, 2) > n_c)
     % has uncontrollable DOF, infeasible
-    C = [];
-    b_C = [];
     return;
 end
 b_JG = [zeros(kDimLambda, 1); b_G];
@@ -111,8 +100,6 @@ JJ                = J_nullspace_basis*(J_nullspace_basis');
 
 if norm((basis_c')*JJ*basis_c) < 1e-9
     % can not make C out of N, no solution
-    C = [];
-    b_C = [];
     return;
 end
 % added a term:
@@ -211,6 +198,14 @@ options = optimoptions('quadprog', 'Display', 'none');
 x = quadprog(qp.Q, qp.f, qp.A, qp.b, qp.Aeq, qp.beq, [], [], [],options);
 
 eta_af = x(n_free + n_dual_free + 1:end);
+
+action.n_av = n_av;
+action.n_af = n_af;
+action.R_a = R_a;
+action.eta_af = eta_af;
+action.w_av = w_av;
+action.C = C;
+action.b_C = b_C;
 
 time.velocity = time_velocity;
 time.force = toc;

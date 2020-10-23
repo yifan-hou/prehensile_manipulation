@@ -1,21 +1,19 @@
 % A Lambda <= b_A
-function [C, b_C, time] = ochs(dims, J, G, b_G, Fg, A, b_A)
+function [action, time] = ochs(dims, J, G, b_G, Fg, A, b_A, J_All)
 time.velocity = 0;
 time.force = 0;
+action.C = [];
 tic
 % constants
 n_a = dims.Actualized;
 n_u = dims.UnActualized;
 n   = n_a + n_u;
-nLambda = size(J,1);
 
 M = [zeros(n_u, n_a); eye(n_a)];
 U = null(J)';
 
 if isempty(U)
     % no null space. The environment already fully constrained the problem
-    C = [];
-    b_C = [];
     return;
 end
 
@@ -53,17 +51,13 @@ JCG = [JC; G];
 
 if rank(JC) < rank(JCG)
     % infeasible goal
-    C = [];
-    b_C = [];
     return;
 end
 
 JG = [J; G];
-b_JG = [zeros(nLambda, 1); b_G];
+b_JG = [zeros(size(J,1), 1); b_G];
 % if rank([JG b_JG]) > rank(JG)
 %     % infeasible problem
-%     C = [];
-%     b_C = [];
 %     return;
 % end
 
@@ -76,7 +70,9 @@ time_velocity = toc;
 %% force part
 tic;
 
-Aeq_lp = [T*J' [zeros(n_u, n_a); eye(n_a)]];
+nLambda = size(J_All,1);
+
+Aeq_lp = [T*J_All' [zeros(n_u, n_a); eye(n_a)]];
 beq_lp = -T*Fg;
 A_lp = [A zeros(size(A,1), n_a)];
 b_lp = b_A;
@@ -89,6 +85,13 @@ x = quadprog(qp.Q, qp.f, A_lp, b_lp, Aeq_lp, beq_lp, [], [], [],options);
 
 eta_af = x(nLambda + 1:nLambda + n_af);
 
+action.n_av = n_av;
+action.n_af = n_af;
+action.R_a = R_a;
+action.eta_af = eta_af;
+action.w_av = b_C;
+action.C = C;
+action.b_C = b_C;
 
 time.velocity = time_velocity;
 time.force = toc;

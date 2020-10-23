@@ -8,7 +8,7 @@ warning('off', 'MATLAB:rankDeficientMatrix');
 
 
 % Parameters
-NSamples = 1000;
+NSamples = 10; %1000
 num_seeds = 10;
 
 % list of contact points and contact normals
@@ -130,8 +130,8 @@ for p = 1:count
     b_A = b_As{p};
 
     % ochs
-    [C, b_C, time] = ochs(dims, J, G, b_G, Fg, A, b_A);
-    C1s{p} = C;
+    [action, time] = ochs(dims, J, G, b_G, Fg, A, b_A, J);
+    C1s{p} = action.C;
     time1.velocity(p) = time.velocity*1000;
     time1.force(p) = time.force*1000;
 end
@@ -147,8 +147,8 @@ for p = 1:count
     A = As{p};
     b_A = b_As{p};
 
-    [C, b_C, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds);
-    C2s{p} = C;
+    [action, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds, J);
+    C2s{p} = action.C;
     time2.velocity(p) = time.velocity*1000;
     time2.force(p) = time.force*1000;
 end
