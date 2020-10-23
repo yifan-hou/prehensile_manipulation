@@ -6,7 +6,7 @@ warning('off', 'MATLAB:rankDeficientMatrix');
 warning('off', 'MATLAB:nearlySingularMatrix');
 
 % Parameters
-NSamples = 1;
+NSamples = 1000;
 
 num_seeds = 10;
 
@@ -188,7 +188,7 @@ for s = 1:size(configs3D, 1)
 %             b_Gs{count} = b_G2;
 %             As{count} = A2;
 %             b_As{count} = b_A2;
-% 
+%
 %             Js{count} = J3;
 %             Gs{count} = G3;
 %             b_Gs{count} = b_G3;
@@ -248,7 +248,7 @@ for p = 1:count
 %     evaluation
     if ~isempty(C1s{p})
         score1(p) = cond(null(J)'*C1s{p}');
-        assert(score1(p) >= 1);    
+        assert(score1(p) >= 1);
         if score1(p) - 1 < COND_TOL
             number_of_optimal1 = number_of_optimal1 + 1;
         end
