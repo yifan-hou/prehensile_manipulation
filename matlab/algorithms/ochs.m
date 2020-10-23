@@ -30,7 +30,7 @@ TOL = 0.0001; % this tolerance has to be big.
 id = [];
 for i = 1:n_a
     if (norm(U_hat(n_a-i + 1,:)) > TOL)
-        id = [id i];
+        id = [id n_a-i+1];
     end
 end
 U_hat = U_hat(id, :);
