@@ -81,7 +81,7 @@ qp.Q = eye(nLambda + n_a);
 qp.f = zeros(nLambda + n_a, 1);
 
 options = optimoptions('quadprog', 'Display', 'none');
-x = quadprog(qp.Q, qp.f, A_lp, b_lp, Aeq_lp, beq_lp, [], [], [],options);
+[x,~,EXITFLAG] = quadprog(qp.Q, qp.f, A_lp, b_lp, Aeq_lp, beq_lp, [], [], [],options);
 
 eta_af = x(nLambda + 1:nLambda + n_af);
 
@@ -92,6 +92,7 @@ action.eta_af = eta_af;
 action.w_av = b_C;
 action.C = C;
 action.b_C = b_C;
+action.qpflag = EXITFLAG;
 
 time.velocity = time_velocity;
 time.force = toc;
