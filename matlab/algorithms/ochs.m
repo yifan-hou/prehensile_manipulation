@@ -39,7 +39,9 @@ U_hat = U_hat(id, :);
 n_av = size(U_hat,1);
 n_af = n_a - n_av;
 
-C_bar = (U_hat\eye(n_av))';
+% C_bar = (U_hat\eye(n_av))';
+C_bar = lsqminnorm(U_hat, eye(n_av))';
+
 R_a = [null(C_bar)';
         C_bar];
 T = blkdiag(eye(n_u), R_a);

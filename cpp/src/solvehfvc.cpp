@@ -479,8 +479,11 @@ int solvehfvc_OCHS(const MatrixXd &J,
    *  Then complete R
    */
   int n_af = n_a - n_av;
-  lu.compute(U_hat);
-  MatrixXd C_bar = lu.solve(MatrixXd::Identity(n_av, n_av)).transpose();
+  // lu.compute(U_hat);
+  // MatrixXd C_bar = lu.solve(MatrixXd::Identity(n_av, n_av)).transpose();
+  MatrixXd C_bar = U_hat.bdcSvd(
+      Eigen::ComputeThinU | Eigen::ComputeThinV).solve(
+      MatrixXd::Identity(n_av, n_av)).transpose();
 
   MatrixXd Rv = C_bar;
   MatrixXd Rf;

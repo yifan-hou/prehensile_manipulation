@@ -11,6 +11,8 @@
 
 #include "polyhedron.h"
 
+Eigen::IOFormat MatlabFmt(Eigen::StreamPrecision, 0, ", ", ";\n", "", "", "[",
+      "]");
 
 #define TOL 1e-8
 #define PI 3.1415926
@@ -266,8 +268,10 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   time_stats_force_margin = timer.toc();
   timer.tic();
 
-  if (print_level_ > 0)
+  if (print_level_ > 0) {
     std::cout << "[WrenchStamping] 2. HFVC" << std::endl;
+    std::cout << "J: \n" << N_of_the_modes[goal_id].format(MatlabFmt) << std::endl;
+  }
   int kDimActualized = 3;
   int kDimUnActualized = 3;
   int hfvc_flag = solvehfvc_OCHS(N_of_the_modes[goal_id], G, b_G,
