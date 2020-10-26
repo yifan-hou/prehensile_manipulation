@@ -42,6 +42,7 @@ cmake ..
 make check -j 4
 sudo make install
 ```
+https://linuxize.com/post/how-to-install-gcc-compiler-on-ubuntu-18-04/#installing-multiple-gcc-versions
 
 ## Matlab dependencies
 ### Install Matlab Engine for Python

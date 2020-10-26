@@ -70,10 +70,14 @@ Eigen::VectorXd wrenchStamping_2d_wrapper(Eigen::MatrixXd Jac_e, Eigen::MatrixXd
 }
 
 PYBIND11_MODULE(wrenchStampingLib, m) {
-    m.doc() = "pybind11 wrenchStampingLib plugin"; // optional module docstring
+  std::cout << "Initializing wrenchStampingLib" << std::endl;
+  m.doc() = "pybind11 wrenchStampingLib plugin"; // optional module docstring
 
-    wsa_ptr = std::shared_ptr<WrenchSpaceAnalysis>(new WrenchSpaceAnalysis());
-    m.def("wrenchSpaceAnalysis", &wrenchStamping_wrapper, "Test mode cleaning");
-    m.def("wrenchSpaceAnalysis_2d", &wrenchStamping_2d_wrapper, "Test mode cleaning");
+  std::cout << "Initializing wrenchSpaceAnalysis" << std::endl;
+  wsa_ptr = std::shared_ptr<WrenchSpaceAnalysis>(new WrenchSpaceAnalysis());
+  std::cout << "wrenchSpaceAnalysis initialized." << std::endl;
+  m.def("wrenchSpaceAnalysis", &wrenchStamping_wrapper, "Test mode cleaning");
+  m.def("wrenchSpaceAnalysis_2d", &wrenchStamping_2d_wrapper, "Test mode cleaning");
+  std::cout << "wrenchStampingLib initialized" << std::endl;
 }
 

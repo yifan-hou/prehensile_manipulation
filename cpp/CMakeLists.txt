@@ -59,11 +59,13 @@ target_link_libraries(sharedgraspinglib polylib timer hfvc ${RobotUtilLib}
 # add_executable(qhulltest src/testQHull.cpp)
 # target_link_libraries(qhulltest ${qhullLibs})
 
-add_executable(polytest src/testpoly.cpp)
-target_link_libraries(polytest polylib)
+# add_executable(polytest src/testpoly.cpp)
+# target_link_libraries(polytest polylib)
 
 pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
-target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib)
+target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib
+	polylib timer hfvc ${RobotUtilLib}
+	${YAML_LIBRARY})
 
 add_executable(lutest src/testEigenLU.cpp)
 
@@ -74,7 +76,7 @@ add_executable(lptest src/lp.cpp)
 target_link_libraries(lptest ${GLPKLIB})
 
 
-# for debug
-find_library(libcnpy cnpy HINTS /usr/local/lib)
-add_executable(exam src/exam.cpp)
-target_link_libraries(exam sharedgraspinglib ${libcnpy})
+# # for debug
+# find_library(libcnpy cnpy HINTS /usr/local/lib)
+# add_executable(exam src/exam.cpp)
+# target_link_libraries(exam sharedgraspinglib ${libcnpy})

@@ -4,7 +4,6 @@ import numpy as np
 from numpy import newaxis
 
 
-import contact_modes as cm
 import wrenchStampingLib as ws
 
 # Parameters
