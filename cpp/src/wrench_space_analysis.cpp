@@ -1586,7 +1586,6 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
     std::cout << "BUG: can not find an internal point" << std::endl;
     exit(-1);
   }
-
   /**
    * Step two: sample a ton of points in the goal region.
    * Use hit-and-run sampling. Sample sample_ns points,
@@ -1599,7 +1598,6 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
 
   MatrixXd wrench_samples_eigen = Poly::hitAndRunSampleInPolytope(
     pp_goal_A, pp_goal_b, x0, sample_ns, sample_discard, sample_runup, max_radius);
-
   /**
    * Step three: Use Ransac to find a set of @p NInitialPoints that are far
    * away from each other

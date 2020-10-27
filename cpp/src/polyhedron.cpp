@@ -198,7 +198,7 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
   // https://www.mathworks.com/matlabcentral/fileexchange/34208-uniform-distribution-over-a-convex-polytope
   int dim = x0.rows();
   Eigen::MatrixXd X = Eigen::MatrixXd::Zero(N+runup+discard, dim);
-  if ((A*x0 - b).maxCoeff() > 0) {
+  if ((A*x0 - b).maxCoeff() > 1e-9) {
     std::cout << "[hitAndRunSampleInPolytope] x0 is outside of Ax<b" << std::endl;
     exit(1);
   }
@@ -221,10 +221,17 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
         // choose a previous point at random
         v = X.middleRows(RUT::randi(n), 1).transpose();
         // line sampling direction is from v to sample mean
-        u = (v-M).normalized();
+        // u = (v-M).normalized();
+        u = v-M;
+        if (u.norm() < 1e-9) {
+          u = Eigen::VectorXd::Random(dim).normalized();
+        } else {
+          u.normalize();
+        }
       }
       // proceed as in hit and run
       z = A*u;
+
       c = (b - A*x).cwiseQuotient(z);
 
       // tmin = max(c(z<0));
@@ -249,10 +256,8 @@ Eigen::MatrixXd Poly::hitAndRunSampleInPolytope(const Eigen::MatrixXd &A,
       // Choose a random point on that line segment
 
       double distance = tmin+(tmax-tmin)*RUT::rand();
-      // std::cout << "debug: tmin: " << tmin << ", tmax: " << tmax  << ", distance: " << distance << std::endl;
       x = x + distance*u;
       if (max_radius > 0) {
-        // std::cout << "x.norm(): " << x.norm() << ", max_radius: " << max_radius << std::endl;
         if(x.norm() >= max_radius) {
           std::cout << "[hitAndRunSampleInPolytope] assertion failed." << std::endl;
           getchar();
@@ -959,17 +964,41 @@ bool Poly::minkowskiSumOfVectors(const Eigen::MatrixXd &vectors, Eigen::MatrixXd
     *results = vectors;
     return true;
   }
+  // check singularity
+  // todo: handle anti-podal situation
+  Eigen::MatrixXd vectors_;
+  Eigen::VectorXd v1 = vectors.middleRows(0,1).transpose();
+  for (int i = 1; i < num; ++i) {
+    Eigen::VectorXd v2 = vectors.middleRows(i,1).transpose();
+    if ( v1.norm()*v2.norm() - v1.dot(v2) < 1e-7) {
+      // v1, v2 are colinear
+      // update v1
+      v1 = v1+v2;
+    } else {
+      // colinearity ends
+      vectors_ = Eigen::MatrixXd(num - i + 1, dim);
+      vectors_.topRows(1) = v1.transpose();
+      vectors_.bottomRows(num - i) = vectors.bottomRows(num - i);
+      num = num - i + 1;
+      break;
+    }
+  }
+  if (vectors_.size() == 0) {
+    // all colinear
+    *results = v1.transpose();
+    return true;
+  }
   std::vector<double> msum;
   // estimation of storage. Exponential growing only happens KCONVHULL_ROUND.
   msum.reserve(2 * dim * pow(2, KCONVHULL_ROUND) * num);
   // 1. Initialize
   msum.assign(dim, 0);
-  for (int i = 0; i < dim; ++i) msum.push_back(vectors(0, i));
+  for (int i = 0; i < dim; ++i) msum.push_back(vectors_(0, i));
 
   std::vector<double> temp;
   for (int vid = 1; vid < num; ++vid) {
     /**
-     * add the new vector vectors(vid, :) to msum
+     * add the new vector vectors_(vid, :) to msum
      */
     int msum_num_now = msum.size()/dim;
     // std::cout << "msum_num_now: " << msum_num_now << std::endl;
@@ -978,7 +1007,7 @@ bool Poly::minkowskiSumOfVectors(const Eigen::MatrixXd &vectors, Eigen::MatrixXd
     // add the new vector to the copy
     for (int i = 0; i < msum_num_now; ++i)
       for (int j = 0; j < dim; ++j)
-        msum[(msum_num_now + i) * dim + j] += vectors(vid, j);
+        msum[(msum_num_now + i) * dim + j] += vectors_(vid, j);
     /**
      * Call convhull to reduce dimension
      */
