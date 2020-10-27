@@ -1586,6 +1586,15 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
     std::cout << "BUG: can not find an internal point" << std::endl;
     exit(-1);
   }
+  // std::cout << "debug: pp_goal_A:\n" << pp_goal_A << std::endl;
+  // std::cout << "debug: pp_goal_b:\n" << pp_goal_b << std::endl;
+  // std::cout << "debug: pp_goal_A * x0 - pp_goal_b =\n" << pp_goal_A * x0 - pp_goal_b << std::endl;
+  // for (int i = 0; i < pps_A.size(); ++i) {
+  //   std::cout << "debug: pps_A:\n" << pps_A[i] << std::endl;
+  //   std::cout << "debug: pps_b:\n" << pps_b[i] << std::endl;
+  // }
+  // std::cout << "debug: xl:" << xl << std::endl;
+  // std::cout << "debug: xu:" << xu << std::endl;
   /**
    * Step two: sample a ton of points in the goal region.
    * Use hit-and-run sampling. Sample sample_ns points,
@@ -1622,7 +1631,7 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
       }
     }
     // compare with the best so far
-    if (min_dist_points > max_dist_points) {
+    if (min_dist_points > max_dist_points - 1e-9) {
       max_dist_points = min_dist_points;
       ids_best = ids;
     }

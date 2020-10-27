@@ -5,7 +5,7 @@
 ##  0: minimal print to screen.
 ##  1: show key information in each iteraton.
 ##
-print_level: 0
+print_level: 1
 
 ##
 ## The five elements corresponds to dimension 1~5 of the force-controlled
