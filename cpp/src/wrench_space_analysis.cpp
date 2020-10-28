@@ -1557,8 +1557,11 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
   /**
    * Setup some parameters
    */
-  VectorXd xl = -kContactForce * VectorXd::Ones(n_af);
-  VectorXd xu = kContactForce * VectorXd::Ones(n_af);
+  double force_limit = 3*kContactForce; // has to be larger than kCOntactForce,
+                                        // since each polytope is the minkowski
+                                        // sum of edges with length kContactForce
+  VectorXd xl = -force_limit * VectorXd::Ones(n_af);
+  VectorXd xu = force_limit * VectorXd::Ones(n_af);
   if (n_af == 0) {
     std::cout << "[ForceControl] n_af = 0!!" << std::endl;
     exit(1);
@@ -1574,7 +1577,7 @@ double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
   int ransac_num = ransac_num_[n_af-1];
   int ins_num_iter = opt_ins_num_iter_[n_af-1];
 
-  double max_radius = kContactForce * sqrt(n_af) + 1e-7;
+  double max_radius = force_limit * sqrt(n_af) + 1e-7;
   /**
    * Step one: get an internal point of goal polyhedron for use in step two.
    *    Solve an inscribed sphere problem.

@@ -941,6 +941,12 @@ double Poly::inscribedSphere(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   Eigen::VectorXd be_ext(0);
   Eigen::VectorXd xc_ext = Eigen::VectorXd::Zero(dim_ext);
   double optimal_cost;
+  // std::cout << "xl:\n" << xl << std::endl;
+  // std::cout << "xu:\n" << xu << std::endl;
+  // std::cout << "A_ext:\n" << A_ext << std::endl;
+  // std::cout << "b_ext:\n" << b_ext << std::endl;
+  // std::cout << "xl_ext:\n" << xl_ext << std::endl;
+  // std::cout << "xu_ext:\n" << xu_ext << std::endl;
   bool success = lp(C, A_ext, b_ext, Ae_ext, be_ext, xl_ext, xu_ext, &xc_ext, &optimal_cost);
   if (success) {
     *xc = xc_ext.head(dim);
