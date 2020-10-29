@@ -11,6 +11,7 @@ n   = n_a + n_u;
 
 M = [zeros(n_u, n_a); eye(n_a)];
 U = null(J)';
+rank_J = n - size(U,1);
 
 if isempty(U)
     % no null space. The environment already fully constrained the problem
@@ -18,9 +19,31 @@ if isempty(U)
 end
 
 U_bar = U*M;
-C_bar = null(null(U_bar)')';
-n_av  = size(C_bar,1);
-n_af  = n_a - n_av;
+R_f = null(U_bar)';
+R_v = null(R_f)';
+n_av_max  = size(R_v,1);
+
+JG = [J; G];
+b_JG = [zeros(size(J,1), 1); b_G];
+rank_JG = rank(JG);
+
+if rank_JG - rankJ > n_av_max
+    % infeasible problem: goal cannot be satisfied
+    return;
+end
+
+% todo: what if rank_JG - rankJ = 0?
+% may be redundant with other feasibility conditions
+
+n_av = 0;
+if rank_JG - rankJ == n_av_max
+    % we have to use up free space for velocity control
+    n_av = n_av_max;
+else
+    % We don't need to use up free space for velocity control
+    n_av = rank_JG - rankJ;
+end
+
 
 % U_hat = chol(U_bar'*U_bar + 1e-15*eye(n_a));
 % 
@@ -46,10 +69,12 @@ n_af  = n_a - n_av;
 % % C_bar = (U_hat\eye(n_av))';
 % C_bar = lsqminnorm(U_hat, eye(n_av))';
 
-R_a = [null(C_bar)';
-        C_bar];
+n_af  = n_a - n_av;
+
+
+R_a = [R_f; R_v];
 T = blkdiag(eye(n_u), R_a);
-C = [zeros(n_av, n_u) C_bar];
+C = [zeros(n_av, n_u) R_v];
 % solve for b_C
 
 JC = [J; C];
@@ -60,8 +85,7 @@ if rank(JC) < rank(JCG)
     return;
 end
 
-JG = [J; G];
-b_JG = [zeros(size(J,1), 1); b_G];
+
 % if rank([JG b_JG]) > rank(JG)
 %     % infeasible problem
 %     return;
