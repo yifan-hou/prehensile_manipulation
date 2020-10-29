@@ -83,7 +83,7 @@ bool solvehfvc_new(const Eigen::MatrixXd &N,
   const int kDimActualized, const int kDimUnActualized,
   HFVC *action);
 
-bool solvehfvc_newer(const Eigen::MatrixXd &N,
+bool solvehfvc_nullspace(const Eigen::MatrixXd &N,
   const Eigen::MatrixXd &G, const Eigen::VectorXd &b_G,
   const int kDimActualized, const int kDimUnActualized,
   HFVC *action);

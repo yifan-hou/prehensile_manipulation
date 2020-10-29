@@ -322,7 +322,7 @@ bool solvehfvc_new(const MatrixXd &N,
   return true;
 }
 
-bool solvehfvc_newer(const MatrixXd &N,
+bool solvehfvc_nullspace(const MatrixXd &N,
   const MatrixXd &G, const VectorXd &b_G,
   const int kDimActualized, const int kDimUnActualized,
   HFVC *action) {
@@ -367,7 +367,6 @@ bool solvehfvc_newer(const MatrixXd &N,
 
   /**
    * Step four: find a solution to NG
-   *  (TODO) looks like we only need a solution to G
    */
   MatrixXd NG(N.rows()+G.rows(), N.cols());
   NG << N, G;
