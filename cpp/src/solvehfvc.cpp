@@ -322,7 +322,7 @@ bool solvehfvc_new(const MatrixXd &N,
   return true;
 }
 
-bool solvehfvc_nullspace(const MatrixXd &N,
+int solvehfvc_nullspace(const MatrixXd &N,
   const MatrixXd &G, const VectorXd &b_G,
   const int kDimActualized, const int kDimUnActualized,
   HFVC *action) {
@@ -334,14 +334,15 @@ bool solvehfvc_nullspace(const MatrixXd &N,
   assert(b_G.norm() > TOL);
   Eigen::FullPivLU<MatrixXd> lu;
 
-
   /**
    * Step one: get null space of N
    */
   MatrixXd N_reg = N;
   MatrixXd null_space_N_r;
   int rank_N = RUT::nullSpace(&N_reg, &null_space_N_r);
-
+  if (rank_N == kDimGeneralized) {
+    return 1;
+  }
   /**
    * Step two: project to controllable subspace, get C
    */
@@ -363,7 +364,7 @@ bool solvehfvc_nullspace(const MatrixXd &N,
   NCG << N, C, G;
   int rank_NCG = RUT::rowSpace(&NCG);
   int rank_NC = rank_N + rank_C;
-  if (rank_NCG > rank_NC) return false;
+  if (rank_NCG > rank_NC) return 2;
 
   /**
    * Step four: find a solution to NG
@@ -375,7 +376,7 @@ bool solvehfvc_nullspace(const MatrixXd &N,
   lu.compute(NG);
   Eigen::VectorXd v_star = lu.solve(b_NG);
   // check if no solution
-  if ((NG*v_star - b_NG).norm() > TOL) return false;
+  if ((NG*v_star - b_NG).norm() > TOL) return 3;
   VectorXd b_C = C*v_star;
 
   // Get the force-controlled directions
@@ -408,7 +409,7 @@ bool solvehfvc_nullspace(const MatrixXd &N,
   // std::cout << "  NG*sol_sp:\n" << NG*sol_sp << std::endl;
   // std::cout << "  NG*sol_homo:\n" << NG*sol_homo << std::endl;
 
-  return true;
+  return 0;
 }
 
 int solvehfvc_OCHS(const MatrixXd &J,

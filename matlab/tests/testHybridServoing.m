@@ -5,10 +5,8 @@ addpath ../algorithms
 
 warning('off', 'MATLAB:rankDeficientMatrix');
 
-
-
 % Parameters
-NSamples = 10; %1000
+NSamples = 100; %1000
 num_seeds = 10;
 
 % list of contact points and contact normals
@@ -21,20 +19,20 @@ configs2D = repmat(config_type, 4, 1);
 configs2D(1).ne = 1; configs2D(1).nh = 1;
 configs2D(1).ehmodes = [1 1;
                         2 1];
-configs2D(1).ng = [1 2];
+configs2D(1).ng = [2 3];
 
 configs2D(2).ne = 1; configs2D(2).nh = 2;
 configs2D(2).ehmodes = [1 1 1;
                         2 1 1];
-configs2D(2).ng = [1 2];
+configs2D(2).ng = [2 2];
 
 configs2D(3).ne = 2; configs2D(3).nh = 1;
 configs2D(3).ehmodes = [2 2 1];
-configs2D(3).ng = [1];
+configs2D(3).ng = [2];
 
 configs2D(4).ne = 2; configs2D(4).nh = 2;
 configs2D(4).ehmodes = [2 2 1 1];
-configs2D(4).ng = [1];
+configs2D(4).ng = [2];
 
 kEMinX = 0;
 kEMaxX = 0.2;
@@ -74,7 +72,7 @@ for s = 1:size(configs2D, 1)
             n_Hh = -normalizeByCol([rand(1, nh) - 0.5; rand(1, nh)]);
 
             angle = rand()*90-45; % deg
-            R_WH = rotz(angle);
+            R_WH = rotz_deg(angle);
             R_WH = R_WH(1:2, 1:2);
             p_WH = [0; kEMaxY];
 
@@ -165,15 +163,17 @@ for p = 1:count
     G = Gs{p};
     b_G = b_Gs{p};
 
+    J = rref(J);
+    J = J(1:rank(J), :);
     if ~isempty(C1s{p})
-        score1(p) = cond(null(J)'*C1s{p}');
+        score1(p) = cond(normalizeByRow([J; C1s{p}]));
         if score1(p) - 1 < COND_TOL
             number_of_optimal1 = number_of_optimal1 + 1;
         end
     end
 
     if ~isempty(C2s{p})
-        score2(p) = cond(null(J)'*C2s{p}');
+        score2(p) = cond(normalizeByRow([J; C2s{p}]));
         if score2(p) - 1 < COND_TOL
             number_of_optimal2 = number_of_optimal2 + 1;
         end
@@ -186,16 +186,18 @@ time1.velocity = time1.velocity(score1 > 0);
 time1.force = time1.force(score1 > 0);
 time2.velocity = time2.velocity(score2 > 0);
 time2.force = time2.force(score2 > 0);
-score1 = score1(score1 > 0);
-score2 = score2(score2 > 0);
-number_of_solved1 = length(score1);
-number_of_solved2 = length(score2);
-average_cond1 = mean(score1);
-average_cond2 = mean(score2);
-best_cond1 = min(score1);
-best_cond2 = min(score2);
-worst_cond1 = max(score1);
-worst_cond2 = max(score2);
+
+both_solved = (score1 > 0) & (score2 > 0);
+% score1 = score1(score1 > 0);
+% score2 = score2(score2 > 0);
+number_of_solved1 = sum(score1 > 0);
+number_of_solved2 = sum(score2 > 0);
+average_cond1 = mean(score1(both_solved));
+average_cond2 = mean(score2(both_solved));
+best_cond1 = min(score1(both_solved));
+best_cond2 = min(score2(both_solved));
+worst_cond1 = max(score1(both_solved));
+worst_cond2 = max(score2(both_solved));
 
 
 average_vel_time1 = mean(time1.velocity);
