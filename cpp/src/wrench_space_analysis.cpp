@@ -274,7 +274,7 @@ double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
   }
   int kDimActualized = 3;
   int kDimUnActualized = 3;
-  int hfvc_flag = solvehfvc_OCHS(N_of_the_modes[goal_id], G, b_G,
+  int hfvc_flag = solvehfvc_nullspace(N_of_the_modes[goal_id], G, b_G,
       kDimActualized, kDimUnActualized, action);
   if (hfvc_flag != 0) {
     std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: " <<
@@ -727,7 +727,7 @@ void WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
       getConstraintOfTheMode(Jac_e, Jac_h,
           e_sss_mode_goal, h_sss_mode_goal,
           &N, &Nu);
-      int hfvc_flag = solvehfvc_OCHS(N, G, b_G, kDimActualized,
+      int hfvc_flag = solvehfvc_nullspace(N, G, b_G, kDimActualized,
           kDimUnActualized, action);
       if (hfvc_flag != 0) {
         std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: "

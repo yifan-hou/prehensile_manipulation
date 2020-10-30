@@ -11,6 +11,7 @@ n   = n_a + n_u;
 
 M = [zeros(n_u, n_a); eye(n_a)];
 U = null(J)';
+rank_J = n - size(U,1);
 
 if isempty(U)
     % no null space. The environment already fully constrained the problem
@@ -18,57 +19,94 @@ if isempty(U)
 end
 
 U_bar = U*M;
-U_hat = chol(U_bar'*U_bar + 1e-15*eye(n_a));
 
-TOL = 0.0001; % this tolerance has to be big.
-id = [];
-row_norm = [];
-for i = 1:n_a
-    norm_i = norm(U_hat(n_a-i + 1,:));
-    if (norm_i > TOL)
-        id = [n_a-i+1 id];
-        row_norm = [norm_i row_norm];
-    end
+%%
+%% Minimize  cond(U'C')
+%%
+% U_hat = chol(U_bar'*U_bar + 1e-15*eye(n_a));
+% TOL = 0.0001; % this tolerance has to be big.
+% id = [];
+% for i = 1:n_a
+%     if (norm(U_hat(n_a-i + 1,:)) > TOL)
+%         id = [id n_a-i+1];
+%     end
+% end
+% U_hat = U_hat(id, :);
+% U_hat = U_hat(id, :);
+% n_av = size(U_hat,1);
+% n_af = n_a - n_av;
+% % C_bar = (U_hat\eye(n_av))';
+% C_bar = lsqminnorm(U_hat, eye(n_av))';
+
+%%
+%% minimize cond(U'normalizeByRow(C'))
+%%
+% TOL = 0.0001; % this tolerance has to be big.
+% id = [];
+% row_norm = [];
+% for i = 1:n_a
+%     norm_i = norm(U_hat(n_a-i + 1,:));
+%     if (norm_i > TOL)
+%         id = [n_a-i+1 id];
+%         row_norm = [norm_i row_norm];
+%     end
+% end
+% over_dim = length(id) - size(U,1);
+% if over_dim > 0
+%     for i = 1:over_dim
+%         [~, id_id] = min(row_norm);
+%         id(id_id) = [];
+%         row_norm(id_id) = [];
+%     end
+% end
+% U_hat_null = null(U_hat);
+% C_star = C_bar;
+% if ~isempty(U_hat_null)
+%     U_hat_null1 = U_hat_null(:,1);
+%     cnorm = normByRow(C_bar);
+%     [cn_max, cn_max_id] = max(cnorm);
+%     for i = 1:n_av
+%         if i == cn_max_id
+%             continue;
+%         end
+%         k = sqrt(cn_max^2 - cnorm(i)^2);
+%         C_star(i,:) = C_star(i,:) + k*U_hat_null1';
+%     end
+% end
+
+%% null space hfvc
+R_f = null(U_bar)';
+R_v = null(R_f)';
+n_av_max  = size(R_v,1);
+
+JG = [J; G];
+b_JG = [zeros(size(J,1), 1); b_G];
+null_JG = null(JG);
+rank_JG = n - size(null_JG,2);
+if rank_JG - rankJ > n_av_max
+    % infeasible problem: goal cannot be satisfied
+    return;
 end
-over_dim = length(id) - size(U,1);
-if over_dim > 0
-    for i = 1:over_dim
-        [~, id_id] = min(row_norm);
-        id(id_id) = [];
-        row_norm(id_id) = [];
-    end
-end
-U_hat = U_hat(id, :);
 
+% todo: what if rank_JG - rankJ = 0?
+% may be redundant with other feasibility conditions
 
-n_av = size(U_hat,1);
-n_af = n_a - n_av;
-
-% C_bar = (U_hat\eye(n_av))';
-C_bar = lsqminnorm(U_hat, eye(n_av))';
-
-%
-U_hat_null = null(U_hat);
-C_star = C_bar;
-if ~isempty(U_hat_null)    
-    U_hat_null1 = U_hat_null(:,1);
-    cnorm = normByRow(C_bar);
-    [cn_max, cn_max_id] = max(cnorm);
-    
-    for i = 1:n_av
-        if i == cn_max_id
-            continue;
-        end
-        k = sqrt(cn_max^2 - cnorm(i)^2);
-        C_star(i,:) = C_star(i,:) + k*U_hat_null1';
-    end
+n_av = 0;
+if rank_JG - rankJ == n_av_max
+    % we have to use all free dof for velocity control
+    n_av = n_av_max;
+else
+    % We don't need to use up free space for velocity control
+    n_av = rank_JG - rankJ;
+    null_JG
 end
 
-R_a = [null(C_star)';
-        C_star];
+n_af  = n_a - n_av;
+
+
+R_a = [R_f; R_v];
 T = blkdiag(eye(n_u), R_a);
-C = [zeros(n_av, n_u) C_star];
-
+C = [zeros(n_av, n_u) R_v];
 
 % solve for b_C
 JC = [J; C];
@@ -79,8 +117,7 @@ if rank(JC) < rank(JCG)
     return;
 end
 
-JG = [J; G];
-b_JG = [zeros(size(J,1), 1); b_G];
+
 % if rank([JG b_JG]) > rank(JG)
 %     % infeasible problem
 %     return;
