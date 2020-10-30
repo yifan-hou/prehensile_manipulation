@@ -6,7 +6,7 @@ warning('off', 'MATLAB:rankDeficientMatrix');
 warning('off', 'MATLAB:nearlySingularMatrix');
 
 % Parameters
-NSamples = 1000;
+NSamples = 10;
 
 num_seeds = 10;
 
@@ -242,12 +242,22 @@ for p = 1:count
     time1.force(p) = time.force*1000;
 
     [action, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds, J);
-    C2s{p} = action.C;
+%     C2s{p} = action.C;
+    if ~isempty(C1s{p})
+        M = blkdiag(zeros(dims.UnActualized), eye(dims.Actualized));
+        U = null(J)';
+        U_bar = U*M;
+        U_bar = null(null(U_bar)')';
+        C2s{p} = U_bar;
+    else
+        C2s{p} = [];
+    end
+    
     time2.velocity(p) = time.velocity*1000;
     time2.force(p) = time.force*1000;
 %     evaluation
     if ~isempty(C1s{p})
-        score1(p) = cond(null(J)'*C1s{p}');
+        score1(p) = cond(null(J)'*normalizeByRow(C1s{p})');
         assert(score1(p) >= 1);
         if score1(p) - 1 < COND_TOL
             number_of_optimal1 = number_of_optimal1 + 1;
@@ -255,17 +265,19 @@ for p = 1:count
     end
 
     if ~isempty(C2s{p})
-        score2(p) = cond(null(J)'*C2s{p}');
+        score2(p) = cond(null(J)'*normalizeByRow(C2s{p})');
         assert(score2(p) >= 1);
         if score2(p) - 1 < COND_TOL
             number_of_optimal2 = number_of_optimal2 + 1;
         end
     end
+    disp(['Score1: ' num2str(score1(p)) ', Score2 ' num2str(score2(p))]);
+    
+    if ((score1(p) > 0) && (score2(p) > 0) && (score1(p) > score2(p)+1e-10))
+        disp('oh no');
+    end
 end
 
-
-disp('Score1  Score2');
-disp([score1 score2]);
 time1.velocity = time1.velocity(score1 > 0);
 time1.force = time1.force(score1 > 0);
 time2.velocity = time2.velocity(score2 > 0);

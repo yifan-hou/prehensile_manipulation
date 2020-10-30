@@ -21,16 +21,21 @@ U_bar = U*M;
 U_hat = chol(U_bar'*U_bar + 1e-15*eye(n_a));
 
 TOL = 0.0001; % this tolerance has to be big.
-% for i = 1:n_a
-%     if (norm(U_hat(n_a-i + 1,:)) > TOL)
-%         U_hat = U_hat(1:n_a-i+1, :);
-%         break;
-%     end
-% end
 id = [];
+row_norm = [];
 for i = 1:n_a
-    if (norm(U_hat(n_a-i + 1,:)) > TOL)
-        id = [id n_a-i+1];
+    norm_i = norm(U_hat(n_a-i + 1,:));
+    if (norm_i > TOL)
+        id = [n_a-i+1 id];
+        row_norm = [norm_i row_norm];
+    end
+end
+over_dim = length(id) - size(U,1);
+if over_dim > 0
+    for i = 1:over_dim
+        [~, id_id] = min(row_norm);
+        id(id_id) = [];
+        row_norm(id_id) = [];
     end
 end
 U_hat = U_hat(id, :);
@@ -42,12 +47,30 @@ n_af = n_a - n_av;
 % C_bar = (U_hat\eye(n_av))';
 C_bar = lsqminnorm(U_hat, eye(n_av))';
 
-R_a = [null(C_bar)';
-        C_bar];
-T = blkdiag(eye(n_u), R_a);
-C = [zeros(n_av, n_u) C_bar];
-% solve for b_C
+%
+U_hat_null = null(U_hat);
+C_star = C_bar;
+if ~isempty(U_hat_null)    
+    U_hat_null1 = U_hat_null(:,1);
+    cnorm = normByRow(C_bar);
+    [cn_max, cn_max_id] = max(cnorm);
+    
+    for i = 1:n_av
+        if i == cn_max_id
+            continue;
+        end
+        k = sqrt(cn_max^2 - cnorm(i)^2);
+        C_star(i,:) = C_star(i,:) + k*U_hat_null1';
+    end
+end
 
+R_a = [null(C_star)';
+        C_star];
+T = blkdiag(eye(n_u), R_a);
+C = [zeros(n_av, n_u) C_star];
+
+
+% solve for b_C
 JC = [J; C];
 JCG = [JC; G];
 
@@ -85,12 +108,14 @@ qp.f = zeros(nLambda + n_a, 1);
 options = optimoptions('quadprog', 'Display', 'none');
 [x,~,EXITFLAG] = quadprog(qp.Q, qp.f, A_lp, b_lp, Aeq_lp, beq_lp, [], [], [],options);
 
-eta_af = x(nLambda + 1:nLambda + n_af);
+if EXITFLAG == 1
+    eta_af = x(nLambda + 1:nLambda + n_af);
+    action.eta_af = eta_af;
+end
 
 action.n_av = n_av;
 action.n_af = n_af;
 action.R_a = R_a;
-action.eta_af = eta_af;
 action.w_av = b_C;
 action.C = C;
 action.b_C = b_C;

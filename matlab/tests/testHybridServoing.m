@@ -21,20 +21,20 @@ configs2D = repmat(config_type, 4, 1);
 configs2D(1).ne = 1; configs2D(1).nh = 1;
 configs2D(1).ehmodes = [1 1;
                         2 1];
-configs2D(1).ng = [1 2];
+configs2D(1).ng = [2 2];
 
 configs2D(2).ne = 1; configs2D(2).nh = 2;
 configs2D(2).ehmodes = [1 1 1;
                         2 1 1];
-configs2D(2).ng = [1 2];
+configs2D(2).ng = [2 2];
 
 configs2D(3).ne = 2; configs2D(3).nh = 1;
 configs2D(3).ehmodes = [2 2 1];
-configs2D(3).ng = [1];
+configs2D(3).ng = [2];
 
 configs2D(4).ne = 2; configs2D(4).nh = 2;
 configs2D(4).ehmodes = [2 2 1 1];
-configs2D(4).ng = [1];
+configs2D(4).ng = [2];
 
 kEMinX = 0;
 kEMaxX = 0.2;
@@ -69,11 +69,11 @@ for s = 1:size(configs2D, 1)
         for n = 1:NSamples
             % randomly generate configs
             p_We = bsxfun(@plus, [kEMinX; kEMinY], diag([kEMaxX - kEMinX, kEMaxY - kEMinY]) * rand(2, ne));
-            p_Hh = bsxfun(@plus, [kHMinX; kHMinY], diag([kHMaxX - kHMinX, kHMaxY - kHMinY]) * rand(2, nh));
+            p_Hh = zeros(2, nh); % bsxfun(@plus, [kHMinX; kHMinY], diag([kHMaxX - kHMinX, kHMaxY - kHMinY]) * rand(2, nh));
             n_We = normalizeByCol([rand(1, ne) - 0.5; rand(1, ne)]);
             n_Hh = -normalizeByCol([rand(1, nh) - 0.5; rand(1, nh)]);
 
-            angle = rand()*90-45; % deg
+            angle = 0; %rand()*90-45; % deg
             R_WH = rotz(angle);
             R_WH = R_WH(1:2, 1:2);
             p_WH = [0; kEMaxY];
@@ -118,9 +118,18 @@ C2s = cell(count, 1);
 dims.Actualized = 3;
 dims.UnActualized = 3;
 
-% 1. OCHS
 time1.velocity = zeros(count,1);
 time1.force = zeros(count,1);
+time2.velocity = zeros(count, 1);
+time2.force = zeros(count, 1);
+
+number_of_optimal1 = 0;
+number_of_optimal2 = 0;
+
+COND_TOL = 0.001;
+score1 = -ones(count,1);
+score2 = -ones(count,1);
+
 for p = 1:count
     disp([num2str(p) '/' num2str(count)]);
     J = Js{p};
@@ -134,52 +143,33 @@ for p = 1:count
     C1s{p} = action.C;
     time1.velocity(p) = time.velocity*1000;
     time1.force(p) = time.force*1000;
-end
 
-% 2. old hybrid servoing, seeds = 3
-time2.velocity = zeros(count, 1);
-time2.force = zeros(count, 1);
-for p = 1:count
-    disp([num2str(p) '/' num2str(count)]);
-    J = Js{p};
-    G = Gs{p};
-    b_G = b_Gs{p};
-    A = As{p};
-    b_A = b_As{p};
-
+    % HS
     [action, time] = hybrid_servoing(dims, J, G, b_G, Fg, A, b_A, num_seeds, J);
     C2s{p} = action.C;
+%     M = blkdiag(zeros(3), eye(3));
+%     U = null(J)';
+%     U_bar = U*M;
+%     U_bar = null(null(U_bar)')';
+%     C2s{p} = U_bar;
     time2.velocity(p) = time.velocity*1000;
     time2.force(p) = time.force*1000;
-end
-
-%% Evaluation
-number_of_optimal1 = 0;
-number_of_optimal2 = 0;
-
-COND_TOL = 0.001;
-score1 = -ones(count,1);
-score2 = -ones(count,1);
-for p = 1:count
-    J = Js{p};
-    G = Gs{p};
-    b_G = b_Gs{p};
-
+    
     if ~isempty(C1s{p})
-        score1(p) = cond(null(J)'*C1s{p}');
+        score1(p) = cond(null(J)'*normalizeByRow(C1s{p})');
         if score1(p) - 1 < COND_TOL
             number_of_optimal1 = number_of_optimal1 + 1;
         end
     end
 
     if ~isempty(C2s{p})
-        score2(p) = cond(null(J)'*C2s{p}');
+        score2(p) = cond(null(J)'*normalizeByRow(C2s{p})');
         if score2(p) - 1 < COND_TOL
             number_of_optimal2 = number_of_optimal2 + 1;
         end
     end
-
 end
+
 disp('Score1  Score2');
 disp([score1 score2]);
 time1.velocity = time1.velocity(score1 > 0);

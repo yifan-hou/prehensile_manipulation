@@ -195,17 +195,21 @@ qp.A = [A zeros(size(A,1), size(qp.Aeq,2) - size(A,2))];
 qp.b = b_A;
 
 options = optimoptions('quadprog', 'Display', 'none');
-x = quadprog(qp.Q, qp.f, qp.A, qp.b, qp.Aeq, qp.beq, [], [], [],options);
+[x,~,EXITFLAG] = quadprog(qp.Q, qp.f, qp.A, qp.b, qp.Aeq, qp.beq, [], [], [],options);
 
-eta_af = x(n_free + n_dual_free + 1:end);
+
+if EXITFLAG == 1
+    eta_af = x(n_free + n_dual_free + 1:end);
+    action.eta_af = eta_af;
+end
 
 action.n_av = n_av;
 action.n_af = n_af;
 action.R_a = R_a;
-action.eta_af = eta_af;
 action.w_av = w_av;
 action.C = C;
 action.b_C = b_C;
+action.qpflag = EXITFLAG;
 
 time.velocity = time_velocity;
 time.force = toc;
