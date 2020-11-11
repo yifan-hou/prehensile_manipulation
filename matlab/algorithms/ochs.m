@@ -75,15 +75,14 @@ U_bar = U*M;
 % end
 
 %% null space hfvc
-R_f = null(U_bar)';
-R_v = null(R_f)';
-n_av_max  = size(R_v,1);
+U_bar_n = orth(U_bar')';
+n_av_max  = size(U_bar_n,1);
 
 JG = [J; G];
 b_JG = [zeros(size(J,1), 1); b_G];
 null_JG = null(JG);
 rank_JG = n - size(null_JG,2);
-if rank_JG - rankJ > n_av_max
+if rank_JG - rank_J > n_av_max
     % infeasible problem: goal cannot be satisfied
     return;
 end
@@ -91,24 +90,37 @@ end
 % todo: what if rank_JG - rankJ = 0?
 % may be redundant with other feasibility conditions
 
-n_av = 0;
-if rank_JG - rankJ == n_av_max
+if rank_JG - rank_J == n_av_max
     % we have to use all free dof for velocity control
     n_av = n_av_max;
+    C_bar = U_bar_n;
 else
     % We don't need to use up free space for velocity control
-    n_av = rank_JG - rankJ;
-    null_JG
+    n_av = rank_JG - rank_J;
+    K = ([zeros(n_av_max, n_u) U_bar_n] * null_JG)';
+    k = null(K);
+    if (size(k,2) < n_av)
+        % no solution. Can not achieve the goal
+        return;
+    end
+    C_bar = k(:, 1:n_av)'* U_bar_n;
+    
+%     C_ = (U'*U*orth(G'))';
+%     n_av = size(C_,1);
+%     C_bar = C_(:, n_u+1:end);
+%     
+%     if norm(C_bar) < 1e-9
+%         return;
+%     end
 end
 
+
 n_af  = n_a - n_av;
-
-
-R_a = [R_f; R_v];
+R_a = [null(C_bar)'; C_bar];
 T = blkdiag(eye(n_u), R_a);
-C = [zeros(n_av, n_u) R_v];
 
 % solve for b_C
+C = [zeros(n_av, n_u) C_bar];
 JC = [J; C];
 JCG = [JC; G];
 
@@ -116,7 +128,6 @@ if rank(JC) < rank(JCG)
     % infeasible goal
     return;
 end
-
 
 % if rank([JG b_JG]) > rank(JG)
 %     % infeasible problem
