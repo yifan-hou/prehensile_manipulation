@@ -1,27 +1,15 @@
 function [N_e, T_e, N_h, T_h, eCone_allFix, eTCone_allFix, hCone_allFix, hTCone_allFix, F_G] = preProcessing(...
-        kFrictionE, kFrictionH, kNumSlidingPlanes, kObjWeight, CP_W_e, CN_W_e, CP_H_h, ...
-        CN_H_h, R_WH, p_WH, CP_W_G)
+        kFrictionE, kFrictionH, kNumSlidingPlanes, kObjWeight, CP_H_e, CN_H_e, CP_H_h, ...
+        CN_H_h, R_WH, p_WH, CP_H_G, z_H)
 
-R_HW = R_WH';
-p_HW = -R_HW*p_WH;
-if size(R_HW, 1) == 2
-    adj_HW = SE22Adj(R_HW, p_HW);
-    adj_WH = SE22Adj(R_WH, p_WH);
-else
-    adj_HW = SE32Adj(R_HW, p_HW);
-    adj_WH = SE32Adj(R_WH, p_WH);
-end
-
-[N_e, T_e, N_h, T_h, eCone_allFix, eTCone_allFix, hCone_allFix, hTCone_allFix] = getWholeJacobian(CP_W_e, CN_W_e, ...
-        CP_H_h, CN_H_h, adj_WH, adj_HW, kNumSlidingPlanes, kFrictionE, kFrictionH);
+[N_e, T_e, eCone_allFix, eTCone_allFix] = getWholeJacobian_simple(CP_H_e, CN_H_e, kNumSlidingPlanes, kFrictionE);
+[N_h, T_h, hCone_allFix, hTCone_allFix] = getWholeJacobian_simple(CP_H_h, CN_H_h, kNumSlidingPlanes, kFrictionH);
 
 % gravity
 if (kNumSlidingPlanes == 1)
-    z = [0 -1]';
-    W_G = [z; cross2(CP_W_G', z')];
+    H_G = [z_H; cross2(CP_H_G', z_H')];
 else
-    z = [0 0 -1]';
-    W_G = [z; cross(CP_W_G, z)];
+    H_G = [z_H; cross(CP_H_G, z_H)];
 end
-F_G = kObjWeight*(W_G')*adj_WH;
+F_G = kObjWeight*(H_G');
 F_G = F_G'; % reshape to column vector
