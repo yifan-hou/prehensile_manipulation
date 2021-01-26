@@ -1,4 +1,15 @@
+getJacobian
+    computing CT may not be necessary. SP is already what I want
+
 change scripts according to new preprocessing.
     no eTcone, hTcone
     CP_W -> CP_H
     z_H
+
+finish cpp version of jacobian computation
+
+
+-1, -1, 1, 1"
+iterative inscribed sphere: every iteration, check distance to previous solution centers
+clean up modes
+

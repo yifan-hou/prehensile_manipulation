@@ -1322,6 +1322,12 @@ MatrixXd WrenchSpaceAnalysis::getConeOfTheMode(const MatrixXd &cone_allFix,
       // record all 2*kNumSlidingPlanes generators
       generators_add = cone_allFix.middleRows(id_start, 2*kNumSlidingPlanes);
     } else if (sss_mode[i] == 0) {
+      /**
+       * Note: the generators for sliding direction are determined in other part
+       * of the ws algorithm. This function should return no sliding friction
+       * generators.
+       */
+
       // // find two corresponding generators
       // std::vector<double> v;
       // v.resize(2*6);

@@ -26,11 +26,11 @@ kW = 0.0435 # object width
 kH = 0.0435 # object height
 
 # list of contact points and contact normals
-p_W_e = np.array(([kW/2, kW/2, 0],
-                  [kW/2, -kW/2, 0],
-                  [-kW/2, kW/2, 0],
-                  [-kW/2, -kW/2, 0])).T
-n_W_e = np.array(([0, 0, 1],
+p_H_e = np.array(([kW/2, kW/2, -kH],
+                  [kW/2, -kW/2, -kH],
+                  [-kW/2, kW/2, -kH],
+                  [-kW/2, -kW/2, -kH])).T
+n_H_e = np.array(([0, 0, 1],
                   [0, 0, 1],
                   [0, 0, 1],
                   [0, 0, 1])).T
@@ -43,14 +43,10 @@ n_H_h = np.array(([0, 0, -1],
                   [0, 0, -1],
                   [0, 0, -1])).T
 
-CP_W_G = np.array([0, 0, kH/2]);
-CP_W_G = CP_W_G[:, newaxis]
-
-R_WH = np.eye(3)
-p_WH = np.array(([0, 0, kH]))
-p_WH = p_WH[:, newaxis]
-
-
+CP_H_G = np.array([0, 0, kH/2]);
+CP_H_G = CP_H_G[:, newaxis]
+z_H = np.array([0, 0, -1]);
+z_H = z_H[:, newaxis]
 
 ##
 ## Geometrical Pre-processing
@@ -61,13 +57,13 @@ jacs = eng.preProcessing(matlab.double([kFrictionE]),
         matlab.double([kFrictionH]),
         matlab.double([kNumSlidingPlanes]),
         matlab.double([kObjWeight]),
-        matlab.double(p_W_e.tolist()),
-        matlab.double(n_W_e.tolist()),
+        matlab.double(p_H_e.tolist()),
+        matlab.double(n_H_e.tolist()),
         matlab.double(p_H_h.tolist()),
         matlab.double(n_H_h.tolist()),
-        matlab.double(R_WH.tolist()),
-        matlab.double(p_WH.tolist()),
-        matlab.double(CP_W_G.tolist()), nargout=9)
+        matlab.double(CP_H_G.tolist()),
+        matlab.double(z_H.tolist()),
+        nargout=7)
 # print('jacs:')
 # print(np.array(jacs))
 
@@ -77,22 +73,18 @@ T_e = np.asarray(jacs[1])
 N_h = np.asarray(jacs[2])
 T_h = np.asarray(jacs[3])
 eCone_allFix = np.asarray(jacs[4])
-eTCone_allFix = np.asarray(jacs[5])
-hCone_allFix = np.asarray(jacs[6])
-hTCone_allFix = np.asarray(jacs[7])
-F_G = np.asarray(jacs[8])
+hCone_allFix = np.asarray(jacs[5])
+F_G = np.asarray(jacs[6])
 
 b_e = np.zeros((N_e.shape[0], 1))
-t_e = np.zeros((eTCone_allFix.shape[0], 1))
-b_h = np.zeros((N_h.shape[0], 1))
-t_h = np.zeros((hTCone_allFix.shape[0], 1))
+t_e = np.zeros((T_e.shape[0], 1))
 
 J_e = np.vstack((N_e, T_e))
 J_h = np.vstack((N_h, T_h))
 
 e_modes, cs_lattice, info = cm.enum_sliding_sticking_3d_proj(N_e, b_e, T_e, t_e)
 # divide into cs modes and sliding modes
-kNumContactsE = p_W_e.shape[1];
+kNumContactsE = p_H_e.shape[1];
 e_cs_modes = np.zeros((len(e_modes), kNumContactsE));
 e_ss_modes = [0]*len(e_modes);
 for i in range(len(e_modes)):

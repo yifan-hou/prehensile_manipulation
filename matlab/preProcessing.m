@@ -1,9 +1,9 @@
-function [N_e, T_e, N_h, T_h, eCone_allFix, eTCone_allFix, hCone_allFix, hTCone_allFix, F_G] = preProcessing(...
+function [N_e, T_e, N_h, T_h, eCone_allFix, hCone_allFix, F_G] = preProcessing(...
         kFrictionE, kFrictionH, kNumSlidingPlanes, kObjWeight, CP_H_e, CN_H_e, CP_H_h, ...
-        CN_H_h, R_WH, p_WH, CP_H_G, z_H)
+        CN_H_h, CP_H_G, z_H)
 
-[N_e, T_e, eCone_allFix, eTCone_allFix] = getWholeJacobian_simple(CP_H_e, CN_H_e, kNumSlidingPlanes, kFrictionE);
-[N_h, T_h, hCone_allFix, hTCone_allFix] = getWholeJacobian_simple(CP_H_h, CN_H_h, kNumSlidingPlanes, kFrictionH);
+[N_e, T_e, eCone_allFix] = getWholeJacobian_simple(CP_H_e, CN_H_e, kNumSlidingPlanes, kFrictionE);
+[N_h, T_h, hCone_allFix] = getWholeJacobian_simple(CP_H_h, CN_H_h, kNumSlidingPlanes, kFrictionH);
 
 % gravity
 if (kNumSlidingPlanes == 1)

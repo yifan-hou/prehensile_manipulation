@@ -49,6 +49,8 @@ add_library(hfvc SHARED src/solvehfvc.cpp)
 add_library(polylib SHARED src/polyhedron.cpp)
 target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${GLPKLIB} ${RobotUtilLib})
 
+add_library(jacobianlib SHARED src/shared_grasping_jacobian.cpp)
+
 add_library(sharedgraspinglib SHARED src/wrench_space_analysis.cpp)
 target_link_libraries(sharedgraspinglib polylib timer hfvc ${RobotUtilLib}
 	${YAML_LIBRARY})
@@ -74,6 +76,9 @@ target_link_libraries(ppltest ${PPLLIB} ${GMPLIB})
 
 add_executable(lptest src/lp.cpp)
 target_link_libraries(lptest ${GLPKLIB})
+
+add_executable(sharedGraspingCpptest src/test_wrenchstamping.cpp)
+target_link_libraries(sharedGraspingCpptest jacobianlib)
 
 
 # # for debug

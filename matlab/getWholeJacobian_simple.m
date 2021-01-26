@@ -91,13 +91,11 @@ if kDim == 3
 end
 
 if kDim == 3
-%     vr = rand(3, 1);
-    vr = [0.1 -0.5 0.9]';
+    vr = rand(3, 1);
     vr = vr/norm(vr);
 else
     vr = z;
 end
-
 
 mu_norm = sqrt(1 + kFriction^2);
 for i = 1:kNumContacts

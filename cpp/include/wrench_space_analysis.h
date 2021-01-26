@@ -94,8 +94,6 @@ private:
 
     // sss mode:  -1: sticking   0: sliding   1: separation
     // return: each row is a generator
-    // Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
-    //     const Eigen::VectorXi &sss_mode, const Eigen::VectorXi &s_mode, int kNumSlidingPlanes);
     Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
         const Eigen::VectorXi &sss_mode, int kNumSlidingPlanes);
 

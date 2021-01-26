@@ -24,7 +24,7 @@ kW = 0.0435; % object width
 kH = 0.0435; % object height
 
 % center of gravity
-p_W_G = [0; kH/2];
+p_W_G = [0; -kH/2];
 % list of contact points and contact normals
 p_W_e1 = [kW/2; 0];
 p_W_e2 = [-kW/2; 0];
@@ -48,14 +48,15 @@ angle = 0; % deg
 R_WH = rotz(angle);
 R_WH = R_WH(1:2, 1:2);
 angle_rad = angle*pi/180;
-p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad)]/2 + kH*[-sin(angle_rad); cos(angle_rad)];
+% p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad)]/2 + kH*[-sin(angle_rad); cos(angle_rad)];
+p_WH = [0; -kH/2];
 
 %%
 %% Geometrical Pre-processing
 %%
 kNumSlidingPlanes = 1; % for 2D problem
-[J_e, T_e, J_h, T_h, eCone_allFix,eTCone_allFix, hCone_allFix, hTCone_allFix, F_G] = preProcessing(...
-        kFrictionE, kFrictionH, kNumSlidingPlanes, kObjWeight, CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH,p_W_G);
+[J_e, T_e, J_h, T_h, eCone_allFix, hCone_allFix, F_G] = preProcessing(...
+        kFrictionE, kFrictionH, kNumSlidingPlanes, kObjWeight, CP_W_e, CN_W_e, CP_H_h, CN_H_h, p_WH,p_W_G);
 
 % mode enumeration
 [e_modes, h_modes] = sharedGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h);
