@@ -72,7 +72,8 @@ public:
     //  A, b: additional force constraint
     //  G, b_G: goal velocity description
     //  e_mode_goal, h_mode_goal: a particular goal mode
-    void wrenchStamping(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
+    //  return: <Geometrical stability margin, control stability margin>
+    std::pair<double, double> wrenchStamping(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
         Eigen::MatrixXd eCone_allFix, Eigen::MatrixXd hCone_allFix,
         Eigen::VectorXd F_G,
         const double kContactForce, const double kFrictionE, const double kFrictionH,

@@ -20,7 +20,8 @@ find_package(pybind11 REQUIRED)
 find_library(PPLLIB ppl REQUIRED)
 find_library(GMPLIB gmp REQUIRED)
 find_library(GLPKLIB glpk REQUIRED)
-
+find_package(modus REQUIRED)
+find_package(ortools CONFIG REQUIRED)
 
 # qhull
 SET(qhullDir /home/yifan/Git/qhull)
@@ -78,7 +79,11 @@ add_executable(lptest src/lp.cpp)
 target_link_libraries(lptest ${GLPKLIB})
 
 add_executable(sharedGraspingCpptest src/test_wrenchstamping.cpp)
-target_link_libraries(sharedGraspingCpptest jacobianlib)
+target_link_libraries(sharedGraspingCpptest
+	jacobianlib
+	sharedgraspinglib
+	modus
+	ortools::ortools)
 
 
 # # for debug
