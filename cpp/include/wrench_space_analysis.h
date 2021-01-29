@@ -89,6 +89,47 @@ public:
         const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
         HFVC *action);
 
+    void updateConstants(
+        double kFrictionE, double kFrictionH, double kNumSlidingPlanes,
+        double kContactForce, double kObjWeight, double kCharacteristicLength);
+
+    /**
+     * @brief      { function_description }
+     *
+     * @param[in]  kNumEContacts  The k number e contacts
+     * @param[in]  kNumHContacts  The k number h contacts
+     * @param[in]  CP_H_e         3 x n
+     * @param[in]  CN_H_e         3 x n
+     * @param[in]  CP_H_h         3 x n
+     * @param[in]  CN_H_h         3 x n
+     * @param[in]  CP_H_G         The cp h g
+     * @param[in]  v_HG           The v hg
+     */
+    void updateContactGeometry(int kNumEContacts, int kNumHContacts,
+        const Eigen::MatrixXd &CP_H_e, const Eigen::MatrixXd &CN_H_e,
+        const Eigen::MatrixXd &CP_H_h, const Eigen::MatrixXd &CN_H_h,
+        const Eigen::VectorXd &CP_H_G, const Eigen::VectorXd &v_HG);
+
+    void updateContactModes();
+
+    std::pair<double, double> wrenchStampingWrapper(const Eigen::MatrixXd &G, const Eigen::VectorXd &b_G,
+      const Eigen::MatrixXi &e_cs_modes_goal,
+      const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+      const Eigen::MatrixXi &h_cs_modes_goal,
+      const std::vector<Eigen::MatrixXi> &h_ss_modes_goal);
+
+    std::pair<double, double> computeStabilityMargin(
+      double kFrictionE, double kFrictionH, double kNumSlidingPlanes,
+      double kContactForce, double kObjWeight, double kCharacteristicLength,
+      int kNumEContacts, int kNumHContacts,
+      const Eigen::MatrixXd &CP_H_e, const Eigen::MatrixXd &CN_H_e,
+      const Eigen::MatrixXd &CP_H_h, const Eigen::MatrixXd &CN_H_h,
+      const Eigen::VectorXd &CP_H_G, const Eigen::VectorXd &v_HG,
+      const Eigen::MatrixXd &G, const Eigen::VectorXd &b_G,
+      const Eigen::MatrixXi &e_cs_modes_goal,
+      const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+      const Eigen::MatrixXi &h_cs_modes_goal,
+      const std::vector<Eigen::MatrixXi> &h_ss_modes_goal);
 private:
     bool modeCleaning(const Eigen::MatrixXi &cs_modes, const std::vector<Eigen::MatrixXi> &ss_modes, int kNumSlidingPlanes,
         Eigen::MatrixXi *sss_modes, std::vector<Eigen::MatrixXi> *s_modes);
@@ -150,7 +191,7 @@ private:
         Eigen::VectorXd *wrench_best);
 
     /**
-     * Parameters
+     * Algorithm Parameters
      */
     int print_level_;
     std::vector<int> num_seeds_;
@@ -160,4 +201,30 @@ private:
     std::vector<int> ransac_num_;
     std::vector<int> opt_ins_num_iter_;
     double opt_min_dist_improvement_;
+
+    /**
+     * Problem description parameters
+     */
+    double kFrictionE_;
+    double kFrictionH_;
+    double kNumSlidingPlanes_;
+    double kContactForce_;
+    double kObjWeight_;
+    double kCharacteristicLength_;
+
+    /**
+     * Geometrical information parameters
+     */
+    int kNumEContacts_;
+    int kNumHContacts_;
+
+    Eigen::MatrixXd N_e_, T_e_, N_h_, T_h_;
+    Eigen::MatrixXd eCone_allFix_, hCone_allFix_;
+    Eigen::VectorXd F_G_;
+
+    /**
+     * Contact modes
+     */
+    Eigen::MatrixXi e_cs_modes_, h_cs_modes_;
+    std::vector<Eigen::MatrixXi> e_ss_modes_, h_ss_modes_;
 };

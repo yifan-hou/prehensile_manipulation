@@ -7,9 +7,12 @@
 #include <timer.h>
 
 #include <RobotUtilities/utilities.h>
+#include <modus/enumerate_modes.hpp>
 #include <yaml-cpp/yaml.h>
 
+#include "shared_grasping_jacobian.h"
 #include "polyhedron.h"
+
 
 Eigen::IOFormat MatlabFmt(Eigen::StreamPrecision, 0, ", ", ";\n", "", "", "[",
       "]");
@@ -1214,6 +1217,162 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
   }
   return {-1, -1};
 }
+
+void WrenchSpaceAnalysis::updateConstants(
+    double kFrictionE, double kFrictionH, double kNumSlidingPlanes,
+    double kContactForce, double kObjWeight, double kCharacteristicLength) {
+  // contact-agnostic parameters
+  kFrictionE_ = kFrictionE;
+  kFrictionH_ = kFrictionH;
+  kNumSlidingPlanes_ = kNumSlidingPlanes;
+  kContactForce_ = kContactForce;
+  kObjWeight_ = kObjWeight;
+  kCharacteristicLength_ = kCharacteristicLength;
+}
+
+void WrenchSpaceAnalysis::updateContactGeometry(
+    int kNumEContacts, int kNumHContacts,
+    const MatrixXd &CP_H_e, const MatrixXd &CN_H_e,
+    const MatrixXd &CP_H_h, const MatrixXd &CN_H_h,
+    const VectorXd &CP_H_G, const VectorXd &v_HG) {
+  kNumEContacts_ = kNumEContacts;
+  kNumHContacts_ = kNumHContacts;
+
+  /**
+   * Geometrical processing
+   */
+  sharedGraspingGeometryProcessing3d(kFrictionE_, kFrictionH_,
+      kNumSlidingPlanes_, CP_H_e, CN_H_e, CP_H_h, CN_H_h, N_e_, T_e_, N_h_, T_h_,
+      eCone_allFix_, hCone_allFix_);
+
+  F_G_ = getGravityVector3d(kObjWeight_, CP_H_G, v_HG);
+}
+
+void WrenchSpaceAnalysis::updateContactModes() {
+  /**
+   * Contact mode enumeration
+   */
+  VectorXd b_e = VectorXd::Zero(N_e_.rows());
+  IncidenceGraph* cs_graph = enumerate_cs_modes(N_e_, b_e, 1e-8);
+  std::vector<std::string> svs = cs_graph->get_proper_sign_vectors();
+  e_cs_modes_ = MatrixXi::Zero(svs.size(), kNumEContacts_);
+  int ss_modes_count = 0, cs_modes_count = 0;
+  e_ss_modes_.resize(svs.size());
+  for (int k = cs_graph->rank() - 1; k >= 0; k--) {
+    for (Node* u : cs_graph->rank(k)) {
+      // get cs modes
+      ModeEnumerationOptions opt;
+      opt.interior_point = u->interior_point;
+      std::string sv = get_sign_vector(N_e_ * u->interior_point - b_e, 1e-8);
+      assert(kNumEContacts_ == sv.length());
+      if (print_level_ > 0)
+        std::cout << "cs sign " << sv << std::endl;
+
+      // decode cs modes
+      for (int j = 0; j < kNumEContacts_; ++j) {
+        if (sv[j] == '0')
+          e_cs_modes_(cs_modes_count, j) = 0;
+        else
+          e_cs_modes_(cs_modes_count, j) = 1;
+      }
+
+      // get ss modes
+      IncidenceGraph* ss_graph =
+          enumerate_ss_modes(N_e_, b_e, T_e_, u->sign_vector, 1e-8, &opt);
+
+      auto ss_modes = ss_graph->get_sign_vectors(u->sign_vector);
+      if (print_level_ > 0)
+        std::cout << "ss count: " << ss_modes.size() << std::endl;
+      MatrixXi e_ss_mode = MatrixXi::Zero(ss_modes.size(), kNumEContacts_*kNumSlidingPlanes_);
+      for (int ss_id = 0; ss_id < ss_modes.size(); ss_id++) {
+        std::string ss = ss_modes[ss_id];
+        if (print_level_ > 1)
+          std::cout << ss << std::endl;
+        int sliding_count = 0;
+        for (int j = 0; j < kNumEContacts_; ++j) {
+          if (sv[j] == '0') {
+            for (int jj = 0; jj < kNumSlidingPlanes_; ++jj) {
+              // std::cout << "ss[" << kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj << "] = " << ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] << std::endl;
+              if (ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] == '+')
+                e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = 1;
+              else if (ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] == '-')
+                e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = -1;
+              else
+                e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = 0;
+            }
+            sliding_count++;
+          }
+        }
+      }
+      // std::cout << "e_ss_mode: \n" << e_ss_mode << std::endl;
+      std::cout << std::endl;
+      e_ss_modes_[cs_modes_count] = e_ss_mode;
+
+      ss_modes_count += ss_modes.size();
+      delete ss_graph;
+
+      if (u->sign_vector == "00-------0-0") {
+          int*a = nullptr;
+          std::cout << *a << std::endl;
+      }
+      cs_modes_count ++;
+    }
+  }
+  delete cs_graph;
+
+  h_cs_modes_ = MatrixXi::Zero(1, kNumHContacts_);
+  h_ss_modes_.resize(1);
+  h_ss_modes_[0] = MatrixXi::Zero(1, kNumHContacts_*kNumSlidingPlanes_);
+}
+
+std::pair<double, double> WrenchSpaceAnalysis::wrenchStampingWrapper(
+  const MatrixXd &G, const VectorXd &b_G,
+  const Eigen::MatrixXi &e_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+  const Eigen::MatrixXi &h_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &h_ss_modes_goal) {
+  MatrixXd J_e(N_e_.rows() + T_e_.rows(), N_e_.cols());
+  J_e << N_e_, T_e_;
+  MatrixXd J_h(N_h_.rows() + T_h_.rows(), N_h_.cols());
+  J_h << N_h_, T_h_;
+
+  HFVC action;
+  return wrenchStamping(
+      J_e, J_h, eCone_allFix_, hCone_allFix_, F_G_, kContactForce_,
+      kFrictionE_, kFrictionH_, kCharacteristicLength_, kNumSlidingPlanes_,
+      e_cs_modes_, e_ss_modes_, h_cs_modes_, h_ss_modes_,
+      G, b_G, e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal,
+      &action);
+}
+
+std::pair<double, double> WrenchSpaceAnalysis::computeStabilityMargin(
+  double kFrictionE, double kFrictionH, double kNumSlidingPlanes,
+  double kContactForce, double kObjWeight, double kCharacteristicLength,
+  int kNumEContacts, int kNumHContacts,
+  const MatrixXd &CP_H_e, const MatrixXd &CN_H_e,
+  const MatrixXd &CP_H_h, const MatrixXd &CN_H_h,
+  const VectorXd &CP_H_G, const VectorXd &v_HG,
+  const MatrixXd &G, const VectorXd &b_G,
+  const Eigen::MatrixXi &e_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+  const Eigen::MatrixXi &h_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &h_ss_modes_goal) {
+
+  updateConstants(kFrictionE, kFrictionH, kNumSlidingPlanes,
+    kContactForce, kObjWeight, kCharacteristicLength);
+
+  updateContactGeometry(kNumEContacts, kNumHContacts, CP_H_e, CN_H_e, CP_H_h,
+      CN_H_h, CP_H_G, v_HG);
+
+  updateContactModes();
+
+  /**
+   * Wrench stamping
+   */
+  return WrenchSpaceAnalysis::wrenchStampingWrapper(
+    G, b_G, e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal);
+}
+
 
 bool WrenchSpaceAnalysis::modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes,
     MatrixXi *sss_modes, std::vector<MatrixXi> *s_modes) {

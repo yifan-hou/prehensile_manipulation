@@ -5,6 +5,9 @@ wrenchstamping
     ss mode is not necessary. Input SSS mode directly.
     Goal ss mode is not necessary.
 
+clean up files under cpp/src
+clean up files under matlab
+
 -1, -1, 1, 1"
 iterative inscribed sphere: every iteration, check distance to previous solution centers
 clean up modes
