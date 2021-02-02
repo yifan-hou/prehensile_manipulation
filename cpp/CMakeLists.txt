@@ -20,6 +20,8 @@ find_package(pybind11 REQUIRED)
 find_library(PPLLIB ppl REQUIRED)
 find_library(GMPLIB gmp REQUIRED)
 find_library(GLPKLIB glpk REQUIRED)
+
+# contact mode enumeration
 find_package(modus REQUIRED)
 find_package(ortools CONFIG REQUIRED)
 
@@ -86,7 +88,13 @@ target_link_libraries(sharedGraspingCpptest
 	ortools::ortools)
 
 
-# # for debug
-# find_library(libcnpy cnpy HINTS /usr/local/lib)
-# add_executable(exam src/exam.cpp)
-# target_link_libraries(exam sharedgraspinglib ${libcnpy})
+#############
+## Install ##
+#############
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/include/
+    )
+
+install(TARGETS jacobianlib sharedgraspinglib
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}
+    )
