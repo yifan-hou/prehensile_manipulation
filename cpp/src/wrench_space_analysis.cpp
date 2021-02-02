@@ -1248,7 +1248,7 @@ void WrenchSpaceAnalysis::updateContactGeometry(
   F_G_ = getGravityVector3d(kObjWeight_, CP_H_G, v_HG);
 }
 
-void WrenchSpaceAnalysis::updateContactModes() {
+void WrenchSpaceAnalysis::computeContactModes() {
   /**
    * Contact mode enumeration
    */
@@ -1364,7 +1364,7 @@ std::pair<double, double> WrenchSpaceAnalysis::computeStabilityMargin(
   updateContactGeometry(kNumEContacts, kNumHContacts, CP_H_e, CN_H_e, CP_H_h,
       CN_H_h, CP_H_G, v_HG);
 
-  updateContactModes();
+  computeContactModes();
 
   /**
    * Wrench stamping

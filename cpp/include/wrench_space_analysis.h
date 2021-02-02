@@ -110,7 +110,7 @@ public:
         const Eigen::MatrixXd &CP_H_h, const Eigen::MatrixXd &CN_H_h,
         const Eigen::VectorXd &CP_H_G, const Eigen::VectorXd &v_HG);
 
-    void updateContactModes();
+    void computeContactModes();
 
     std::pair<double, double> wrenchStampingWrapper(const Eigen::MatrixXd &G, const Eigen::VectorXd &b_G,
       const Eigen::MatrixXi &e_cs_modes_goal,
