@@ -145,8 +145,9 @@ int test3d() {
 
   wsa.computeContactModes();
 
+  HFVC action;
   auto [g_margin, c_margin] = wsa.wrenchStampingWrapper(G, b_G,
-    e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal);
+    e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal, action);
 
   std::cout << "Geometrical stability margin: " << g_margin << std::endl;
   std::cout << "Control stability margin: " << c_margin << std::endl;

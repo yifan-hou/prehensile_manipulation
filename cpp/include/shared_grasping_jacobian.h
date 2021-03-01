@@ -1,3 +1,26 @@
+/*
+ *  Newton's Law:
+ *      J_e'*tau_e - J_h'*tau_h = f_HO
+ * Define J = [J_e, 0; -J_h, J_h]: 1 normal, kNumSlidingPlanes tangential; used by contact mode enumeration
+ * where: J_e = [N_e; T_e]
+ *        J_h = [N_h; T_h]   N: normal, T: tangential (XY for 3D, left for 2D)
+ * Each contact contributes 1 normal, 2 (1 for planar problem) tangential constraints.
+ * eCone, hCone: each row is a wrench space generator created by an edge of a friction cone.
+ *   3D: Each contact contributes 2d + 1 edges; the last one is a copy of the first one
+ *   2D: Each contact contributes 2 edges (left, right)
+ * If planar, kNumSlidingPlanes must = 1, the computation puts everything on XY plane
+ *
+ * Left/right convention in 2d:
+ *    Object motion w.r.t. the environment
+ *
+ *    cone edge 1,      cone edge 2
+ *         -----\-------/------
+ *         |     \  N  /      |
+ *         |      \ ^ /       |
+ * T_e <---|       \|/        | ---> right sliding
+ *     =============|==================
+ *
+ */
 #include <vector>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -69,10 +92,21 @@ void getJacobian2d(double kFriction,
  * @param[in]  CP                 3 x n
  * @param[in]  CN                 3 x n
  * @param      N                  n x 6, each row is a wrench
- * @param      T                  n x 6, each row is a wrench
+ * @param      T                  2n x 6, each row is a wrench
  * @param      Cone               2*kNumSlidingPlanes*n x 3, each row is a
  *                                wrench
  */
 void getJacobian3d(double kFriction, int kNumSlidingPlanes,
     const MatrixXd &CP, const MatrixXd &CN,
     MatrixXd &N, MatrixXd &T, MatrixXd &Cone);
+
+/**
+ * @brief      A simpler interface. Not considering friction
+ *
+ * @param[in]  CP    { parameter_description }
+ * @param[in]  CN    { parameter_description }
+ * @param      N     { parameter_description }
+ * @param      T     { parameter_description }
+ */
+void getJacobian3d(const MatrixXd &CP, const MatrixXd &CN, MatrixXd &N,
+    MatrixXd &T);

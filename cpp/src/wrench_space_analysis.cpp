@@ -562,6 +562,8 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
   // std::cout << "b_G: " << b_G.size() << std::endl;
   // std::cout << "e_cs_modes_goal: " << e_cs_modes_goal.size() << std::endl;
   // std::cout << "h_cs_modes_goal: " << h_cs_modes_goal.size() << std::endl;
+  // std::cout << "Jac_e:\n" << Jac_e << std::endl;
+  // std::cout << "Jac_h:\n" << Jac_h << std::endl;
   // std::cout << "G:\n" << G << std::endl;
   // std::cout << "b_G:\n" << b_G << std::endl;
   // std::cout << "eCone_allFix_r:\n" << eCone_allFix_r << std::endl;
@@ -767,10 +769,12 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
       VectorXd xs = VectorXd::Zero(A_V_cone.cols());
       bool is_feasible = Poly::lpfeasibility(A_AF_V, VectorXd::Zero(A_AF_V.rows()), &xs);
       if (is_feasible && xs.norm() > TOL) {
-        std::cout << "[WrenchStamping]    Crashing." << std::endl;
+        if (print_level_ > 0)
+          std::cout << "[WrenchStamping]    Crashing." << std::endl;
         continue;
       } else {
-        std::cout << "  No crashing." << std::endl;
+        if (print_level_ > 0)
+          std::cout << "  No crashing." << std::endl;
       }
 
       /**
@@ -916,8 +920,9 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
             }
             if ((print_level_ > 0) && (contact_ids.size() == 0)) {
               std::cout << "0 ";
-              std::cout << std::endl;
             }
+            if (print_level_ > 0)
+              std::cout << std::endl;
             // sample velocities
             //  1. no sliding: g_sampled = empty.
             //  2. has sliding:
@@ -998,7 +1003,7 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
       /*******************************************************************
        *      Second half: Force Filtering
        */
-      // projection cones of the modes onto force-controlled subspace
+      // project cones of the modes onto force-controlled subspace
       if (print_level_ > 0)
         std::cout << "[WrenchStamping] 3. Compute force control and control-stability-margin." << std::endl;
       std::vector<MatrixXd> pps_A; // polyhedra projections, A x <= b
@@ -1040,10 +1045,14 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
           std::cout << "BUG: polyhedron computation return false." << std::endl;
           exit(-1);
         }
-
+        // Ax <= b
+        // origin must be in the polyhedra, so 0 <= b
         if (b_cl.minCoeff() <= 1e-5 ) {
           if (print_level_ > 0) std::cout << " F-Infeasible." << std::endl;
-          assert(c != goal_id);
+          if (c == goal_id) {
+            if (print_level_ > 0) std::cout << " Goal mode is F-Infeasible." << std::endl;
+            return {-1, -1};
+          }
           continue;
         }
         // The polyhedron contains the origin.
@@ -1215,7 +1224,7 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
       return {geometrical_stability_margin, control_stability_margin};
     }
   }
-  return {-1, -1};
+  return {-2, -2};
 }
 
 void WrenchSpaceAnalysis::updateConstants(
@@ -1252,73 +1261,89 @@ void WrenchSpaceAnalysis::computeContactModes() {
   /**
    * Contact mode enumeration
    */
-  VectorXd b_e = VectorXd::Zero(N_e_.rows());
-  IncidenceGraph* cs_graph = enumerate_cs_modes(N_e_, b_e, 1e-8);
-  std::vector<std::string> svs = cs_graph->get_proper_sign_vectors();
-  e_cs_modes_ = MatrixXi::Zero(svs.size(), kNumEContacts_);
-  int ss_modes_count = 0, cs_modes_count = 0;
-  e_ss_modes_.resize(svs.size());
-  for (int k = cs_graph->rank() - 1; k >= 0; k--) {
-    for (Node* u : cs_graph->rank(k)) {
-      // get cs modes
-      ModeEnumerationOptions opt;
-      opt.interior_point = u->interior_point;
-      std::string sv = get_sign_vector(N_e_ * u->interior_point - b_e, 1e-8);
-      assert(kNumEContacts_ == sv.length());
-      if (print_level_ > 0)
-        std::cout << "cs sign " << sv << std::endl;
+  assert(kNumEContacts_ >= 1);
+  if (kNumEContacts_ == 1) {
+    e_cs_modes_ = MatrixXi::Zero(2, kNumEContacts_);
+    e_cs_modes_(0,0) = 0;
+    e_cs_modes_(1,0) = 1;
+    e_ss_modes_.resize(2);
+    e_ss_modes_[0] = MatrixXi::Zero(5, kNumEContacts_*kNumSlidingPlanes_);
+    e_ss_modes_[0] << 0, 0,
+                      -1, 1,
+                      1, -1,
+                      1, 1,
+                      -1, -1;
+    e_ss_modes_[1] = MatrixXi::Zero(1, kNumEContacts_*kNumSlidingPlanes_);
+    e_ss_modes_[1] << 0, 0;
+  } else {
+    VectorXd b_e = VectorXd::Zero(N_e_.rows());
+    IncidenceGraph* cs_graph = enumerate_cs_modes(N_e_, b_e, 1e-8);
+    std::vector<std::string> svs = cs_graph->get_proper_sign_vectors();
+    e_cs_modes_ = MatrixXi::Zero(svs.size(), kNumEContacts_);
+    int ss_modes_count = 0, cs_modes_count = 0;
+    e_ss_modes_.resize(svs.size());
+    for (int k = cs_graph->rank() - 1; k >= 0; k--) {
+      for (Node* u : cs_graph->rank(k)) {
+        // get cs modes
+        ModeEnumerationOptions opt;
+        opt.interior_point = u->interior_point;
+        std::string sv = get_sign_vector(N_e_ * u->interior_point - b_e, 1e-8);
+        assert(kNumEContacts_ == sv.length());
+        if (print_level_ > 0)
+          std::cout << "cs sign " << sv << std::endl;
 
-      // decode cs modes
-      for (int j = 0; j < kNumEContacts_; ++j) {
-        if (sv[j] == '0')
-          e_cs_modes_(cs_modes_count, j) = 0;
-        else
-          e_cs_modes_(cs_modes_count, j) = 1;
-      }
-
-      // get ss modes
-      IncidenceGraph* ss_graph =
-          enumerate_ss_modes(N_e_, b_e, T_e_, u->sign_vector, 1e-8, &opt);
-
-      auto ss_modes = ss_graph->get_sign_vectors(u->sign_vector);
-      if (print_level_ > 0)
-        std::cout << "ss count: " << ss_modes.size() << std::endl;
-      MatrixXi e_ss_mode = MatrixXi::Zero(ss_modes.size(), kNumEContacts_*kNumSlidingPlanes_);
-      for (int ss_id = 0; ss_id < ss_modes.size(); ss_id++) {
-        std::string ss = ss_modes[ss_id];
-        if (print_level_ > 1)
-          std::cout << ss << std::endl;
-        int sliding_count = 0;
+        // decode cs modes
         for (int j = 0; j < kNumEContacts_; ++j) {
-          if (sv[j] == '0') {
-            for (int jj = 0; jj < kNumSlidingPlanes_; ++jj) {
-              // std::cout << "ss[" << kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj << "] = " << ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] << std::endl;
-              if (ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] == '+')
-                e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = 1;
-              else if (ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] == '-')
-                e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = -1;
-              else
-                e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = 0;
+          if (sv[j] == '0')
+            e_cs_modes_(cs_modes_count, j) = 0;
+          else
+            e_cs_modes_(cs_modes_count, j) = 1;
+        }
+
+        // get ss modes
+        IncidenceGraph* ss_graph =
+            enumerate_ss_modes(N_e_, b_e, T_e_, u->sign_vector, 1e-8, &opt);
+
+        auto ss_modes = ss_graph->get_sign_vectors(u->sign_vector);
+        if (print_level_ > 0)
+          std::cout << "ss count: " << ss_modes.size() << std::endl;
+        MatrixXi e_ss_mode = MatrixXi::Zero(ss_modes.size(), kNumEContacts_*kNumSlidingPlanes_);
+        for (int ss_id = 0; ss_id < ss_modes.size(); ss_id++) {
+          std::string ss = ss_modes[ss_id];
+          if (print_level_ > 1)
+            std::cout << ss << std::endl;
+          int sliding_count = 0;
+          for (int j = 0; j < kNumEContacts_; ++j) {
+            if (sv[j] == '0') {
+              for (int jj = 0; jj < kNumSlidingPlanes_; ++jj) {
+                // std::cout << "ss[" << kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj << "] = " << ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] << std::endl;
+                if (ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] == '+')
+                  e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = 1;
+                else if (ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] == '-')
+                  e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = -1;
+                else
+                  e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = 0;
+              }
+              sliding_count++;
             }
-            sliding_count++;
           }
         }
-      }
-      // std::cout << "e_ss_mode: \n" << e_ss_mode << std::endl;
-      std::cout << std::endl;
-      e_ss_modes_[cs_modes_count] = e_ss_mode;
+        // std::cout << "e_ss_mode: \n" << e_ss_mode << std::endl;
+        // std::cout << std::endl;
+        e_ss_modes_[cs_modes_count] = e_ss_mode;
 
-      ss_modes_count += ss_modes.size();
-      delete ss_graph;
+        ss_modes_count += ss_modes.size();
+        delete ss_graph;
 
-      if (u->sign_vector == "00-------0-0") {
-          int*a = nullptr;
-          std::cout << *a << std::endl;
+        if (u->sign_vector == "00-------0-0") {
+            int*a = nullptr;
+            std::cout << *a << std::endl;
+        }
+        cs_modes_count ++;
       }
-      cs_modes_count ++;
     }
+    delete cs_graph;
   }
-  delete cs_graph;
 
   h_cs_modes_ = MatrixXi::Zero(1, kNumHContacts_);
   h_ss_modes_.resize(1);
@@ -1330,13 +1355,14 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStampingWrapper(
   const Eigen::MatrixXi &e_cs_modes_goal,
   const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
   const Eigen::MatrixXi &h_cs_modes_goal,
-  const std::vector<Eigen::MatrixXi> &h_ss_modes_goal) {
+  const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
+  HFVC &action) {
   MatrixXd J_e(N_e_.rows() + T_e_.rows(), N_e_.cols());
   J_e << N_e_, T_e_;
   MatrixXd J_h(N_h_.rows() + T_h_.rows(), N_h_.cols());
   J_h << N_h_, T_h_;
-
-  HFVC action;
+  std::cout << "eCone_allFix_: " << eCone_allFix_ << std::endl;
+  std::cout << "hCone_allFix_: " << hCone_allFix_ << std::endl;
   return wrenchStamping(
       J_e, J_h, eCone_allFix_, hCone_allFix_, F_G_, kContactForce_,
       kFrictionE_, kFrictionH_, kCharacteristicLength_, kNumSlidingPlanes_,
@@ -1369,10 +1395,132 @@ std::pair<double, double> WrenchSpaceAnalysis::computeStabilityMargin(
   /**
    * Wrench stamping
    */
+  HFVC action;
   return WrenchSpaceAnalysis::wrenchStampingWrapper(
-    G, b_G, e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal);
+    G, b_G, e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal,
+    action);
 }
 
+bool WrenchSpaceAnalysis::computeControlFromMotionPlan(const MatrixXd &obj_traj,
+    const MatrixXd &finger_traj, const std::vector<MatrixXd> &CP_W_e_traj,
+    const std::vector<MatrixXd> &CN_W_e_traj, const Vector3d &p_OG,
+    const std::vector<MatrixXi> &e_ss_modes, std::vector<HFVC> &action_traj) {
+  action_traj.clear();
+  // variables that do not vary
+  int N = obj_traj.cols();
+  int kNumFingers = finger_traj.rows()/6;
+  int kNumContactsH = kNumFingers;
+  MatrixXi h_cs_modes = MatrixXi::Zero(1, kNumContactsH);
+  std::vector<MatrixXi> h_ss_modes(1);
+  h_ss_modes[0] = MatrixXi::Zero(1, kNumContactsH*kNumSlidingPlanes_);
+
+  // Choice of Hand Frame
+  //  xyz: center of hand contacts
+  //  orientation: same as world frame
+  // Note that rotation doesn't change the shape of the cones, so it should
+  // not affect the result of wrench space analysis
+  std::cout << "Computing HFVC from Trajectory: " << std::endl;
+  RUT::CartesianPose pose_WO(obj_traj.middleCols(0, 1));
+  for (int t = 1; t < N; ++t) {
+    // std::cout << "\n==========================\n";
+    std::cout << "Time step = " << t << std::endl;
+    RUT::CartesianPose pose_WO_next(obj_traj.middleCols(t, 1));
+    MatrixXd CP_W_e = CP_W_e_traj[t];
+    MatrixXd CN_W_e = CN_W_e_traj[t];
+    int kNumContactsE = CP_W_e.cols();
+    VectorXd CP_W_G(3);
+    CP_W_G = pose_WO.transformPoint(p_OG);
+    Vector3d p_WF1 = finger_traj.block<3,1>(0, t);
+    Vector3d p_WF2 = finger_traj.block<3,1>(6, t);
+    Vector3d n_WF1 = finger_traj.block<3,1>(3, t);
+    Vector3d n_WF2 = finger_traj.block<3,1>(9, t);
+    MatrixXi e_cs_modes = MatrixXi::Zero(1, kNumContactsE);
+    std::cout << "CP_W_e:\n" << CP_W_e << std::endl;
+    std::cout << "CN_W_e:\n" << CN_W_e << std::endl;
+    std::cout << "p_WF1: " << p_WF1.transpose() << std::endl;
+    std::cout << "p_WF2: " << p_WF2.transpose() << std::endl;
+    std::cout << "n_WF1: " << n_WF1.transpose() << std::endl;
+    std::cout << "n_WF2: " << n_WF2.transpose() << std::endl;
+    std::cout << "CP_W_G:\n" << CP_W_G << std::endl;
+
+    /**
+     * Get the Hand(Contact) frame C
+     */
+    RUT::CartesianPose pose_WC =
+        RUT::getFrameFromTwoPoint(p_WF1, p_WF2);
+    RUT::CartesianPose pose_CW = pose_WC.inv();
+
+    /**
+     * get quantities in hand frame
+     */
+    MatrixXd CP_C_e = pose_CW.transformPoints(CP_W_e);
+    MatrixXd CN_C_e = pose_CW.getRotationMatrix()*CN_W_e;
+    MatrixXd CP_C_h(3,2);
+    CP_C_h << pose_CW.transformPoint(p_WF1),
+        pose_CW.transformPoint(p_WF2);
+    MatrixXd CN_C_h(3,2);
+    CN_C_h << pose_CW.transformVec(n_WF1),
+        pose_CW.transformVec(n_WF2);
+    VectorXd CP_C_G = pose_CW.transformPoints(CP_W_G);
+    Vector3d v_CG = pose_CW.transformVec(-Vector3d::UnitZ());
+
+    std::cout << "CP_C_e:\n" << CP_C_e << std::endl;
+    std::cout << "CN_C_e:\n" << CN_C_e << std::endl;
+    std::cout << "CP_C_h:\n" << CP_C_h << std::endl;
+    std::cout << "CN_C_h:\n" << CN_C_h << std::endl;
+    std::cout << "CP_C_G:\n" << CP_C_G << std::endl;
+    std::cout << "v_CG:\n" << v_CG << std::endl;
+    /**
+     * Get desired instantaneous Motion Goal
+     * C: null(J)
+     * b_C: C*v_star
+     */
+    MatrixXd JN, JT;
+    getJacobian3d(CP_C_e, CN_C_e, JN, JT);
+    MatrixXd J(JN.rows() + JT.rows(), JN.cols());
+    J << JN, JT;
+    MatrixXd C;
+    RUT::nullSpace(&J, &C);
+    RUT::CartesianPose pose_CO_now = pose_CW*pose_WO;
+    RUT::CartesianPose pose_CO_next = pose_CW*pose_WO_next;
+    Vector6d vel_body = RUT::vee6(pose_CO_now.inv().getTransformMatrix()*(pose_CO_next.getTransformMatrix() - pose_CO_now.getTransformMatrix()));
+    // std::cout << "pose_CO_now:\n" << pose_CO_now.getTransformMatrix() << std::endl;
+    // std::cout << "pose_CO_next\n:" << pose_CO_next.getTransformMatrix() << std::endl;
+    // std::cout << "difference:\n" << pose_CO_now.getTransformMatrix() - pose_CO_next.getTransformMatrix() << std::endl;
+    // std::cout << "relative\n:" << (pose_CO_next.inv()*pose_CO_now).getTransformMatrix() << std::endl;
+
+    MatrixXd G = MatrixXd::Zero(C.rows(), 12);
+    G.leftCols(6) = C;
+    VectorXd b_G = C*vel_body;
+
+    // main Shared grasping computation
+    updateContactGeometry(kNumContactsE, kNumContactsH,
+        CP_C_e, CN_C_e, CP_C_h, CN_C_h, CP_C_G, v_CG);
+    computeContactModes();
+    HFVC action;
+    // getchar();
+    MatrixXi e_ss_modes_old_format(1, kNumContactsE*kNumSlidingPlanes_);
+    for (int i = 0; i < kNumContactsE; ++i)
+      e_ss_modes_old_format.middleCols(i*kNumContactsE, kNumSlidingPlanes_)
+          = e_ss_modes[t](i)*MatrixXi::Ones(1, kNumSlidingPlanes_);
+    // std::cout << "G:\n" << G << std::endl;
+    std::cout << "C:\n" << C << std::endl;
+    // std::cout << "vel_body:\n" << vel_body << std::endl;
+    // std::cout << "b_G:\n" << b_G << std::endl;
+    std::cout << "e_cs_modes: " << e_cs_modes << std::endl;
+    std::cout << "e_ss_modes: " << e_ss_modes_old_format << std::endl;
+    std::cout << "h_cs_modes: " << h_cs_modes << std::endl;
+    std::cout << "h_ss_modes[0]: " << h_ss_modes[0] << std::endl;
+    auto [g_margin, c_margin] = wrenchStampingWrapper(G, b_G,
+      e_cs_modes, {e_ss_modes_old_format}, h_cs_modes, h_ss_modes, action);
+    action_traj.push_back(action);
+    std::cout << "stability margin: " << g_margin << ", " << c_margin << std::endl;
+    getchar();
+    pose_WO = pose_WO_next;
+  }
+  std::cout << "All HFVC are computed." << std::endl;
+  return true;
+}
 
 bool WrenchSpaceAnalysis::modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes,
     MatrixXi *sss_modes, std::vector<MatrixXi> *s_modes) {

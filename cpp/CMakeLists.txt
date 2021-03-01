@@ -11,6 +11,9 @@ set(CMAKE_BUILD_TYPE Debug)
 
 add_compile_options(-std=c++14)
 
+# set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} /home/yifan/local)
+
+
 ##
 ## Includes
 ##
@@ -46,17 +49,23 @@ include_directories(include/)
 ##
 ## targets
 ##
-add_library(timer SHARED src/timer.cpp)
-add_library(hfvc SHARED src/solvehfvc.cpp)
+# add_library(timer STATIC src/timer.cpp)
+# add_library(hfvc STATIC src/solvehfvc.cpp)
 
 add_library(polylib SHARED src/polyhedron.cpp)
 target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${GLPKLIB} ${RobotUtilLib})
 
 add_library(jacobianlib SHARED src/shared_grasping_jacobian.cpp)
 
-add_library(sharedgraspinglib SHARED src/wrench_space_analysis.cpp)
-target_link_libraries(sharedgraspinglib polylib timer hfvc ${RobotUtilLib}
-	${YAML_LIBRARY})
+add_library(sharedgraspinglib SHARED src/wrench_space_analysis.cpp
+	src/solvehfvc.cpp src/timer.cpp)
+target_link_libraries(sharedgraspinglib
+	PRIVATE
+		polylib
+		modus
+		${RobotUtilLib}
+		${YAML_LIBRARY}
+)
 
 ##
 ## Tests
@@ -64,13 +73,12 @@ target_link_libraries(sharedgraspinglib polylib timer hfvc ${RobotUtilLib}
 # add_executable(qhulltest src/testQHull.cpp)
 # target_link_libraries(qhulltest ${qhullLibs})
 
-add_executable(polytest src/testpoly.cpp)
-target_link_libraries(polytest polylib)
+# add_executable(polytest src/testpoly.cpp)
+# target_link_libraries(polytest polylib ${PPLLIB})
 
 pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
 target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib
-	polylib timer hfvc ${RobotUtilLib}
-	${YAML_LIBRARY})
+	${RobotUtilLib} ${YAML_LIBRARY})
 
 add_executable(lutest src/testEigenLU.cpp)
 
@@ -95,6 +103,6 @@ install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_PREFIX}/include/
     )
 
-install(TARGETS jacobianlib sharedgraspinglib
+install(TARGETS polylib jacobianlib sharedgraspinglib
     DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}
     )

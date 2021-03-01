@@ -116,7 +116,7 @@ public:
       const Eigen::MatrixXi &e_cs_modes_goal,
       const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
       const Eigen::MatrixXi &h_cs_modes_goal,
-      const std::vector<Eigen::MatrixXi> &h_ss_modes_goal);
+      const std::vector<Eigen::MatrixXi> &h_ss_modes_goal, HFVC &action);
 
     std::pair<double, double> computeStabilityMargin(
       double kFrictionE, double kFrictionH, double kNumSlidingPlanes,
@@ -130,6 +130,31 @@ public:
       const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
       const Eigen::MatrixXi &h_cs_modes_goal,
       const std::vector<Eigen::MatrixXi> &h_ss_modes_goal);
+
+    /**
+     * Calculates the control from a motion plan. Must call updateConstants() before
+     * calling this function.
+     *
+     * All contact normals points inside the object.
+     *
+     * @param[in]  obj_traj     7 x N, the object pose traj
+     * @param[in]  finger_traj  6n x N, the finger contact traj, p1n1p2n2...
+     * @param[in]  CP_W_e_traj  The environmental contact point location trajectory.
+     *                          Each element is a 3xn matrix.
+     * @param[in]  CN_W_e_traj  The environmental contact normal trajectory. Each
+     *                          element is a 3xn matrix.
+     * @param[in]  p_OG         Object COM location in the object frame.
+     * @param[in]  e_ss_modes   Environmental sticking/sliding modes. Each element
+     *                          is MatrixXi(1, kNumContactsE), 0: sticking, 1:
+     *                          sliding.
+     *
+     * @return     True if success
+     */
+    bool computeControlFromMotionPlan(const Eigen::MatrixXd &obj_traj,
+        const Eigen::MatrixXd &finger_traj, const std::vector<Eigen::MatrixXd> &CP_W_e_traj,
+        const std::vector<Eigen::MatrixXd> &CN_W_e_traj, const Eigen::Vector3d &p_OG,
+        const std::vector<Eigen::MatrixXi> &e_cs_modes,
+        std::vector<HFVC> &action_traj);
 private:
     bool modeCleaning(const Eigen::MatrixXi &cs_modes, const std::vector<Eigen::MatrixXi> &ss_modes, int kNumSlidingPlanes,
         Eigen::MatrixXi *sss_modes, std::vector<Eigen::MatrixXi> *s_modes);
@@ -207,10 +232,10 @@ private:
      */
     double kFrictionE_;
     double kFrictionH_;
-    double kNumSlidingPlanes_;
     double kContactForce_;
     double kObjWeight_;
     double kCharacteristicLength_;
+    int kNumSlidingPlanes_;
 
     /**
      * Geometrical information parameters

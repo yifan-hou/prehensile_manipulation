@@ -331,7 +331,7 @@ int solvehfvc_nullspace(const MatrixXd &N,
   assert(N.cols() == kDimGeneralized);
   assert(G.rows() == b_G.rows());
   assert(G.cols() == kDimGeneralized);
-  assert(b_G.norm() > TOL);
+  // assert(b_G.norm() > TOL);
   Eigen::FullPivLU<MatrixXd> lu;
 
   /**
@@ -348,13 +348,19 @@ int solvehfvc_nullspace(const MatrixXd &N,
    */
   MatrixXd actuated_subspace =
       MatrixXd::Identity(kDimGeneralized, kDimGeneralized).bottomRows(kDimActualized);
-  MatrixXd C = null_space_N_r * actuated_subspace.transpose() * actuated_subspace;
-  assert(C.leftCols(kDimUnActualized).norm() < 1e-10);
-  MatrixXd Rv = C.rightCols(kDimActualized);
+  MatrixXd projection = null_space_N_r * actuated_subspace.transpose() * actuated_subspace;
+  assert(projection.leftCols(kDimUnActualized).norm() < 1e-10);
+  MatrixXd Rv = projection.rightCols(kDimActualized);
   MatrixXd Rf;
   int rank_C = RUT::nullSpace(&Rv, &Rf);
-  assert(rank_C == C.rows());
-  C.rightCols(kDimActualized) = Rv;
+  MatrixXd C = MatrixXd::Zero(rank_C, kDimGeneralized);
+  // std::cout << "N:\n" << N << std::endl;
+  // std::cout << "Rv:\n" << Rv << std::endl;
+  // std::cout << "Rf:\n" << Rf << std::endl;
+  // std::cout << "rank_C: " << rank_C << std::endl;
+  assert(rank_C == projection.rows());
+  assert(rank_C == C.rows()); // this might not be true
+  C.rightCols(kDimActualized) = Rv.topRows(rank_C);
 
   /**
    * Step three: get rowspace of NC
@@ -412,6 +418,7 @@ int solvehfvc_nullspace(const MatrixXd &N,
   return 0;
 }
 
+// this is the version I discarded right before ICRA 2021 ddl
 int solvehfvc_OCHS(const MatrixXd &J,
   const MatrixXd &G, const VectorXd &b_G,
   const int kDimActualized, const int kDimUnActualized,

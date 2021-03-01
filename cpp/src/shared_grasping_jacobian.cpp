@@ -27,6 +27,11 @@ bool sharedGraspingGeometryProcessing3d(
 
   getJacobian3d(kFrictionE, kNumSlidingPlanes, CP_H_e, CN_H_e, N_e, T_e, eCone_allFix);
   getJacobian3d(kFrictionH, kNumSlidingPlanes, CP_H_h, CN_H_h, N_h, T_h, hCone_allFix);
+  // flip sign for hand contacts
+  // check Newton's Law
+  N_h = - N_h;
+  T_h = - T_h;
+  hCone_allFix = - hCone_allFix;
 }
 
 
@@ -161,7 +166,6 @@ void getJacobian3d(double kFriction, int kNumSlidingPlanes,
 
   Cone = MatrixXd::Zero(kEdgesPerContact*kNumContacts, kWrenchDim);
   Vector3d vr = Vector3d::Random().normalized();
-  std::cout << "vr: \n" << vr << std::endl;
   double mu_norm = sqrt(1.0 + kFriction*kFriction);
   for (int i = 0; i < kNumContacts; ++i) {
     // contact normal
@@ -178,8 +182,6 @@ void getJacobian3d(double kFriction, int kNumSlidingPlanes,
     MatrixXd CXY(2,3);
     CXY << CX.transpose(), CY.transpose();
     MatrixXd CT_W = CT.leftCols(2) * CXY; // tangential directions
-    std::cout << "CXY: \n" << CXY << std::endl;
-    std::cout << "CT_W: \n" << CT_W << std::endl;
     // friction cone edges
     MatrixXd CCone = (kFriction*CT_W + MatrixXd::Ones(kEdgesPerContact, 1)*CN_i.transpose())/mu_norm;
     // contact tangential directions in world frame
@@ -201,3 +203,42 @@ void getJacobian3d(double kFriction, int kNumSlidingPlanes,
   }
 }
 
+void getJacobian3d(const MatrixXd &CP, const MatrixXd &CN, MatrixXd &N,
+    MatrixXd &T) {
+  int kNumContacts = CP.cols();
+  assert(kNumContacts != 0);
+  assert(CP.rows() == 3);
+  assert(CN.rows() == 3);
+  assert(CN.cols() == kNumContacts);
+
+  int kWrenchDim = 6;
+
+  // contact wrench for normals and tangentials
+  N = MatrixXd::Zero(kNumContacts, kWrenchDim); // normals
+  T = MatrixXd::Zero(kNumContacts*2, kWrenchDim); // tangentials
+
+  // sliding planes, discretize sliding directions
+  Vector3d vr = Vector3d::Random().normalized();
+  for (int i = 0; i < kNumContacts; ++i) {
+    // contact normal
+    Vector3d CN_i = CN.middleCols(i,1).normalized();
+    Vector3d CP_i = CP.middleCols(i,1);
+    // normal contact screw
+    Vector6d contact_screw_n_i;
+    contact_screw_n_i.head(3) = CN_i;
+    contact_screw_n_i.tail(3) = CP_i.cross(CN_i);
+    N.middleRows(i, 1) = contact_screw_n_i.transpose();
+    // contact tangential and friction cones
+    Vector3d CX = vr.cross(CN_i).normalized();
+    Vector3d CY = CN_i.cross(CX).normalized();
+    MatrixXd CXY(2,3);
+    CXY << CX.transpose(), CY.transpose();
+    // contact tangential directions in world frame
+    // tangential contact screw (X,Y direction)
+    MatrixXd contact_screw_t_i(2,6);
+    contact_screw_t_i.leftCols(3) = CXY;
+    contact_screw_t_i.block<1,3>(0,3) = CP_i.cross(CX).transpose();
+    contact_screw_t_i.block<1,3>(1,3) = CP_i.cross(CY).transpose();
+    T.middleRows(2*i, 2) = contact_screw_t_i;
+  }
+}
