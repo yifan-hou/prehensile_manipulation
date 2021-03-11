@@ -33,22 +33,21 @@ int main(int argc, char *argv[]) {
   // std::cout << "############################################\n";
   // std::cout << "    Polytope center\n";
   // std::cout << "############################################\n";
-  // Eigen::MatrixXd A_pc(2,3), A1_pc(1, 3);
-  // Eigen::VectorXd b_pc(2), xu_pc(3), xl_pc(3), b1_pc(1);
-  // Eigen::VectorXd xs_pc(3);
-  // A_pc << 0.7071, 0, 0.7071,
-  //         -0.7071, 0, -0.7071;
-  // b_pc << 0.0, 0.7071;
-  // A1_pc << 0, 1, 0;
-  // b1_pc << -0.2;
-  // // xu_pc << 1, 1, 1;
-  // // xl_pc << -1, -1, -1;
-  // xl_pc = Eigen::VectorXd(0);
-  // xu_pc = Eigen::VectorXd(0);
-  // std::cout << "calling:" << std::endl;
-  // double pc_radius = Poly::inscribedSphere(A_pc, b_pc, xl_pc, xu_pc, A1_pc, b1_pc, &xs_pc);
-  // std::cout << "pc_radius: " << pc_radius << std::endl;
-  // std::cout << "xs_pc: " << xs_pc.transpose() << std::endl;
+  Eigen::MatrixXd A_pc(2,3), A1_pc(0,0);
+  Eigen::VectorXd b_pc(2), xu_pc(3), xl_pc(3), b1_pc(0);
+  Eigen::VectorXd xs_pc(3);
+  A_pc << 1, 0, 0,
+          0, 1, 0,
+          0, 0, 1;
+  b_pc << 0.0, 0, 0;
+  // xu_pc << 1, 1, 1;
+  // xl_pc << -1, -1, -1;
+  xl_pc = Eigen::VectorXd(0);
+  xu_pc = Eigen::VectorXd(0);
+  std::cout << "calling:" << std::endl;
+  double pc_radius = Poly::inscribedSphere(A_pc, b_pc, xl_pc, xu_pc, A1_pc, b1_pc, &xs_pc);
+  std::cout << "pc_radius: " << pc_radius << std::endl;
+  std::cout << "xs_pc: " << xs_pc.transpose() << std::endl;
 
   // std::cout << "############################################\n";
   // std::cout << "    sampleInP1OutOfP2\n";
@@ -445,45 +444,45 @@ int main(int argc, char *argv[]) {
   //   std::cout << std::endl;
   // }
 
-  std::cout << "############################################\n";
-  std::cout << "    minkowskiSumOfVectors\n";
-  std::cout << "############################################\n";
-  Eigen::MatrixXd min_vec1(2, 3);
-  min_vec1 << 1, 0, 0,
-              1, 0, 0;
-  std::cout << "vectors:\n" << min_vec1 << std::endl;
-  Eigen::MatrixXd results_min;
-  Poly::minkowskiSumOfVectors(min_vec1,  &results_min);
-  std::cout << "results:\n" << results_min << std::endl;
+  // std::cout << "############################################\n";
+  // std::cout << "    minkowskiSumOfVectors\n";
+  // std::cout << "############################################\n";
+  // Eigen::MatrixXd min_vec1(2, 3);
+  // min_vec1 << 1, 0, 0,
+  //             1, 0, 0;
+  // std::cout << "vectors:\n" << min_vec1 << std::endl;
+  // Eigen::MatrixXd results_min;
+  // Poly::minkowskiSumOfVectors(min_vec1,  &results_min);
+  // std::cout << "results:\n" << results_min << std::endl;
 
-  min_vec1 = Eigen::MatrixXd(3,3);
-  min_vec1 << 1, 0, 0,
-              1, 0, 0,
-              0, 1, 0;
-  std::cout << "vectors:\n" << min_vec1 << std::endl;
-  Poly::minkowskiSumOfVectors(min_vec1,  &results_min);
-  std::cout << "results:\n" << results_min << std::endl;
-  return 0;
+  // min_vec1 = Eigen::MatrixXd(3,3);
+  // min_vec1 << 1, 0, 0,
+  //             1, 0, 0,
+  //             0, 1, 0;
+  // std::cout << "vectors:\n" << min_vec1 << std::endl;
+  // Poly::minkowskiSumOfVectors(min_vec1,  &results_min);
+  // std::cout << "results:\n" << results_min << std::endl;
+  // return 0;
 
-  std::cout << "############################################\n";
-  std::cout << "    minkowskiSum of polytopes\n";
-  std::cout << "############################################\n";
+  // std::cout << "############################################\n";
+  // std::cout << "    minkowskiSum of polytopes\n";
+  // std::cout << "############################################\n";
 
-  Eigen::MatrixXd mink_poly1 = Eigen::MatrixXd::Random(9, 6);
-  Eigen::MatrixXd mink_poly2 = Eigen::MatrixXd::Random(9, 6);
-  Eigen::MatrixXd mink_poly3 = Eigen::MatrixXd::Random(9, 6);
-  Eigen::MatrixXd mink_poly4 = Eigen::MatrixXd::Random(9, 6);
-  Eigen::MatrixXd results_12, results_123, results_1234;
+  // Eigen::MatrixXd mink_poly1 = Eigen::MatrixXd::Random(9, 6);
+  // Eigen::MatrixXd mink_poly2 = Eigen::MatrixXd::Random(9, 6);
+  // Eigen::MatrixXd mink_poly3 = Eigen::MatrixXd::Random(9, 6);
+  // Eigen::MatrixXd mink_poly4 = Eigen::MatrixXd::Random(9, 6);
+  // Eigen::MatrixXd results_12, results_123, results_1234;
 
-  std::cout << "Minkowski Sum of poly1 and poly2:\n";
-  Poly::minkowskiSum(mink_poly1, mink_poly2,  &results_12);
-  std::cout << "rows: " << results_12.rows() << std::endl;
-  std::cout << "Minkowski Sum of poly12 and poly3:\n";
-  Poly::minkowskiSum(results_12, mink_poly3,  &results_123);
-  std::cout << "rows: " << results_123.rows() << std::endl;
-  std::cout << "Minkowski Sum of poly123 and poly4:\n";
-  Poly::minkowskiSum(results_123, mink_poly4,  &results_1234);
-  std::cout << "rows: " << results_1234.rows() << std::endl;
+  // std::cout << "Minkowski Sum of poly1 and poly2:\n";
+  // Poly::minkowskiSum(mink_poly1, mink_poly2,  &results_12);
+  // std::cout << "rows: " << results_12.rows() << std::endl;
+  // std::cout << "Minkowski Sum of poly12 and poly3:\n";
+  // Poly::minkowskiSum(results_12, mink_poly3,  &results_123);
+  // std::cout << "rows: " << results_123.rows() << std::endl;
+  // std::cout << "Minkowski Sum of poly123 and poly4:\n";
+  // Poly::minkowskiSum(results_123, mink_poly4,  &results_1234);
+  // std::cout << "rows: " << results_1234.rows() << std::endl;
 
 
   std::cout << "\nDone." << std::endl;

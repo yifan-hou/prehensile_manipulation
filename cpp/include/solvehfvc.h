@@ -13,6 +13,8 @@ typedef struct
     int n_av;
     int n_af;
     Eigen::MatrixXd R_a;
+    Eigen::MatrixXd R_a_v;
+    Eigen::MatrixXd R_a_f;
     Eigen::VectorXd w_av;
     Eigen::VectorXd eta_af;
     Eigen::MatrixXd C;

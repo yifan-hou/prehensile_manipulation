@@ -1,4 +1,6 @@
 // scaling for generalized velocity
+// see evernote for new derivations
+//
 // Scaling is essentially changing units. For example, if we change m to mm, then
 // Translational velocity: 1 -> 1000 (m/s -> mm/s)
 // Rotational velocity: 1 -> 1 (rad/s -> rad/s)
@@ -15,7 +17,7 @@
 // To retrieve the control, transform these back to constraints on v, f:
 //    R_scaled*Kv*V = omega_scaled
 //    R_scaled^T*eta_scaled = Kf*f -> (R_scaled*Kf_inv)^T * eta_scaled = f
-//        ->  (R_scaled*Kf_inv*K)^T * eta_scaled/K = f
+//        -> (R_scaled*Kf_inv*K)^T * eta_scaled/K = f
 // Note R_scaled*Kf_inv*K = R_scaled*Kv, so the two agrees
 // So, in our output,
 //    R = R_scaled*Kv
@@ -132,21 +134,23 @@ public:
       const std::vector<Eigen::MatrixXi> &h_ss_modes_goal);
 
     /**
-     * Calculates the control from a motion plan. Must call updateConstants() before
-     * calling this function.
+     * Calculates the control from a motion plan. Must call updateConstants()
+     * before calling this function.
      *
      * All contact normals points inside the object.
      *
      * @param[in]  obj_traj     7 x N, the object pose traj
      * @param[in]  finger_traj  6n x N, the finger contact traj, p1n1p2n2...
-     * @param[in]  CP_W_e_traj  The environmental contact point location trajectory.
+     * @param[in]  CP_W_e_traj  The environmental contact point location
+     *                          trajectory. Each element is a 3xn matrix.
+     * @param[in]  CN_W_e_traj  The environmental contact normal trajectory.
      *                          Each element is a 3xn matrix.
-     * @param[in]  CN_W_e_traj  The environmental contact normal trajectory. Each
-     *                          element is a 3xn matrix.
      * @param[in]  p_OG         Object COM location in the object frame.
-     * @param[in]  e_ss_modes   Environmental sticking/sliding modes. Each element
-     *                          is MatrixXi(1, kNumContactsE), 0: sticking, 1:
-     *                          sliding.
+     * @param[in]  e_cs_modes   Environmental sticking/sliding modes. Each
+     *                          element is MatrixXi(1, kNumContactsE), 0:
+     *                          sticking, 1: sliding.
+     * @param      action_traj  The action traj
+     * @param[in]  dt           How many seconds does one frame take
      *
      * @return     True if success
      */
@@ -154,13 +158,17 @@ public:
         const Eigen::MatrixXd &finger_traj, const std::vector<Eigen::MatrixXd> &CP_W_e_traj,
         const std::vector<Eigen::MatrixXd> &CN_W_e_traj, const Eigen::Vector3d &p_OG,
         const std::vector<Eigen::MatrixXi> &e_cs_modes,
-        std::vector<HFVC> &action_traj);
+        std::vector<HFVC> &action_traj, double dt);
 private:
+    // sss mode:  -1: sticking   0: sliding   1: separation
     bool modeCleaning(const Eigen::MatrixXi &cs_modes, const std::vector<Eigen::MatrixXi> &ss_modes, int kNumSlidingPlanes,
         Eigen::MatrixXi *sss_modes, std::vector<Eigen::MatrixXi> *s_modes);
 
     // sss mode:  -1: sticking   0: sliding   1: separation
     // return: each row is a generator
+    // In the current version it only compute generators for sticking contacts.
+    // Sliding and separation has no generators.
+    // Generators for sliding contacts are computed in other parts of the pipeline
     Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
         const Eigen::VectorXi &sss_mode, int kNumSlidingPlanes);
 

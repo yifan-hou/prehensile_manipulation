@@ -169,7 +169,15 @@ double Poly::getAwayFromPolyhedrons(
     for (int p2 = 0; p2 < A2.size(); ++p2) {
       double dist = distP2Polyhedron(*x, A2[p2], b2[p2], Eigen::VectorXd::Zero(dim), &x_closest);
       if (dist < 0) return -1; // input x must be feasible
-      v = *x - x_closest;
+      if (dist < 1e-9) {
+        // the point is already on the surface of the polyhedron
+        Eigen::VectorXd dists = (A2[p2]*x_closest - b2[p2]).rowwise().norm();
+        int rid;
+        dists.minCoeff(&rid);
+        v = A2[p2].middleRows(rid, 1).transpose();
+      } else {
+        v = *x - x_closest;
+      }
       v.normalize();
       A.middleRows(p2, 1) = -v.transpose();
       b(p2) = -v.dot(x_closest);
@@ -896,6 +904,7 @@ bool Poly::convhull(const std::vector<double> &vectors, int dim, int num,
 //   Max:  r
 //   S.t.  Vi' (x - Pi) >= r,   i = 1,...,n
 //         A1 x <= b1
+// where Vi is the the normal of the plane, Pi is a point on the plane.
 // Rewrite as
 //   Max: r
 //   s.t.  Ax + r <= b
@@ -906,21 +915,30 @@ double Poly::inscribedSphere(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
     const Eigen::VectorXd &xl, const Eigen::VectorXd &xu,
     const Eigen::MatrixXd &A1, const Eigen::VectorXd &b1, Eigen::VectorXd *xc) {
   /**
+   * Normalize Ax <= b
+   */
+
+  Eigen::VectorXd A_row_norm = A.rowwise().norm();
+  Eigen::MatrixXd A_normalized = A.rowwise().normalized();
+  Eigen::VectorXd b_normalized = b.cwiseQuotient(A_row_norm);
+  /**
    * construct the LP with variable [x, r]
    *  min: [0 -1] [x r]'
    *  s.t. [A 1] [x r]' <= b
-   *       xl <= x <= xu
+   *       A1 x <= b1
+   *
    *       r >= 0
+   *       xl <= x <= xu
    */
   // Constraints
   int dim = A.cols();
   int dim_ext = A.cols() + 1;
-  Eigen::MatrixXd A_ext = Eigen::MatrixXd::Zero(A.rows() + A1.rows(), dim + 1);
-  A_ext.block(0, 0, A.rows(), dim) = A;
+  Eigen::MatrixXd A_ext = Eigen::MatrixXd::Zero(A.rows() + A1.rows(), dim_ext);
+  A_ext.block(0, 0, A.rows(), dim) = A_normalized;
   A_ext.block(0, dim, A.rows(), 1) = Eigen::VectorXd::Ones(A.rows());
   A_ext.block(A.rows(), 0, A1.rows(), dim) = A1;
   Eigen::VectorXd b_ext = Eigen::VectorXd::Zero(A.rows() + A1.rows());
-  b_ext.head(A.rows()) = b;
+  b_ext.head(A.rows()) = b_normalized;
   b_ext.tail(A1.rows()) = b1;
   // bounds
   Eigen::VectorXd xl_ext = Eigen::VectorXd(dim_ext) * nan("");
@@ -941,8 +959,7 @@ double Poly::inscribedSphere(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
   Eigen::VectorXd be_ext(0);
   Eigen::VectorXd xc_ext = Eigen::VectorXd::Zero(dim_ext);
   double optimal_cost;
-  // std::cout << "xl:\n" << xl << std::endl;
-  // std::cout << "xu:\n" << xu << std::endl;
+  // std::cout << "C:\n" << C << std::endl;
   // std::cout << "A_ext:\n" << A_ext << std::endl;
   // std::cout << "b_ext:\n" << b_ext << std::endl;
   // std::cout << "xl_ext:\n" << xl_ext << std::endl;
@@ -1114,6 +1131,7 @@ bool Poly::lpfeasibility(const Eigen::MatrixXd &A,
   delete [] ja;
   delete [] ar;
 
+  *xs = Eigen::VectorXd(cols);
   if ((result == GLP_OPT) || (result == GLP_FEAS)) {
     // feasible
     // double z = glp_get_obj_val(lp);
@@ -1134,10 +1152,6 @@ bool Poly::lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::V
     const Eigen::MatrixXd &Ae, const Eigen::VectorXd &be,
     const Eigen::VectorXd &xl, const Eigen::VectorXd &xu, Eigen::VectorXd *xs, double *optimal_cost) {
   /* declare variables */
-  if (xs->rows() <= 0) {
-    std::cerr << "[lp] Error: xs is not initialized!!" << std::endl;
-    exit(-1);
-  }
   glp_prob *lp;
   glp_smcp parm;
   glp_init_smcp(&parm);
@@ -1150,6 +1164,7 @@ bool Poly::lp(const Eigen::VectorXd &C, const Eigen::MatrixXd &A, const Eigen::V
   int rows_e = Ae.rows();
   int cols_e = Ae.cols();
   assert(cols_e == cols);
+  *xs = Eigen::VectorXd(cols);
 
   Eigen::VectorXd xu_expand = Eigen::VectorXd(cols) * nan("");
   Eigen::VectorXd xl_expand = Eigen::VectorXd(cols) * nan("");

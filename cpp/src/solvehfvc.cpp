@@ -354,6 +354,7 @@ int solvehfvc_nullspace(const MatrixXd &N,
   MatrixXd Rf;
   int rank_C = RUT::nullSpace(&Rv, &Rf);
   MatrixXd C = MatrixXd::Zero(rank_C, kDimGeneralized);
+  // std::cout << "solve_hfvc:\n";
   // std::cout << "N:\n" << N << std::endl;
   // std::cout << "Rv:\n" << Rv << std::endl;
   // std::cout << "Rf:\n" << Rf << std::endl;

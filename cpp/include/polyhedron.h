@@ -273,14 +273,17 @@ Eigen::MatrixXd convhull(const Eigen::MatrixXd &points);
  */
 bool convhull(const std::vector<double> &vectors, int dim, int num, std::vector<double> *results);
 /**
- * Compute the center of the largest inscribed sphere to the polytope.
- * Ax <= b may not be bounded. xu, xl boundary and A1, b1 only constraint the
- * sphere center, not the sphere itself.
+ * Compute the center of the largest inscribed sphere to the polytope. Ax <= b
+ * may not be bounded. xu, xl boundary and A1, b1 only constraint the sphere
+ * center, not the sphere itself.
  *
  * @param[in]  A     Ax <= b
  * @param[in]  b     Ax <= b
- * @param[in]  xl    xl <= x <= xu
+ * @param[in]  xl    xl <= x <= xu. xl and xu could be dimension 0 vectors to
+ *                   indicate no constraint
  * @param[in]  xu    xl <= x <= xu
+ * @param[in]  A1    A 1
+ * @param[in]  b1    The b 1
  * @param      xc    The found center
  *
  * @return     Radius of the found inscribed sphere; -1 if no solution
@@ -302,10 +305,12 @@ bool minkowskiSumOfVectors(const Eigen::MatrixXd &vectors, Eigen::MatrixXd *resu
 bool minkowskiSum(const Eigen::MatrixXd &poly1, const Eigen::MatrixXd &poly2, Eigen::MatrixXd *results);
 
 /**
- * Check if a system of linear inequalities
- *   Ax <= b
- * has a solution.
- * TODO: write a full LP
+ * Check if a system of linear inequalities Ax <= b has a solution. If feasible,
+ * the solution is stored in xs.
+ *
+ * @param[in]  A     Ax <= b
+ * @param[in]  b     Ax <= b
+ * @param      xs    solution
  *
  * @return     True if a solution exists
  */

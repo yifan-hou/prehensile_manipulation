@@ -29,7 +29,9 @@ find_package(modus REQUIRED)
 find_package(ortools CONFIG REQUIRED)
 
 # qhull
-SET(qhullDir /home/yifan/Git/qhull)
+# find_package(Qhull REQUIRED)
+# INCLUDE_DIRECTORIES(${QHULL_INCLUDE_DIR})
+SET(qhullDir /workspace/Git/qhull)
 INCLUDE_DIRECTORIES(${qhullDir}/src/libqhullcpp)
 INCLUDE_DIRECTORIES(${qhullDir}/src)
 LINK_DIRECTORIES(${qhullDir}/build)
@@ -53,7 +55,10 @@ include_directories(include/)
 # add_library(hfvc STATIC src/solvehfvc.cpp)
 
 add_library(polylib SHARED src/polyhedron.cpp)
-target_link_libraries(polylib ${PPLLIB} ${GMPLIB} ${qhullLibs} ${GLPKLIB} ${RobotUtilLib})
+target_link_libraries(polylib
+		${PPLLIB} ${GMPLIB}
+		${qhullLibs}
+		${GLPKLIB} ${RobotUtilLib})
 
 add_library(jacobianlib SHARED src/shared_grasping_jacobian.cpp)
 
@@ -73,8 +78,8 @@ target_link_libraries(sharedgraspinglib
 # add_executable(qhulltest src/testQHull.cpp)
 # target_link_libraries(qhulltest ${qhullLibs})
 
-# add_executable(polytest src/testpoly.cpp)
-# target_link_libraries(polytest polylib ${PPLLIB})
+add_executable(polytest src/testpoly.cpp)
+target_link_libraries(polytest polylib ${qhullLibs} ${RobotUtilLib})
 
 pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
 target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib
@@ -100,9 +105,9 @@ target_link_libraries(sharedGraspingCpptest
 ## Install ##
 #############
 install(DIRECTORY include/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/include/
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/include/${PROJECT_NAME}
     )
 
 install(TARGETS polylib jacobianlib sharedgraspinglib
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/
     )
