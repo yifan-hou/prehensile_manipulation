@@ -729,6 +729,10 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
       &N, &Nu);
   int hfvc_flag = solvehfvc_nullspace(N, G, b_G, kDimActualized,
       kDimUnActualized, action);
+  std::cout << "G:\n" << G << std::endl;
+  std::cout << "b_G:\n" << b_G << std::endl;
+  std::cout << "action.C:\n" << action->C << std::endl;
+
   if (hfvc_flag != 0) {
     std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: "
         << hfvc_flag << std::endl;
@@ -1065,6 +1069,8 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
     // origin must be in the polyhedra, so 0 <= b
     if (b_cl.minCoeff() <= 1e-5 ) {
       if (print_level_ > 0) std::cout << " F-Infeasible." << std::endl;
+      // std::cout << "e_cones_VFeasible:\n" << e_cones_VFeasible[c] << std::endl;
+      // std::cout << "hCone_allFix_r:\n" << hCone_allFix_r << std::endl;
       if (c == goal_id) {
         if (print_level_ > 0) std::cout << " Goal mode is F-Infeasible." << std::endl;
         return {-1, -1};
@@ -1216,7 +1222,7 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
   // VectorXd V = VectorXd::Zero(kDimActualized);
   // V.tail(action->n_av) = action->w_av;
   // VectorXd V_T = R_a_inv*V;
-  if (print_level_ > 0) {
+  // if (print_level_ > 0) {
 
     VectorXd F_T = F_control_directions_r.transpose() * action->eta_af;
     std::cout << " 4. Results:" << std::endl;
@@ -1239,7 +1245,7 @@ std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, Ma
     std::cout << "  time_stats_force_control: " << time_stats_force_control << " ms\n";
     std::cout << "  Total: " << time_stats_initialization + time_stats_hybrid_servoing + time_stats_velocity_filtering
         + time_stats_projection + time_stats_force_control << " ms\n";
-  }
+  // }
   return {geometrical_stability_margin, control_stability_margin};
 }
 
@@ -1445,24 +1451,29 @@ bool WrenchSpaceAnalysis::computeControlFromMotionPlan(const MatrixXd &obj_traj,
     int kNumContactsE = CP_W_e.cols();
     VectorXd CP_W_G(3);
     CP_W_G = pose_WO.transformPoint(p_OG);
-    Vector3d p_WF1 = finger_traj.block<3,1>(0, t);
-    Vector3d p_WF2 = finger_traj.block<3,1>(6, t);
-    Vector3d n_WF1 = finger_traj.block<3,1>(3, t);
-    Vector3d n_WF2 = finger_traj.block<3,1>(9, t);
+    std::vector<Vector3d> p_WF(kNumFingers);
+    std::vector<Vector3d> n_WF(kNumFingers);
+    for (int i = 0; i < kNumFingers; ++i) {
+      p_WF[i] = finger_traj.block<3,1>(i*6, t);
+      n_WF[i] = finger_traj.block<3,1>(3+i*6, t);
+    }
+
     MatrixXi e_cs_modes = MatrixXi::Zero(1, kNumContactsE);
     // std::cout << "CP_W_e:\n" << CP_W_e << std::endl;
     // std::cout << "CN_W_e:\n" << CN_W_e << std::endl;
-    // std::cout << "p_WF1: " << p_WF1.transpose() << std::endl;
-    // std::cout << "p_WF2: " << p_WF2.transpose() << std::endl;
-    // std::cout << "n_WF1: " << n_WF1.transpose() << std::endl;
-    // std::cout << "n_WF2: " << n_WF2.transpose() << std::endl;
+    // std::cout << "p_WF[0]: " << p_WF[0].transpose() << std::endl;
+    // std::cout << "p_WF[1]: " << p_WF[1].transpose() << std::endl;
+    // std::cout << "n_WF[0]: " << n_WF[0].transpose() << std::endl;
+    // std::cout << "n_WF[1]: " << n_WF[1].transpose() << std::endl;
     // std::cout << "CP_W_G:\n" << CP_W_G << std::endl;
+    // std::cout << "pose_WO:\n" << pose_WO.poseString() << std::endl;
+    // std::cout << "p_OG:\n" << p_OG << std::endl;
 
     /**
      * Get the Hand(Contact) frame C
      */
     RUT::CartesianPose pose_WC =
-        RUT::getFrameFromTwoPoint(p_WF1, p_WF2);
+        RUT::getFrameFromTwoPoint(p_WF[0], p_WF[1]);
     RUT::CartesianPose pose_CW = pose_WC.inv();
 
     /**
@@ -1470,12 +1481,12 @@ bool WrenchSpaceAnalysis::computeControlFromMotionPlan(const MatrixXd &obj_traj,
      */
     MatrixXd CP_C_e = pose_CW.transformPoints(CP_W_e);
     MatrixXd CN_C_e = pose_CW.getRotationMatrix()*CN_W_e;
-    MatrixXd CP_C_h(3,2);
-    CP_C_h << pose_CW.transformPoint(p_WF1),
-        pose_CW.transformPoint(p_WF2);
-    MatrixXd CN_C_h(3,2);
-    CN_C_h << pose_CW.transformVec(n_WF1),
-        pose_CW.transformVec(n_WF2);
+    MatrixXd CP_C_h(3, kNumFingers);
+    MatrixXd CN_C_h(3, kNumFingers);
+    for (int i = 0; i < kNumFingers; ++i) {
+      CP_C_h.middleCols(i, 1) = pose_CW.transformPoint(p_WF[i]);
+      CN_C_h.middleCols(i, 1) = pose_CW.transformPoint(n_WF[i]);
+    }
     VectorXd CP_C_G = pose_CW.transformPoints(CP_W_G);
     Vector3d v_CG = pose_CW.transformVec(-Vector3d::UnitZ());
 
@@ -1490,12 +1501,63 @@ bool WrenchSpaceAnalysis::computeControlFromMotionPlan(const MatrixXd &obj_traj,
      * C: null(J)
      * b_C: C*v_star
      */
-    MatrixXd JN, JT;
-    getJacobian3d(CP_C_e, CN_C_e, JN, JT);
-    MatrixXd J(JN.rows() + JT.rows(), JN.cols());
-    J << JN, JT;
+    MatrixXi e_ss_modes_old_format(1, kNumContactsE*kNumSlidingPlanes_);
+    for (int i = 0; i < kNumContactsE; ++i) {
+      e_ss_modes_old_format.middleCols(i*kNumSlidingPlanes_, kNumSlidingPlanes_)
+          = e_ss_modes[t](i)*MatrixXi::Ones(1, kNumSlidingPlanes_);
+    }
+
+    // get current goal mode
+    MatrixXi e_sss_modes_goal, h_sss_modes_goal;
+    std::vector<MatrixXi> e_s_modes_goal, h_s_modes_goal;
+    if (!modeCleaning(e_cs_modes, {e_ss_modes_old_format}, kNumSlidingPlanes_, &e_sss_modes_goal, &e_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal e contacts." << std::endl;
+      exit(-1);
+    }
+    if (!modeCleaning(h_cs_modes, h_ss_modes, kNumSlidingPlanes_, &h_sss_modes_goal, &h_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal h contacts." << std::endl;
+      exit(-1);
+    }
+
+
+    VectorXi e_sss_mode_goal, h_sss_mode_goal;
+    e_sss_mode_goal = e_sss_modes_goal.middleRows(0, 1).transpose();
+    h_sss_mode_goal = h_sss_modes_goal.middleRows(0, 1).transpose();
+
+
+    // assemble the jacobians
+    MatrixXd N_e, T_e;
+    MatrixXd N_h, T_h;
+    getJacobian3d(CP_C_e, CN_C_e, N_e, T_e);
+    getJacobian3d(CP_C_h, CN_C_h, N_h, T_h);
+    // flip sign for hand contacts
+    N_h = - N_h;
+    T_h = - T_h;
+    MatrixXd Jac_e(N_e.rows() + T_e.rows(), N_e.cols());
+    Jac_e << N_e, T_e;
+    MatrixXd Jac_h(N_h.rows() + T_h.rows(), N_h.cols());
+    Jac_h << N_h, T_h;
+
+    std::cout << "kNumFingers: " << kNumFingers << std::endl;
+    std::cout << "h_cs_modes:\n" << h_cs_modes << std::endl;
+    std::cout << "h_ss_modes[0]:\n" << h_ss_modes[0] << std::endl;
+    std::cout << "h_sss_modes_goal:\n" << h_sss_modes_goal << std::endl;
+    std::cout << "h_s_modes_goal[0]:\n" << h_s_modes_goal[0] << std::endl;
+
+    std::cout << "CP_C_h:\n" << CP_C_h << std::endl;
+    std::cout << "CN_C_h:\n" << CN_C_h << std::endl;
+    std::cout << "Jac_e:\n" << Jac_e << std::endl;
+    std::cout << "Jac_h:\n" << Jac_h << std::endl;
+    MatrixXd J, Ju;
+    getConstraintOfTheMode(Jac_e, Jac_h,
+          e_sss_mode_goal, h_sss_mode_goal,
+          &J, &Ju);
+
+
     MatrixXd C;
     RUT::nullSpace(&J, &C);
+    // std::cout << "J:\n" << J << std::endl;
+    // std::cout << "C:\n" << C << std::endl;
     RUT::CartesianPose pose_CO_now = pose_CW*pose_WO;
     RUT::CartesianPose pose_CO_next = pose_CW*pose_WO_next;
     Vector6d vel_body = RUT::vee6(pose_CO_now.inv().getTransformMatrix()*(pose_CO_next.getTransformMatrix() - pose_CO_now.getTransformMatrix()))/dt;
@@ -1505,8 +1567,8 @@ bool WrenchSpaceAnalysis::computeControlFromMotionPlan(const MatrixXd &obj_traj,
     // std::cout << "relative\n:" << (pose_CO_next.inv()*pose_CO_now).getTransformMatrix() << std::endl;
 
     MatrixXd G = MatrixXd::Zero(C.rows(), 12);
-    G.leftCols(6) = C;
-    VectorXd b_G = C*vel_body;
+    G.leftCols(6) = C.leftCols(6);
+    VectorXd b_G = C.leftCols(6)*vel_body;
 
     // std::cout << "vel_body: " << vel_body.transpose() << std::endl;
     // std::cout << "G:\n" << G.transpose() << std::endl;
@@ -1520,10 +1582,8 @@ bool WrenchSpaceAnalysis::computeControlFromMotionPlan(const MatrixXd &obj_traj,
     computeContactModes();
     HFVC action;
     // getchar();
-    MatrixXi e_ss_modes_old_format(1, kNumContactsE*kNumSlidingPlanes_);
-    for (int i = 0; i < kNumContactsE; ++i)
-      e_ss_modes_old_format.middleCols(i*kNumContactsE, kNumSlidingPlanes_)
-          = e_ss_modes[t](i)*MatrixXi::Ones(1, kNumSlidingPlanes_);
+
+    
     // std::cout << "G:\n" << G << std::endl;
     // std::cout << "C:\n" << C << std::endl;
     // std::cout << "vel_body:\n" << vel_body << std::endl;
