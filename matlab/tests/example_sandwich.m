@@ -14,6 +14,7 @@ addpath ../utilities/
 kFrictionH = 0.7;
 kFrictionE = 0.3;
 kForceMagnitude = 15;
+kObjWeight = 10; % newton
 
 %%
 %% Geometrical Problem definition
@@ -23,7 +24,7 @@ kW = 0.0435; % object width
 kH = 0.0435; % object height
 
 % center of gravity
-p_W_G = [0; kH/2];
+p_W_G = [0; -kH/2];
 % list of contact points and contact normals
 p_W_e1 = [kW/2; 0];
 p_W_e2 = [-kW/2; 0];
@@ -47,14 +48,15 @@ angle = 0; % deg
 R_WH = rotz(angle);
 R_WH = R_WH(1:2, 1:2);
 angle_rad = angle*pi/180;
-p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad)]/2 + kH*[-sin(angle_rad); cos(angle_rad)];
+% p_WH = p_W_e2 + kW*[cos(angle_rad); sin(angle_rad)]/2 + kH*[-sin(angle_rad); cos(angle_rad)];
+p_WH = [0; -kH/2];
 
 %%
 %% Geometrical Pre-processing
 %%
 kNumSlidingPlanes = 1; % for 2D problem
-[J_e, J_h, T_e, T_h, eCone_allFix, hCone_allFix] = preProcessing(...
-        kFrictionE, kFrictionH, kNumSlidingPlanes, CP_W_e, CN_W_e, CP_H_h, CN_H_h, R_WH, p_WH);
+[J_e, T_e, J_h, T_h, eCone_allFix, hCone_allFix, F_G] = preProcessing(...
+        kFrictionE, kFrictionH, kNumSlidingPlanes, kObjWeight, CP_W_e, CN_W_e, CP_H_h, CN_H_h, p_WH,p_W_G);
 
 % mode enumeration
 [e_modes, h_modes] = sharedGraspModeEnumeration(CP_W_e, CN_W_e, CP_H_h, CN_H_h);
@@ -64,11 +66,11 @@ kNumSlidingPlanes = 1; % for 2D problem
 %% 0, 1 or 2
 %%
 
-% Palm Pivot
-G = [0 0 1 0 0 0];
-b_G = [0.1];
-e_mode = int8([0; 1]); % sf
-h_mode = int8([1; 1]); % ff
+% % Palm Pivot
+% G = [0 0 1 0 0 0];
+% b_G = [0.1];
+% e_mode = int8([0; 1]); % sf
+% h_mode = int8([1; 1]); % ff
 
 % % Palm Slide
 % G = [1 0 0 0 0 0];
@@ -82,14 +84,14 @@ h_mode = int8([1; 1]); % ff
 % e_mode = int8([0; 1]); % sf
 % h_mode = int8([0; 1]); % sf
 
-% % Palm Pivot slide
-% adj_WH = SE32Adj(R_WH, p_WH);
-% GO = [1 0 -p_W_e2(2)]*adj_WH;
-% G = [GO 0 0 0;
-%      0 0 1 0 0 0];
-% b_G = [-0.1; 0.5];
-% e_mode = int8([0; 3]); % sl
-% h_mode = int8([1; 1]); % ff
+% Palm Pivot slide
+adj_WH = SE22Adj(R_WH, p_WH);
+GO = [1 0 -p_W_e2(2)]*adj_WH;
+G = [GO 0 0 0;
+     0 0 1 0 0 0];
+b_G = [-0.1; 0.5];
+e_mode = int8([0; 3]); % sl
+h_mode = int8([1; 1]); % ff
 
 % % Test three contacts
 % G = [1 0 0 0 0 0];
@@ -121,7 +123,6 @@ toc
 %         CP_W_e(1:2,:), CN_W_e(1:2,:), CP_H_h(1:2,:), CN_H_h(1:2,:), R_WH(1:2,1:2), p_WH(1:2), e_mode, h_mode);
 %
 %
-% kObjWeight = 10; % newton
 % kContactForce = 30;
 % tic
 % for i = 1:10

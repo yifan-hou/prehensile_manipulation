@@ -60,8 +60,8 @@ figure(1); clf(1); hold on;
 
 % draw the force controlled subspace
 % slate=[63/255,61/255,83/255];
-% drawCone(10*F_control_directions, ocean, false);
-% drawCone(10*V_control_directions, blueberry, true);
+drawCone(10*F_control_directions, ocean, false);
+drawCone(10*V_control_directions, blueberry, true);
 
 % draw the origin
 plot3(0,0,0,'k.','markersize',25);

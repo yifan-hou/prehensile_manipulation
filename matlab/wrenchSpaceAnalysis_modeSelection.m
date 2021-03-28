@@ -13,7 +13,7 @@ solution = [];
 TOL = 1e-7;
 
 goal_mode_is_given = false;
-if nargin == 15
+if nargin == 13
     goal_mode_is_given = true;
 end
 
@@ -47,11 +47,8 @@ eh_modes = [];
 margins = [];
 
 eh_cones = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-cone_e = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-cone_h = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 Jacs = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 Jacus = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-Jacues = cell(size(e_modes, 2)*size(h_modes, 2), 1);
 
 eh_cone_feasible_mode_count = 0;
 goal_id = 0;
@@ -82,11 +79,11 @@ for i = 1:size(e_modes, 2)
         % compute velocity Jacobian
         [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Normal_e, Normal_h, Tangent_e, Tangent_h);
 
-        % figure(1);clf(1);hold on;
+        figure(1);clf(1);hold on;
         % printModes([e_modes(:, i); h_modes(:, j)]);
         % fprintf('Margin: %f\n', margin_);
-        % drawCone(Je_','g', true);
-        % drawCone(Jh_','b', true);
+        drawCone(Je_','g', true);
+        drawCone(Jh_','b', true);
 
         eh_modes = [eh_modes [e_modes(:, i); h_modes(:, j)]];
         margins = [margins margin_];
@@ -97,7 +94,7 @@ for i = 1:size(e_modes, 2)
         Jacus{eh_cone_feasible_mode_count} = Nu;
 
         if goal_mode_is_given
-            if (i == e_mode_goal) && (j == h_mode_goal)
+            if (all(e_modes(:, i) == e_mode_goal) && all(h_modes(:, j) == h_mode_goal))
                 goal_id = eh_cone_feasible_mode_count;
             end
         end
@@ -140,7 +137,9 @@ for m = 1:eh_cone_feasible_mode_count
     fprintf("= Hybrid Servoing & Crashing Check =\n");
     fprintf("====================================\n");
     N_all = Jacs{m};
+
     [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, G, b_G);
+
     if isempty(n_av)
         disp("Failure: Hybrid Servoing returns no solution.")
         if goal_mode_is_given
@@ -166,7 +165,6 @@ for m = 1:eh_cone_feasible_mode_count
     fprintf("=======================\n");
     fprintf("=== Mode Filtering ===\n");
     fprintf("=======================\n");
-
     % How to filter out modes:
     % 1. If NC degenerates, mark this mode as incompatible;
     % 2. If nominal velocity under NC exists, and it cause the contact point to
@@ -290,6 +288,8 @@ for m = 1:eh_cone_feasible_mode_count
         end
     end
 end
+
+return;
 
 fprintf("###############################################\n");
 fprintf("##                  Results                  ##\n");

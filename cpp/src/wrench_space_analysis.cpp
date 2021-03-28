@@ -1,15 +1,23 @@
 #include "wrench_space_analysis.h"
-#include "timer.h"
 
 #include <list>
 #include <string>
 #include <algorithm>
 #include <iostream>
+#include <timer.h>
 
-// #include "solvehfvc.h"
+#include <RobotUtilities/utilities.h>
+#include <modus/enumerate_modes.hpp>
+#include <yaml-cpp/yaml.h>
+
+#include "shared_grasping_jacobian.h"
 #include "polyhedron.h"
 
-#define TOL 1e-7
+
+Eigen::IOFormat MatlabFmt(Eigen::StreamPrecision, 0, ", ", ";\n", "", "", "[",
+      "]");
+
+#define TOL 1e-8
 #define PI 3.1415926
 
 using namespace Eigen;
@@ -17,34 +25,534 @@ using namespace Eigen;
 typedef Matrix<double, 6, 6> Matrix6d;
 typedef Matrix<double, 6, 1> Vector6d;
 
-// Geometrical parameters:
-//  Jac_e, Jac_h
-//  eCone_allFix, hCone_allFix: each row denotes a generator
-//  F_G: gravity vector
-// Magnitude parameters:
-//  kContactForce
-//  kCharacteristicLength
-// List of all velocity-consistent contact modes
-//  e_cs_modes, h_cs_modes: number of cs modes x number of contacts
-//  e_ss_modes, h_ss_modes: a vector, each element is a (number of modes x number of total sliding directions) matrix describing the stick-sliding modes for a particular cs modes.
-// Optional arguments (use an empty matrix to denote an unused argument):
-//  A, b: additional force constraint
-//  G, b_G: goal velocity description
-//  e_mode_goal, h_mode_goal: a particular goal mode
-void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
-    MatrixXd eCone_allFix, MatrixXd hCone_allFix,
-    const VectorXd &F_G, const double kContactForce,
+WrenchSpaceAnalysis::WrenchSpaceAnalysis() {
+  /**
+   * Get Parameters from YAML
+   */
+  char *path_to_src = getenv("PREHENSILE_MANIPULATION_PATH");
+  if (path_to_src == nullptr) {
+    std::cout << "[WrenchSpaceAnalysis] Environment variable PREHENSILE_MANIPULATION_PATH doesn't exist!" << std::endl;
+    exit(-1);
+  }
+  std::string src_path(path_to_src);
+  std::string config_path = src_path + "/configs/wrench_space_analysis_config.yaml";
+  YAML::Node config = YAML::LoadFile(config_path);
+  print_level_ = config["print_level"].as<int>();
+  num_seeds_ = config["force_control"]["initial_seed_sampling"]["num_seeds"].as<std::vector<int>>();
+  hitAndRun_num_points_ = config["force_control"]["initial_seed_sampling"]
+      ["hitAndRun"]["num_points"].as<std::vector<int>>();
+  hitAndRun_num_discard_ = config["force_control"]["initial_seed_sampling"]
+      ["hitAndRun"]["num_discard"].as<std::vector<int>>();
+  hitAndRun_num_runup_ = config["force_control"]["initial_seed_sampling"]
+      ["hitAndRun"]["num_runup"].as<std::vector<int>>();
+  ransac_num_ = config["force_control"]["initial_seed_sampling"]
+      ["ransac"]["num"].as<std::vector<int>>();
+  opt_ins_num_iter_ = config["force_control"]["optimization"]
+      ["ins_num_iter"].as<std::vector<int>>();
+  opt_min_dist_improvement_ = config["force_control"]["optimization"]
+      ["min_dist_improvement"].as<double>();
+}
+
+WrenchSpaceAnalysis::~WrenchSpaceAnalysis() {}
+
+double WrenchSpaceAnalysis::wrenchStamping_2d(MatrixXd Jac_e, MatrixXd Jac_h,
+    MatrixXd eCone_allFix_r, MatrixXd hCone_allFix_r,
+    VectorXd F_G,
+    const double kContactForce, const double kFrictionE, const double kFrictionH,
+    const double kCharacteristicLength,
+    MatrixXd G, const VectorXd &b_G,
+    const MatrixXi &e_modes, const MatrixXi &h_modes,
+    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal, HFVC *action) {
+  if (print_level_ > 0)
+    std::cout << "[wrenchSpaceAnalysis_2d] Calling..\n";
+  // std::cout << "eCone_allFix_r: " << eCone_allFix_r << std::endl;
+  // std::cout << "hCone_allFix_r: " << hCone_allFix_r << std::endl;
+  // std::cout << "F_G: " << F_G << std::endl;
+  // std::cout << "kContactForce: " << kContactForce << std::endl;
+  // std::cout << "kFrictionE: " << kFrictionE << std::endl;
+  // std::cout << "kFrictionH: " << kFrictionH << std::endl;
+  // std::cout << "kCharacteristicLength: " << kCharacteristicLength << std::endl;
+  // std::cout << "G: " << G << std::endl;
+  // std::cout << "b_G: " << b_G << std::endl;
+  // std::cout << "e_modes: " << e_modes << std::endl;
+  // std::cout << "h_modes: " << h_modes << std::endl;
+  // std::cout << "e_mode_goal: " << e_mode_goal << std::endl;
+  // std::cout << "h_mode_goal: " << h_mode_goal << std::endl;
+  // getchar();
+  Timer timer;
+  timer.tic();
+
+  FullPivLU<MatrixXd> lu; // for quickly solving linear system
+  lu.setThreshold(TOL);
+
+  double time_stats_initialization;
+  double time_stats_force_margin;
+  double time_stats_hybrid_servoing;
+  double time_stats_crashing_check;
+  double time_stats_velocity_loops;
+
+  bool flag_given_goal_velocity = false;
+  if (b_G.size() > 0) flag_given_goal_velocity = true;
+
+  int kNumEContacts = e_modes.cols();
+  int kNumHContacts = h_modes.cols();
+  int kDim = Jac_e.cols();
+  // scaling for generalized velocity
+  Vector3d kv_vec, kv_inv_vec, kf_vec;
+  double scale = 1./kCharacteristicLength;
+  kv_vec << scale, scale, 1;
+  kv_inv_vec << 1./scale, 1./scale, 1;
+  kf_vec << 1, 1, scale;
+  Matrix3d Kv = kv_vec.asDiagonal();
+  Matrix3d Kf = kf_vec.asDiagonal();
+  Matrix3d Kv_inv = kv_inv_vec.asDiagonal();
+
+  Jac_e = Jac_e * Kv_inv;
+  Jac_h = Jac_h * Kv_inv;
+  eCone_allFix_r = eCone_allFix_r * Kf;
+  hCone_allFix_r = hCone_allFix_r * Kf;
+  F_G = Kf * F_G;
+  if (flag_given_goal_velocity) {
+    G.leftCols(kDim) = G.leftCols(kDim) * Kv_inv;
+    G.rightCols(kDim) = G.rightCols(kDim) * Kv_inv;
+  }
+
+  bool flag_given_goal_mode = false;
+  if (e_mode_goal.rows() > 0) flag_given_goal_mode = true;
+
+  // for crashing check
+  MatrixXd cone_allFix_r;
+  if (!Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+
+  // divide the big matrices
+  // Jn: nContacts x 6,  Nn: nContacts x 12,  Jacobian for the normals
+  // Jt: 2*nContacts x 6,  Nn: 2*nContacts x 12, Jacobian for the tangentials
+  MatrixXd Jn(kNumEContacts + kNumHContacts, kDim);
+  Jn << Jac_e.topRows(kNumEContacts), Jac_h.topRows(kNumHContacts);
+  MatrixXd Jt(kNumEContacts + kNumHContacts, kDim);
+  Jt << Jac_e.bottomRows(kNumEContacts), Jac_h.bottomRows(kNumHContacts);
+  MatrixXd Nn(Jn.rows(), 2*kDim);
+  Nn << Jac_e.topRows(kNumEContacts), MatrixXd::Zero(kNumEContacts, kDim),
+       -Jac_h.topRows(kNumHContacts), Jac_h.topRows(kNumHContacts);
+  MatrixXd Nt(Jt.rows(), 2*kDim);
+  Nt << Jac_e.bottomRows(kNumEContacts), MatrixXd::Zero(kNumEContacts, kDim),
+        -Jac_h.bottomRows(kNumHContacts), Jac_h.bottomRows(kNumHContacts);
+
+  time_stats_initialization = timer.toc();
+  timer.tic();
+  /**
+   * Filter out modes with empty Wrench Cones
+   * Compute geometrical stability margin
+   */
+  if (print_level_ > 0)
+    std::cout << "[WrenchStamping] 1. Wrench cone filtering" << std::endl;
+  std::vector<VectorXi> eh_modes;
+  std::vector<double> margins;
+  std::vector<MatrixXd> polytope_of_the_modes;
+  std::vector<MatrixXd> N_of_the_modes;
+  std::vector<MatrixXd> Nu_of_the_modes;
+  int goal_id = -1;
+  double geometrical_stability_margin = 0;
+
+  VectorXi e_mode_ii, h_mode_jj;
+  MatrixXd e_cone_ii, e_polytope_ii, h_cone_jj, h_polytope_jj;
+  MatrixXd polytope_ij_sum;
+  MatrixXd polytope_ij_minus;
+  MatrixXd polytope_ij_sum_A;
+  VectorXd polytope_ij_sum_b;
+  MatrixXd N, Nu;
+  for (int ii = 0; ii < e_modes.rows(); ++ii) {
+    e_mode_ii = e_modes.middleRows(ii, 1).transpose();
+    e_cone_ii = kContactForce * getConeOfTheMode_2d(eCone_allFix_r, e_mode_ii);
+    if (!Poly::minkowskiSumOfVectors(e_cone_ii, &e_polytope_ii)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+
+    // gravity offset
+    if (!Poly::offsetPolytope(&e_polytope_ii, F_G)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+
+    bool is_goal_e = true;
+    if (flag_given_goal_mode) {
+      for (int i = 0; i < kNumEContacts; ++i) {
+        if (e_mode_ii[i] != e_mode_goal[i]) {
+          is_goal_e = false;
+          break;
+        }
+      }
+    }
+
+    for (int jj = 0; jj < h_modes.rows(); ++jj) {
+      h_mode_jj = h_modes.middleRows(jj, 1).transpose();
+      h_cone_jj = - kContactForce * getConeOfTheMode_2d(hCone_allFix_r, h_mode_jj);
+      if (!Poly::minkowskiSumOfVectors(h_cone_jj, &h_polytope_jj)) {
+        std::cout << "BUG: polyhedron computation return false." << std::endl;
+        exit(-1);
+      }
+
+      if (print_level_ > 0)
+        std::cout << "  ii:" << ii << ", jj:" << jj << ", e mode:" << e_mode_ii.transpose() << ", h mode:" << h_mode_jj.transpose();
+
+      if (!Poly::minkowskiSum(e_polytope_ii, h_polytope_jj, &polytope_ij_sum)) {
+        std::cout << "BUG: polyhedron computation return false." << std::endl;
+        exit(-1);
+      }
+      if (!Poly::polytopeFacetEnumeration(polytope_ij_sum, &polytope_ij_sum_A, &polytope_ij_sum_b)) {
+        std::cout << "BUG: polyhedron computation return false." << std::endl;
+        exit(-1);
+      }
+
+      if (polytope_ij_sum_b.minCoeff() <= 1e-5 ) {
+        if (print_level_ > 0) std::cout << " F-Infeasible." << std::endl;
+        continue;
+      }
+      // The cone is non-empty.
+      // compute the stability margin
+      // margin = min(b./normByRow(A));
+      double margin = 9999;
+      for (int i = 0; i < polytope_ij_sum_b.rows(); ++i) {
+        double A_row_norm = polytope_ij_sum_A.middleRows(i, 1).norm();
+        assert(A_row_norm > 1e-7);
+        double margin_new = polytope_ij_sum_b(i)/A_row_norm;
+        if (margin_new < margin) margin = margin_new;
+      }
+      if (print_level_ > 0) std::cout << " margin: " << margin;
+
+      // compute the polytope of the mode (intersection, not minkowski sum)
+      if (!Poly::polytopeIntersection(e_polytope_ii, -h_polytope_jj, &polytope_ij_minus)) {
+        std::cerr << "Intersection is not found!!\n";
+        return -1;
+      }
+
+      // check if this is a goal mode
+      if (flag_given_goal_mode && is_goal_e) {
+        bool is_goal_h = true;
+        for (int i = 0; i < kNumHContacts; ++i) {
+          if (h_mode_jj[i] != h_mode_goal[i]) {
+            is_goal_h = false;
+            break;
+          }
+        }
+        if (is_goal_h) {
+          if (print_level_ > 0) std::cout << " (Goal)";
+          goal_id = margins.size();
+          geometrical_stability_margin = margin;
+        }
+      }
+      if (print_level_ > 0) std::cout << std::endl;
+
+      // store the results
+      margins.push_back(margin);
+      // polytope_of_the_modes.push_back(polytope_ij_sum);
+      polytope_of_the_modes.push_back(polytope_ij_minus);
+
+      getConstraintOfTheMode_2d(Jac_e, Jac_h, e_mode_ii, h_mode_jj, &N, &Nu);
+
+      N_of_the_modes.push_back(N);
+      Nu_of_the_modes.push_back(Nu);
+
+      // for debug purpose
+      VectorXi eh_mode(kNumEContacts + kNumHContacts);
+      eh_mode << e_mode_ii, h_mode_jj;
+      eh_modes.push_back(eh_mode);
+    }
+  }
+  if (goal_id < 0) {
+    std::cout << "[WrenchStamping]    Goal mode does not have force-balance." << std::endl;
+    return -1;
+  }
+
+  time_stats_force_margin = timer.toc();
+  timer.tic();
+
+  if (print_level_ > 0) {
+    std::cout << "[WrenchStamping] 2. HFVC" << std::endl;
+    std::cout << "J: \n" << N_of_the_modes[goal_id].format(MatlabFmt) << std::endl;
+  }
+  int kDimActualized = 3;
+  int kDimUnActualized = 3;
+  int hfvc_flag = solvehfvc_nullspace(N_of_the_modes[goal_id], G, b_G,
+      kDimActualized, kDimUnActualized, action);
+  if (hfvc_flag != 0) {
+    std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: " <<
+        hfvc_flag << std::endl;
+    return -1;
+  }
+  assert(action->n_af < kDimActualized); // shouldn't be all force
+  assert(action->n_af > 0); // shouldn't be all velocity
+  // make sure all velocity commands >= 0
+  for (int i = 0; i < action->n_av; ++i) {
+    if (action->b_C(i) < 0) {
+      action->b_C(i) = - action->b_C(i);
+      action->C.middleRows(i, 1) = - action->C.middleRows(i, 1);
+      action->R_a.middleRows(i + action->n_af, 1) = - action->R_a.middleRows(i + action->n_af, 1);
+    }
+  }
+  action->w_av = action->b_C;
+  MatrixXd V_control_directions_r = -action->R_a.bottomRows(action->n_av);
+  MatrixXd F_control_directions_r = action->R_a.topRows(action->n_af);
+
+  time_stats_hybrid_servoing = timer.toc();
+  timer.tic();
+
+  // Crashing check
+  MatrixXd R;
+  if (!Poly::coneIntersection(cone_allFix_r, V_control_directions_r, &R)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+  if (R.rows() > 0) {
+    std::cout << "[WrenchStamping]    Crashing." << std::endl;
+    return -1;
+  }
+
+  time_stats_crashing_check = timer.toc();
+  timer.tic();
+
+  if (print_level_ > 0)  std::cout << "[WrenchStamping] 3. Begin Velocity loop." << std::endl;
+  std::vector<int> feasible_ids;
+  for (int id = 0; id < margins.size(); ++id) {
+    if (print_level_ > 0) {
+      std::cout << "[WrenchStamping]    Checking id: " << id;
+      std::cout << " : " << eh_modes[id].transpose();
+      if (id == goal_id) std::cout << " (Goal)";
+    }
+
+    MatrixXd N = N_of_the_modes[id];
+    MatrixXd Nu = Nu_of_the_modes[id]; // Nu*v >= 0
+
+    // check velocity constraints
+    MatrixXd NC(N.rows() + action->C.rows(), N.cols());
+    NC << N, action->C;
+    VectorXd b_NC = VectorXd::Zero(NC.rows());
+    b_NC.tail(action->b_C.rows()) = action->b_C;
+    VectorXd b_Nu = VectorXd::Zero(Nu.rows());
+    VectorXd xs(N.cols());
+    double optimal_cost;
+    bool feasible = Poly::lp(VectorXd::Zero(N.cols()), -Nu, b_Nu,
+        NC, b_NC, VectorXd(0), VectorXd(0), &xs, &optimal_cost);
+    if (!feasible) {
+      // no solution
+      if (id == goal_id) {
+        std::cout << " Goal is infeasible. Return." << std::endl;
+        return -1;
+      }
+      if (print_level_ > 0) std::cout << " infeasible." << std::endl;
+      continue; // otherwise, just discard this mode
+    }
+    // if(!Poly::vertexEnumeration(-Nu, b_Nu, NC, b_NC, &R)) {
+    //   std::cerr << "Error: vertexEnumeration returns error." << std::endl;
+    //   return -1;
+    // }
+    // if (R.rows() == 0) {
+    // this mode is feasible. store its polytope
+    feasible_ids.push_back(id);
+    if (print_level_ > 0) std::cout << " stored." << std::endl;
+  }
+
+  if (print_level_ > 0)
+    std::cout << "[WrenchStamping] 4. Compute force control and control-stability-margin." << std::endl;
+  std::vector<MatrixXd> polytopes_projection_r;
+  std::vector<MatrixXd> pps_A; // A x <= b
+  std::vector<VectorXd> pps_b; // A x <= b
+  MatrixXd pp_goal_A;
+  VectorXd pp_goal_b;
+  VectorXd pp_goal_point; // an inner point
+  MatrixXd polytope_projection, pp_A;
+  VectorXd pp_b;
+  if (print_level_ > 0)
+    std::cout << "[WrenchStamping]  4.1 Compute the projection of the polytopes." << std::endl;
+  for (int c = 0; c < feasible_ids.size(); ++c) {
+    if (print_level_ > 0)
+      std::cout << "[WrenchStamping]    Polytope " << c << ": " << eh_modes[feasible_ids[c]].transpose() << ": ";
+    // projection
+    polytope_projection = polytope_of_the_modes[feasible_ids[c]] * F_control_directions_r.transpose();
+    // get the inequality representations for the cone projections
+    if(!Poly::polytopeFacetEnumeration(polytope_projection, &pp_A, &pp_b)) {
+      std::cerr << "Error: polytopeFacetEnumeration return error." << std::endl;
+      std::cout << "polytope_projection: " << polytope_projection << std::endl;
+      exit(-1);
+    }
+    if (print_level_ > 0) std::cout << polytope_projection.rows() << " vertices.";
+
+    // std::cout << "F_control_directions_r:\n" << F_control_directions_r << std::endl;
+    // std::cout << "polytope_of_the_modes[feasible_ids[c]]:\n" << polytope_of_the_modes[feasible_ids[c]] << std::endl;
+    // std::cout << " A rows: " << pp_A.rows() << std::endl;
+    // getchar();
+    // return -1;
+
+    if (goal_id == feasible_ids[c]) {
+      if (print_level_ > 0) std::cout << " (id: Goal) ";
+      pp_goal_A = pp_A;
+      pp_goal_b = pp_b;
+      // std::cout <<  "pp_goal_A:\n" << pp_goal_A << std::endl;
+      // std::cout <<  "pp_goal_b:\n" << pp_goal_b << std::endl;
+      pp_goal_point = (MatrixXd::Ones(1, polytope_projection.rows()) * polytope_projection).transpose() / polytope_projection.rows();
+      assert(("Assertion fail: goal polytope projection is empty", polytope_projection.norm() > 1e-5));
+      assert(("Assertion fail: goal polytope projection degenerates", polytope_projection.rows() >= action->n_af)); // ideally we should check its rank
+    } else {
+      polytopes_projection_r.push_back(polytope_projection);
+      pps_A.push_back(pp_A);
+      pps_b.push_back(pp_b);
+      if (print_level_ > 0) std::cout << " (id:" << pps_A.size() - 1 << ") ";
+    }
+    if (print_level_ > 0) std::cout << " A rows: " << pp_A.rows() << std::endl;
+    // std::cout << "polytope_projection:\n" << polytope_projection << std::endl;
+    // std::cout << "polytope_of_the_modes[feasible_ids[c]]:\n" << polytope_of_the_modes[feasible_ids[c]] << std::endl;
+  }
+  if (print_level_ > 0)
+    std::cout << "[WrenchStamping]  4.2 Sample wrenches and find feasible ones." << std::endl;
+  VectorXd wrench_best;
+  double control_stability_margin = forceControl(kContactForce, action->n_af,
+      pp_goal_A, pp_goal_b, pps_A, pps_b, &wrench_best);
+
+  // // sample wrenches in the projection of the goal polytope
+  // int ns = 0;
+  // if (action.n_af == 1) ns = 5;
+  // else if (action.n_af == 2) ns = 20;
+  // else ns = 50;
+
+  // // int discard = 10;
+  // // int runup = 10;
+  // // MatrixXd wrench_samples = Poly::hitAndRunSampleInPolytope(pp_goal_A, pp_goal_b,
+  // //     pp_goal_point, ns, discard, runup);
+  // std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
+  //     pp_goal_A, pp_goal_b,
+  //     pps_A, pps_b, pp_goal_point, ns);
+
+  // // std::cout << "wrench_samples: \n" << wrench_samples << std::endl;
+  // // std::cout << "wrench_sample_norms: \n" << wrench_samples.rowwise().norm() << std::endl;
+  // VectorXd wrench_sample, wrench_best;
+  // double control_stability_margin = -1;
+  // for (int s = 0; s < ns; ++s) { // make sure they sum to one
+  //   // create the sample
+  //   wrench_sample = wrench_samples[s];
+  //   if (print_level_ > 0)
+  //     std::cout << "[WrenchStamping]    Sample #" << s << ": ";
+  //   // check if the sample is within any other polytopes
+  //   bool infeasible_sample = false;
+  //   for (int i = 0; i < pps_A.size(); ++i) {
+  //     VectorXd Ax = pps_A[i]*wrench_sample - pps_b[i];
+  //     if (Ax.maxCoeff() <= 0) {
+  //       // the sample is within another polytope
+  //       if (print_level_ > 0) std::cout << i << "th polytope infeasible." << std::endl;
+  //       infeasible_sample = true;
+  //       break;
+  //     }
+  //   }
+  //   if (infeasible_sample) continue;
+
+  //   // compute its distance to all other projections
+  //   double min_dist = 999999.9;
+  //   for (int i = 0; i < pps_A.size(); ++i) {
+  //     double dist = Poly::distP2Polyhedron(wrench_sample, pps_A[i], pps_b[i], VectorXd::Random(kDim));
+  //     if (dist < min_dist) min_dist = dist;
+  //   }
+  //   if (min_dist > control_stability_margin) {
+  //     control_stability_margin = min_dist;
+  //     wrench_best = wrench_sample;
+  //   }
+  //   if (print_level_ > 0) std::cout << "min_dist:" << min_dist << std::endl;
+  // }
+
+
+  if (control_stability_margin < 0) {
+    std::cout << "[WrenchStamping] 4. Force control has no solution." << std::endl;
+    return -1;
+  }
+  if (print_level_ > 0)
+    std::cout << "[WrenchStamping] 4. Force control: " << wrench_best.transpose() << std::endl;
+  // now we have the control stability margin
+  action->eta_af = -wrench_best; // the minus sign comes from force balance
+  // before scaling
+  // R_scaled^T*eta_scaled = Kf*f
+  // VectorXd f0 = action.R_a.topRows(action.n_af).transpose() * action.eta_af;
+  // VectorXd F_T = Kf.inverse() * f0;
+
+  // scale back so the control constraints work on normal units
+  VectorXd kv2_vec(6);
+  kv2_vec << kv_vec, kv_vec;
+  MatrixXd Kv2 = kv2_vec.asDiagonal();
+  action->R_a.topRows(action->n_af) *= Kf;
+  action->R_a.bottomRows(action->n_av) *= Kv;
+  action->C *= Kv2;
+
+  // print the results
+  MatrixXd R_a_inv = action->R_a.inverse();
+  VectorXd V = VectorXd::Zero(kDimActualized);
+  V.tail(action->n_av) = action->w_av;
+  VectorXd V_T = R_a_inv*V;
+
+  VectorXd F = VectorXd::Zero(kDimActualized);
+  F.head(action->n_af) = action->eta_af;
+  VectorXd F_T = R_a_inv*F;
+
+  if (print_level_ > 0) {
+    // MatrixXd N = N_of_the_modes[goal_id] * Kv2;
+    // MatrixXd NC(N.rows() + action->C.rows(), N.cols());
+    // NC << N, action->C;
+    // VectorXd b_NC = VectorXd::Zero(NC.rows());
+    // b_NC.tail(action->b_C.rows()) = action->b_C;
+    // assert(NC.norm() > 10*TOL); //otherwise lu won't be accurate
+    // lu.compute(NC);
+    // VectorXd sol_NC = lu.solve(b_NC);
+    // bool a_solution_exists = (NC*sol_NC).isApprox(b_NC, 10.*TOL);
+    // if (!a_solution_exists) {
+    //     // no solution
+    //     std::cout << "No Solution. " << std::endl;
+    //     continue;
+    // }
+    // MatrixXd null_NC = lu.kernel();
+    // std::cout << "null_NC: " << null_NC << std::endl;
+    // std::cout << "Gv-bg: " << G*sol_NC - b_G << std::endl;
+
+    std::cout << " 5. Results:" << std::endl;
+    std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
+    std::cout << "   control_stability_margin: " << control_stability_margin << std::endl;
+    std::cout << "   R_a:\n" << action->R_a << std::endl;
+    std::cout << "   w_av:\n" << action->w_av << std::endl;
+    std::cout << "   eta_af:\n" << action->eta_af << std::endl;
+    std::cout << "   V_T:" << V_T.transpose() << std::endl;
+    std::cout << "   F_T:" << F_T.transpose() << std::endl;
+
+    time_stats_velocity_loops = timer.toc();
+    std::cout << "Timing statistics:\n";
+    std::cout << "  time_stats_initialization: " << time_stats_initialization << " ms\n";
+    std::cout << "  time_stats_force_margin: " << time_stats_force_margin << " ms\n";
+    std::cout << "  time_stats_hybrid_servoing: " << time_stats_hybrid_servoing << " ms\n";
+    std::cout << "  time_stats_crashing_check: " << time_stats_crashing_check << " ms\n";
+    std::cout << "  time_stats_velocity_loops: " << time_stats_velocity_loops << " ms\n";
+    std::cout << "  Total: " << time_stats_initialization + time_stats_force_margin
+        + time_stats_hybrid_servoing + time_stats_crashing_check
+        + time_stats_velocity_loops << " ms\n";
+  }
+  return std::min(control_stability_margin, geometrical_stability_margin);
+}
+
+
+std::pair<double, double> WrenchSpaceAnalysis::wrenchStamping(MatrixXd Jac_e, MatrixXd Jac_h,
+    MatrixXd eCone_allFix_r, MatrixXd hCone_allFix_r,
+    VectorXd F_G, const double kContactForce,
+    const double kFrictionE, const double kFrictionH,
     const double kCharacteristicLength, const int kNumSlidingPlanes,
     const MatrixXi &e_cs_modes, const std::vector<MatrixXi> &e_ss_modes,
     const MatrixXi &h_cs_modes, const std::vector<MatrixXi> &h_ss_modes,
     MatrixXd G, const VectorXd &b_G,
-    const VectorXi &e_mode_goal, const VectorXi &h_mode_goal) {
-
-  std::cout << "[wrenchSpaceAnalysis] Calling..\n";
+    const MatrixXi &e_cs_modes_goal, const std::vector<MatrixXi> &e_ss_modes_goal,
+    const MatrixXi &h_cs_modes_goal, const std::vector<MatrixXi> &h_ss_modes_goal,
+    HFVC *action) {
+  if (print_level_ > 0)
+    std::cout << "[wrenchSpaceAnalysis] Calling..\n";
   // std::cout << "Jac_e: " << Jac_e.rows() << " x " << Jac_e.cols() << std::endl;
   // std::cout << "Jac_h: " << Jac_h.rows() << " x " << Jac_h.cols() << std::endl;
-  // std::cout << "eCone_allFix: " << eCone_allFix.rows() << " x " << eCone_allFix.cols() << std::endl;
-  // std::cout << "hCone_allFix: " << hCone_allFix.rows() << " x " << hCone_allFix.cols() << std::endl;
+  // std::cout << "eCone_allFix_r: " << eCone_allFix_r.rows() << " x " << eCone_allFix_r.cols() << std::endl;
+  // std::cout << "hCone_allFix_r: " << hCone_allFix_r.rows() << " x " << hCone_allFix_r.cols() << std::endl;
   // std::cout << "e_cs_modes: " << e_cs_modes.rows() << " x " << e_cs_modes.cols() << std::endl;
   // std::cout << "h_cs_modes: " << h_cs_modes.rows() << " x " << h_cs_modes.cols() << std::endl;
   // std::cout << "e_ss_modes: " << e_ss_modes.size() << std::endl;
@@ -52,401 +560,1657 @@ void wrenchSpaceAnalysis(MatrixXd Jac_e, MatrixXd Jac_h,
   // std::cout << "G: " << G.rows() << " x " << G.cols() << std::endl;
   // std::cout << "F_G: " << F_G.size() << std::endl;
   // std::cout << "b_G: " << b_G.size() << std::endl;
-  // std::cout << "e_mode_goal: " << e_mode_goal.size() << std::endl;
-  // std::cout << "h_mode_goal: " << h_mode_goal.size() << std::endl;
+  // std::cout << "e_cs_modes_goal: " << e_cs_modes_goal.size() << std::endl;
+  // std::cout << "h_cs_modes_goal: " << h_cs_modes_goal.size() << std::endl;
+  // std::cout << "Jac_e:\n" << Jac_e << std::endl;
+  // std::cout << "Jac_h:\n" << Jac_h << std::endl;
+  // std::cout << "G:\n" << G << std::endl;
+  // std::cout << "b_G:\n" << b_G << std::endl;
+  // std::cout << "eCone_allFix_r:\n" << eCone_allFix_r << std::endl;
+  // std::cout << "hCone_allFix_r:\n" << hCone_allFix_r << std::endl;
+  // std::cout << "F_G:\n" << F_G << std::endl;
+  // std::cout << "kContactForce:" << kContactForce << std::endl;
+  // std::cout << "kFrictionE:" << kFrictionE << std::endl;
+  // std::cout << "kFrictionH:" << kFrictionH << std::endl;
+  // std::cout << "kCharacteristicLength:" << kCharacteristicLength << std::endl;
+  // std::cout << "kNumSlidingPlanes:" << kNumSlidingPlanes << std::endl;
   // getchar();
+  action->R_a = MatrixXd::Zero(3,3); // default value, indicates no solution
+
   Timer timer;
   timer.tic();
+  double time_stats_initialization;
+  double time_stats_hybrid_servoing;
+  double time_stats_velocity_filtering;
+  double time_stats_projection;
+  double time_stats_force_control;
 
-  bool flag_given_goal_mode = false;
-  if (e_mode_goal.size() > 1 ) flag_given_goal_mode = true;
   bool flag_given_goal_velocity = false;
   if (b_G.size() > 0) flag_given_goal_velocity = true;
 
+  int kNumEContacts = e_cs_modes.cols();
+  int kNumHContacts = h_cs_modes.cols();
+  int kDim = Jac_e.cols();
   // scaling for generalized velocity
-  // V = gvscale * V_scaled
-  Vector6d vscale_vec, vscale_inv_vec;
-  vscale_vec << 1., 1., 1., 1./kCharacteristicLength, 1./kCharacteristicLength, 1./kCharacteristicLength;
-  vscale_inv_vec << 1., 1., 1., kCharacteristicLength, kCharacteristicLength, kCharacteristicLength;
-  MatrixXd vscale = vscale_vec.asDiagonal();
-  MatrixXd vscale_inv = vscale_inv_vec.asDiagonal();
-  MatrixXd gvscale(12, 12);
-  gvscale.block<6, 6>(0, 0) = vscale;
-  gvscale.block<6, 6>(6, 6) = vscale;
-  // N_ * V_scaled = 0, N*V = 0,
-  Jac_e = Jac_e * vscale;
-  Jac_h = Jac_h * vscale;
-  eCone_allFix = eCone_allFix * vscale;
-  hCone_allFix = hCone_allFix * vscale;
-  if (flag_given_goal_velocity) G = G*gvscale;
+  Vector6d kv_vec, kv_inv_vec, kf_vec;
+  double scale = 1./kCharacteristicLength;
+  kv_vec << scale, scale, scale, 1, 1, 1;
+  kv_inv_vec << 1./scale, 1./scale, 1./scale, 1, 1, 1;
+  kf_vec << 1, 1, 1, scale, scale, scale;
+  MatrixXd Kv = kv_vec.asDiagonal();
+  MatrixXd Kf = kf_vec.asDiagonal();
+  MatrixXd Kv_inv = kv_inv_vec.asDiagonal();
 
-  // for crashing check
-  MatrixXd cone_allFix;
-  Poly::coneIntersection(eCone_allFix, hCone_allFix, &cone_allFix);
-
-
-
-  int empty = 0;
-  int non_empty = 0;
-  Eigen::VectorXi e_ss_mode = Eigen::VectorXi::zeros(e_ss_modes[0].cols());
-  Eigen::VectorXi h_ss_mode = Eigen::VectorXi::zeros(h_ss_modes[0].cols());
-  for (int e_cs_i = 0; e_cs_i < NE_SSS_MODES; ++e_cs_i) {
-    e_sss_mode = e_sss_modes.middleRows(e_cs_i, 1).transpose();
-    for (int h_sss_i = 0; h_sss_i < NH_SSS_MODES; ++h_sss_i) {
-      h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
-      e_s_mode = e_s_modes[e_cs_i].middleRows(e_s_i, 1).transpose();
-      e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
-      h_s_mode = h_s_modes[h_sss_i].middleRows(h_s_i, 1).transpose();
-      h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
-      Poly::coneIntersection(e_cone, h_cone, &R);
-      if(R.rows() == 0) empty ++;
-      else non_empty ++;
-    }
+  Jac_e = Jac_e * Kv_inv;
+  Jac_h = Jac_h * Kv_inv;
+  eCone_allFix_r = eCone_allFix_r * Kf;
+  hCone_allFix_r = hCone_allFix_r * Kf;
+  F_G = Kf * F_G;
+  if (flag_given_goal_velocity) {
+    G.leftCols(kDim) = G.leftCols(kDim) * Kv_inv;
+    G.rightCols(kDim) = G.rightCols(kDim) * Kv_inv;
   }
 
-  std::cout << "\nEmpty: " << empty << std::endl;
-  std::cout << "Non-empty: " << non_empty << std::endl;
-  std::cout << "timer: All time = " << timer.toc() << "ms" << std::endl;
+  // for crashing check
+  // Instead of
+  //    Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r);
+  // save the H-representation of the cone of the all-fixed mode
+  MatrixXd Ae_allFix;
+  MatrixXd Ah_allFix;
+  if (!Poly::coneFacetEnumeration(eCone_allFix_r, &Ae_allFix)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+  if (!Poly::coneFacetEnumeration(hCone_allFix_r, &Ah_allFix)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+  MatrixXd A_allFix(Ae_allFix.rows() + Ah_allFix.rows(), Ae_allFix.cols());
+  A_allFix << Ae_allFix, Ah_allFix;
+  // do minimized_constraints here?
 
+  MatrixXi e_sss_modes, h_sss_modes;
+  std::vector<MatrixXi> e_s_modes, h_s_modes;
 
-
-  Eigen::MatrixXi e_sss_modes, h_sss_modes;
-  std::vector<Eigen::MatrixXi> e_s_modes, h_s_modes;
-  int num_e_contacts = e_cs_modes.cols();
-  int num_h_contacts = h_cs_modes.cols();
+  // divide the big matrices
+  // Jn: nContacts x 6,  Nn: nContacts x 12,  Jacobian for the normals
+  // Jt: 2*nContacts x 6,  Nn: 2*nContacts x 12, Jacobian for the tangentials
+  MatrixXd Jn(kNumEContacts + kNumHContacts, kDim);
+  Jn << Jac_e.topRows(kNumEContacts), Jac_h.topRows(kNumHContacts);
+  MatrixXd Jt(2*kNumEContacts + 2*kNumHContacts, kDim);
+  Jt << Jac_e.bottomRows(2*kNumEContacts), Jac_h.bottomRows(2*kNumHContacts);
+  MatrixXd Nn(Jn.rows(), 2*kDim);
+  Nn << Jac_e.topRows(kNumEContacts), MatrixXd::Zero(kNumEContacts, kDim),
+       -Jac_h.topRows(kNumHContacts), Jac_h.topRows(kNumHContacts);
+  MatrixXd Nt(Jt.rows(), 2*kDim);
+  Nt << Jac_e.bottomRows(2*kNumEContacts), MatrixXd::Zero(2*kNumEContacts, kDim),
+        -Jac_h.bottomRows(2*kNumHContacts), Jac_h.bottomRows(2*kNumHContacts);
 
   if (!modeCleaning(e_cs_modes, e_ss_modes, kNumSlidingPlanes, &e_sss_modes, &e_s_modes)) {
     std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for e contacts." << std::endl;
-    return;
+    exit(-1);
   }
   if (!modeCleaning(h_cs_modes, h_ss_modes, kNumSlidingPlanes, &h_sss_modes, &h_s_modes)) {
     std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for h contacts." << std::endl;
-    return;
+    exit(-1);
   }
 
+  MatrixXi e_sss_modes_goal, h_sss_modes_goal;
+  std::vector<MatrixXi> e_s_modes_goal, h_s_modes_goal;
 
-  std::cout << "timer: modeCleaning time = " << timer.toc() << "ms" << std::endl;
-  /**
-   * Preparation
+  std::vector<MatrixXd> sample_grids;
+  sample_grids.push_back(MatrixXd(2, 1));
+  sample_grids.push_back(MatrixXd(4, 2));
+  sample_grids.push_back(MatrixXd(8, 3));
+  sample_grids[0] << 1,
+                    -1;
+  sample_grids[1] << 1, 1,
+                   1, -1,
+                   -1, 1,
+                   -1, -1;
+  sample_grids[2] << 1, 1, 1,
+                   1, 1, -1,
+                   1, -1, 1,
+                   1, -1, -1,
+                   -1, 1, 1,
+                   -1, 1, -1,
+                   -1, -1, 1,
+                   -1, -1, -1;
+
+  if (e_cs_modes_goal.size() == 0 ) {
+    e_sss_modes_goal = e_sss_modes;
+    h_sss_modes_goal = h_sss_modes;
+    e_s_modes_goal = e_s_modes;
+    h_s_modes_goal = h_s_modes;
+  } else {
+    if (!modeCleaning(e_cs_modes_goal, e_ss_modes_goal, kNumSlidingPlanes, &e_sss_modes_goal, &e_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal e contacts." << std::endl;
+      exit(-1);
+    }
+    if (!modeCleaning(h_cs_modes_goal, h_ss_modes_goal, kNumSlidingPlanes, &h_sss_modes_goal, &h_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal h contacts." << std::endl;
+      exit(-1);
+    }
+  }
+
+  int kDimActualized = 6;
+  int kDimUnActualized = 6;
+
+  VectorXi e_sss_mode_goal, h_sss_mode_goal;
+  VectorXi e_sss_mode, h_sss_mode;
+
+  FullPivLU<MatrixXd> lu; // for quickly solving linear system
+  lu.setThreshold(TOL);
+
+  time_stats_initialization = timer.toc();
+  timer.tic();
+
+  /*******************************************************************
+   *      First half: Velocity Filtering
    */
-  const int NE_SSS_MODES = e_sss_modes.rows();
-  const int NH_SSS_MODES = h_sss_modes.rows();
+  if (print_level_ > 1)
+    std::cout << "##         Begin loop         ##\n";
+  timer.tic();
+  e_sss_mode_goal = e_sss_modes_goal.middleRows(0, 1).transpose();
+  h_sss_mode_goal = h_sss_modes_goal.middleRows(0, 1).transpose();
+  int goal_id_e = findIdInModes(e_sss_mode_goal, e_sss_modes);
+  int goal_id = -1;
+  assert(goal_id_e >= 0);
 
-  std::cout << "##         Check CS modes F-feasibility         ##\n";
-  Eigen::VectorXi e_sss_mode, h_sss_mode;
-  Eigen::MatrixXd e_cone, h_cone;
-  Eigen::MatrixXd R;
+  std::vector<MatrixXd> e_cones_VFeasible;
+  std::vector<VectorXi> e_modes_VFeasible;
+  std::vector<VectorXi> h_modes_VFeasible;
 
-  // check every s mode
-  // Eigen::VectorXi e_s_mode, h_s_mode;
-  // int empty = 0;
-  // int non_empty = 0;
-  // for (int e_sss_i = 0; e_sss_i < NE_SSS_MODES; ++e_sss_i) {
-  //   e_sss_mode = e_sss_modes.middleRows(e_sss_i, 1).transpose();
-  //   for (int h_sss_i = 0; h_sss_i < NH_SSS_MODES; ++h_sss_i) {
-  //     h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
-  //     for (int e_s_i = 0; e_s_i < e_s_modes[e_sss_i].rows(); ++e_s_i) {
-  //       e_s_mode = e_s_modes[e_sss_i].middleRows(e_s_i, 1).transpose();
-  //       e_cone = getConeOfTheMode(eCone_allFix, e_sss_mode, e_s_mode, kNumSlidingPlanes);
-  //       for (int h_s_i = 0; h_s_i < h_s_modes[h_sss_i].rows(); ++h_s_i) {
-  //          h_s_mode = h_s_modes[h_sss_i].middleRows(h_s_i, 1).transpose();
-  //         h_cone = getConeOfTheMode(hCone_allFix, h_sss_mode, h_s_mode, kNumSlidingPlanes);
-  //         Poly::coneIntersection(e_cone, h_cone, &R);
-  //         if(R.rows() == 0) empty ++;
-  //         else non_empty ++;
-  //       }
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping] 1. HFVC" << std::endl;
+  MatrixXd N, Nu;
+  getConstraintOfTheMode(Jac_e, Jac_h,
+      e_sss_mode_goal, h_sss_mode_goal,
+      &N, &Nu);
+  int hfvc_flag = solvehfvc_nullspace(N, G, b_G, kDimActualized,
+      kDimUnActualized, action);
+
+  if (hfvc_flag != 0) {
+    std::cout << "[WrenchStamping]    HFVC has no solution. Return flag: "
+        << hfvc_flag << std::endl;
+    return {-2, -2};
+  }
+  assert(action->n_af < kDimActualized);
+  assert(action->n_af > 0);
+  // make sure all velocity commands >= 0
+  for (int i = 0; i < action->n_av; ++i) {
+    if (action->b_C(i) < 0) {
+      action->b_C(i) = - action->b_C(i);
+      action->C.middleRows(i, 1) = - action->C.middleRows(i, 1);
+      action->R_a.middleRows(i + action->n_af, 1) = - action->R_a.middleRows(i + action->n_af, 1);
+    }
+  }
+  action->w_av = action->b_C;
+  MatrixXd V_control_directions_r = -action->R_a.bottomRows(action->n_av);
+  MatrixXd F_control_directions_r = action->R_a.topRows(action->n_af);
+  MatrixXd R_a_inv = action->R_a.inverse();
+  // Crashing check
+
+  time_stats_hybrid_servoing = timer.toc();
+  timer.tic();
+
+  MatrixXd A_V_cone;
+  if (!Poly::coneFacetEnumeration(V_control_directions_r, &A_V_cone)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+  MatrixXd A_AF_V(A_V_cone.rows() + A_allFix.rows(), A_allFix.cols());
+  A_AF_V << A_V_cone, A_allFix;
+  VectorXd xs = VectorXd::Zero(A_V_cone.cols());
+  bool is_feasible = Poly::lpfeasibility(A_AF_V, VectorXd::Zero(A_AF_V.rows()), &xs);
+  if (is_feasible && xs.norm() > TOL) {
+    if (print_level_ > 0)
+      std::cout << "[WrenchStamping]    Crashing." << std::endl;
+    return {-3,-3};
+  } else {
+    if (print_level_ > 1)
+      std::cout << "  No crashing." << std::endl;
+  }
+
+  /**
+   * Debug HS
+   *
+   */
+  // MatrixXd N0C(N.rows() + action->C.rows(), N.cols());
+  // N0C << N, action->C;
+  // VectorXd b_N0C = VectorXd::Zero(N0C.rows());
+  // b_N0C.tail(action->b_C.rows()) = action->b_C;
+  // assert(N0C.norm() > 10*TOL); //otherwise lu won't be accurate
+  // lu.compute(N0C);
+  // VectorXd sol_N0C = lu.solve(b_N0C);
+  // bool a_solution_exists = (N0C*sol_N0C).isApprox(b_N0C, 10.*TOL);
+  // if (!a_solution_exists) {
+  //     // no solution
+  //     std::cout << "No Solution. " << std::endl;
+  //     continue;
+  // }
+  // MatrixXd null_N0C = lu.kernel();
+  // std::cout << "sol_N0C: " << sol_N0C.transpose() << std::endl;
+  // std::cout << "null_N0C: " << null_N0C << std::endl;
+  // std::cout << "Gv-bg: " << G*sol_N0C - b_G << std::endl;
+
+  // VectorXd kv2_vec(12);
+  // kv2_vec << kv_vec, kv_vec;
+  // MatrixXd Kv2 = kv2_vec.asDiagonal();
+  // action->R_a.topRows(action->n_af) *= Kf;
+  // action->R_a.bottomRows(action->n_av) *= Kv;
+  // action->C *= Kv2;
+
+  // MatrixXd R_a_inv = action->R_a.inverse();
+  // VectorXd V = VectorXd::Zero(kDimActualized);
+  // V.tail(action->n_av) = action->w_av;
+  // VectorXd V_T = R_a_inv*V;
+  // std::cout << "   V_T:" << V_T.transpose() << std::endl;
+  // // VectorXd F_T = action->R_a.topRows(action->n_af).transpose() * action->eta_af;
+  // // std::cout << "   F_T:" << F_T.transpose() << std::endl;
+  // return;
+
+  // time_stats_hybrid_servoing = timer.toc();
+  // timer.tic();
+
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping] 2. Check Velocity Feasibility." << std::endl;
+  // How to filter out modes:
+  // 1. If NC degenerates, mark this mode as incompatible;
+  // 2. If NC gives unique solution, record the cone of this mode
+  // 3. If NC gives multiple solutions, record the cone of the all sticking mode.
+  for (int e_sss_i = 0; e_sss_i < e_sss_modes.rows(); ++e_sss_i) {
+    e_sss_mode = e_sss_modes.middleRows(e_sss_i, 1).transpose();
+    for (int h_sss_i = 0; h_sss_i < h_sss_modes.rows(); ++h_sss_i) {
+      h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
+      if (print_level_ > 1) {
+        std::cout << "[WrenchStamping]    Checking id: " << e_sss_i << ", " << h_sss_i;
+        std::cout << " (e: " << e_sss_mode.transpose() << ", h: " << h_sss_mode.transpose() << ")\t";
+      }
+
+
+      getConstraintOfTheMode(Jac_e, Jac_h, e_sss_mode, h_sss_mode, &N, &Nu);
+
+      MatrixXd NC(N.rows() + action->C.rows(), N.cols());
+      NC << N, action->C;
+      VectorXd b_NC = VectorXd::Zero(NC.rows());
+      b_NC.tail(action->b_C.rows()) = action->b_C;
+      assert(NC.norm() > 10*TOL); //otherwise lu won't be accurate
+      lu.compute(NC);
+      VectorXd sol_NC = lu.solve(b_NC);
+      bool a_solution_exists = (NC*sol_NC).isApprox(b_NC, 10.*TOL);
+      if (!a_solution_exists) {
+          // no solution
+          if (print_level_ > 1)
+            std::cout << "No Solution. " << std::endl;
+          continue;
+      }
+      MatrixXd null_NC = lu.kernel();
+      bool has_penetration = false;
+      if (Nu.rows() > 0) {
+        // check inequalities
+        MatrixXd contact_normal_proj = Nu*null_NC; // this is a linear space, not cone
+        VectorXd contact_normal_sol = Nu*sol_NC;
+        for (int i = 0; i < Nu.rows(); ++i) {
+          if (contact_normal_proj.middleRows(i, 1).norm() < TOL) {
+            if (contact_normal_sol(i) < -TOL) {
+              has_penetration = true;
+              break;
+            }
+          }
+        }
+      }
+      if (has_penetration) {
+        if (print_level_ > 1)
+          std::cout << "Violates inequalities. " << std::endl;
+        continue;
+      }
+
+      // get the generators for the sticking contacts
+      // std::cout << "debugging\n";
+      // std::cout << "eCone_allFix_r:\n" << eCone_allFix_r << std::endl;
+      // std::cout << "e_sss_mode:\n" << e_sss_mode << std::endl;
+      // std::cout << "kNumSlidingPlanes:\n" << kNumSlidingPlanes << std::endl;
+      MatrixXd e_cone_base = getConeOfTheMode(eCone_allFix_r, e_sss_mode, kNumSlidingPlanes);
+      // First, decide where to get velocity samples.
+      // If samples from contact, fill up g_sampled directly.
+      // If samples from kernel, fill in vel_samples_in_kernel
+      MatrixXd vel_samples_in_kernel = MatrixXd(0, 2*kDim);
+      std::vector<MatrixXd> g_sampled;
+      if (null_NC.norm() < TOL) {
+        // unique solution
+        // find the cone of this Unique solution
+        vel_samples_in_kernel = sol_NC.transpose();
+        if (print_level_ > 1)
+          std::cout << "Unique Vel. v_sample = " << vel_samples_in_kernel.rows();
+      } else {
+        // Multiple solutions
+        // sample sliding velocities
+        int dim_null_NC = null_NC.cols();
+        if (print_level_ > 1)
+          std::cout << "Non-Unique Vel, kernel = " << dim_null_NC << ", contact dim = ";
+        // check dimension of contact tangential projections for sliding contacts
+        std::vector<int> contact_sliding_DOFs;
+        std::vector<int> contact_ids;
+        std::vector<VectorXd> contact_vels;
+        std::vector<MatrixXd> contact_kernels;
+        for (int i = 0; i < kNumEContacts; ++i) {
+          if (e_sss_mode(i) == 0) {
+            MatrixXd contact_tangent_proj = Nt.middleRows(2*i, 2)*null_NC;
+            if (contact_tangent_proj.norm() < 10.0*TOL) {
+              // rank = 0
+              continue;
+            } else {
+              lu.compute(contact_tangent_proj);
+              int rank = lu.rank();
+              if (print_level_ > 1)
+                std::cout << rank << " ";
+              VectorXd contact_tangent_sol = Nt.middleRows(2*i, 2)*sol_NC;
+              contact_sliding_DOFs.push_back(rank);
+              contact_ids.push_back(i);
+              contact_vels.push_back(contact_tangent_sol);
+              contact_kernels.push_back(lu.image(contact_tangent_proj));
+            }
+          }
+        }
+        if ((print_level_ > 1) && (contact_ids.size() == 0)) {
+          std::cout << "0 ";
+        }
+        // sample velocities
+        //  1. no sliding: g_sampled = empty.
+        //  2. has sliding:
+        //    a. contact dim all zeros (x)
+        //    b. contact dim = 1: sample from contact dim
+        //    c. contact dim > 1: sample from kernel
+        if (contact_sliding_DOFs.size() == 0) {
+          // no sliding, do nothing here
+          if (print_level_ > 1)
+            std::cout << ", no sliding";
+        } else if (contact_sliding_DOFs.size() == 1) {
+          // sample from contact, 1d or 2d
+          assert(contact_sliding_DOFs[0] > 0);
+          assert(contact_sliding_DOFs[0] <= 2);
+          // fill g_sampled directly
+          double mag = contact_vels[0].norm();
+          if (mag < 100*TOL) mag = 1;
+          MatrixXd sample_grid = sample_grids[contact_sliding_DOFs[0]-1] * mag;
+          MatrixXd vel_samples_on_contact =
+              MatrixXd::Ones(sample_grid.rows(), 1) * contact_vels[0].transpose()
+              + sample_grid * contact_kernels[0].transpose();
+          // normalize, get cones
+          double friction = (contact_ids[0] < kNumEContacts)? kFrictionE:kFrictionH;
+          getSlidingGeneratorsFromOneContact(vel_samples_on_contact,
+              Jt.middleRows(2*contact_ids[0], 2), Jn.middleRows(contact_ids[0], 1),
+              friction, &g_sampled);
+          if (print_level_ > 1)
+            std::cout << ", g_sample = " << g_sampled.size();
+        } else {
+          // sample from kernel
+          double mag = sol_NC.norm();
+          if (mag < 100*TOL) mag = 1;
+          assert(dim_null_NC <= 3);
+          MatrixXd sample_grid = sample_grids[dim_null_NC-1] * mag;
+          vel_samples_in_kernel =
+              MatrixXd::Ones(sample_grid.rows(), 1) * sol_NC.transpose()
+              + sample_grid * null_NC.transpose();
+          if (print_level_ > 1)
+            std::cout << ", v_sample = " << vel_samples_in_kernel.rows();
+        }
+      }
+
+      if ((g_sampled.size() == 0) && (vel_samples_in_kernel.rows() != 0)) {
+        // samples are drawn from kernel, in vel_samples_in_kernel
+        // use it to fill up g_sampled
+        // project kernel to every sliding contacts
+        for (int ks = 0; ks < vel_samples_in_kernel.rows(); ++ks) {
+          std::vector<double> g_one_sample;
+          for (int i = 0; i < kNumEContacts; ++i) {
+            if (e_sss_mode(i) == 0) {
+              VectorXd contact_tangent_proj = Nt.middleRows(2*i, 2)*vel_samples_in_kernel.middleRows(ks,1).transpose();
+              std::vector<MatrixXd> g_samples_contact_i;
+              getSlidingGeneratorsFromOneContact(contact_tangent_proj.transpose(),
+                Jt.middleRows(2*i, 2), Jn.middleRows(i, 1), kFrictionE, &g_samples_contact_i);
+              if(g_samples_contact_i.size() > 0)
+                for (int ii = 0; ii < g_samples_contact_i[0].cols(); ++ii) {
+                  g_one_sample.push_back(g_samples_contact_i[0](0, ii));
+                }
+            }
+          }
+          int ng = g_one_sample.size()/kDim;
+          MatrixXd g_sampled_k = MatrixXd::Map(g_one_sample.data(), kDim, ng);
+          g_sampled.push_back(g_sampled_k.transpose());
+        }
+        if (print_level_ > 1)
+          std::cout << ", v2g: " << g_sampled.size();
+      }
+
+      // save the cone(s)
+      int size0 = e_cones_VFeasible.size();
+      if (g_sampled.size() > 0) {
+        // there is at least one sliding contact, or NC has unique solution
+        for (int s = 0; s < g_sampled.size(); ++s) {
+          MatrixXd e_cone(e_cone_base.rows() + g_sampled[s].rows(), kDim);
+          e_cone << e_cone_base, g_sampled[s];
+          e_cones_VFeasible.push_back(e_cone);
+          e_modes_VFeasible.push_back(e_sss_mode);
+          h_modes_VFeasible.push_back(h_sss_mode);
+          if (e_sss_i == goal_id_e) goal_id = e_cones_VFeasible.size() - 1;
+        }
+        if (print_level_ > 1)
+          std::cout << ", save g: " << e_cones_VFeasible.size() - size0;
+      } else {
+        // there is no sliding contact
+        e_cones_VFeasible.push_back(e_cone_base);
+        e_modes_VFeasible.push_back(e_sss_mode);
+        h_modes_VFeasible.push_back(h_sss_mode);
+        if (e_sss_i == goal_id_e) goal_id = e_cones_VFeasible.size() - 1;
+        if (print_level_ > 1)
+          std::cout << ", save base.";
+      }
+      if (e_sss_i == goal_id_e) assert(g_sampled.size() == 1);
+      if (print_level_ > 1)
+        std::cout << std::endl;
+    }
+  }
+  // done with inner SSS loop
+  assert(goal_id >= 0);
+  time_stats_velocity_filtering = timer.toc();
+  timer.tic();
+
+  /*******************************************************************
+   *      Second half: Force Filtering
+   */
+  // project cones of the modes onto force-controlled subspace
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping] 3. Compute force control and control-stability-margin." << std::endl;
+  std::vector<MatrixXd> pps_A; // polyhedra projections, A x <= b
+  std::vector<VectorXd> pps_b; // polyhedra projections, A x <= b
+  // std::vector<MatrixXd> pps_R; // polyhedra projections, generators // not using
+  MatrixXd pp_goal_A;
+  VectorXd pp_goal_b;
+  // MatrixXd pp_goal_R; // not using
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping]  3.1 Compute cone of the modes." << std::endl;
+
+  Timer timer_g_margin, timer_projection;
+  double geometrical_stability_margin = 0;
+  double time_g_margin = 0;
+  double time_projection = 0;
+  for (int c = 0; c < e_cones_VFeasible.size(); ++c) {
+    timer_g_margin.tic();
+    if (print_level_ > 1) {
+      std::cout << "[WrenchStamping]    Cone " << c << ": " << e_modes_VFeasible[c].transpose() << ", " << h_modes_VFeasible[c].transpose() << ": ";
+      std::cout << "computing geometrical_stability_margin: # " << e_cones_VFeasible[c].rows() + hCone_allFix_r.rows()  << std::endl;
+    }
+    // compute cone of the modes
+    // Fe + G - Fh
+    PPL::C_Polyhedron ph_closure(6, PPL::EMPTY);
+    MatrixXd R_cl(e_cones_VFeasible[c].rows() + hCone_allFix_r.rows() + 1, e_cones_VFeasible[c].cols() + 1);
+    R_cl.leftCols(1) = VectorXd::Ones(R_cl.rows());
+    R_cl(R_cl.rows() - 1, 0) = 0;
+    R_cl.block(0, 1, e_cones_VFeasible[c].rows(), e_cones_VFeasible[c].cols()) = e_cones_VFeasible[c];
+    R_cl.block(e_cones_VFeasible[c].rows(), 1, hCone_allFix_r.rows(), hCone_allFix_r.cols()) = - hCone_allFix_r;
+    R_cl.block(R_cl.rows()-1, 1, 1, F_G.rows()) = F_G.transpose();
+    if (!Poly::constructPPLPolyFromV(R_cl, &ph_closure)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    ph_closure.minimized_constraints();
+    // compute the distance from the origin to the facets
+    MatrixXd A_cl;
+    VectorXd b_cl;
+    if (!Poly::getFacetFromPPL(ph_closure, &A_cl, &b_cl)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    // Ax <= b
+    // origin must be in the polyhedra, so 0 <= b
+    if (b_cl.minCoeff() <= 1e-5 ) {
+      if (print_level_ > 1) std::cout << " F-Infeasible." << std::endl;
+      // std::cout << "e_cones_VFeasible:\n" << e_cones_VFeasible[c] << std::endl;
+      // std::cout << "hCone_allFix_r:\n" << hCone_allFix_r << std::endl;
+      if (c == goal_id) {
+        if (print_level_ > 0) std::cout << " Goal mode is F-Infeasible." << std::endl;
+        return {-1, -1};
+      }
+      continue;
+    }
+    // The polyhedron contains the origin.
+    // compute the stability margin
+    // margin = min(b./normByRow(A));
+    geometrical_stability_margin = 9999;
+    for (int i = 0; i < b_cl.rows(); ++i) {
+      double A_row_norm = A_cl.middleRows(i, 1).norm();
+      assert(A_row_norm > 1e-7);
+      double margin_new = b_cl(i)/A_row_norm;
+      if (margin_new < geometrical_stability_margin) geometrical_stability_margin = margin_new;
+    }
+    if (print_level_ > 1)
+      std::cout << " geometrical_stability_margin: "
+          << geometrical_stability_margin << std::endl;
+
+    time_g_margin += timer_g_margin.toc();
+
+    timer_projection.tic();
+    PPL::C_Polyhedron ph1(6, PPL::EMPTY);
+    MatrixXd R1(e_cones_VFeasible[c].rows() + 1, e_cones_VFeasible[c].cols() + 1);
+    R1 << VectorXd::Zero(e_cones_VFeasible[c].rows()), e_cones_VFeasible[c],
+          1, F_G.transpose();
+    if(!Poly::constructPPLPolyFromV(R1, &ph1)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+
+    PPL::C_Polyhedron ph2(6, PPL::EMPTY);
+    MatrixXd R2(hCone_allFix_r.rows(), hCone_allFix_r.cols() + 1);
+    R2 << VectorXd::Zero(hCone_allFix_r.rows()), hCone_allFix_r;
+    if (!Poly::constructPPLPolyFromV(R2, &ph2)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+
+    ph1.minimized_constraints();
+    ph2.minimized_constraints();
+
+    ph1.intersection_assign(ph2);
+    ph1.minimized_generators();
+
+    // check intersection results
+    MatrixXd p_R;
+    if (!Poly::getVertexFromPPL(ph1, &p_R)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    if (!((p_R.rows() > 0) && (p_R.rightCols(p_R.cols()-1).norm() > TOL))) {
+      std::cout << "BUG!! Empty intersection with a positive G-Margin." << std::endl;
+      exit(-1);
+    }
+
+    /**
+     * Projection to force controlled subspace
+     */
+    // // get G-representation by projection
+    // MatrixXd pp_R(p_R.rows(), F_control_directions_r.rows() + 1);
+    // pp_R << p_R.leftCols(1), p_R.rightCols(p_R.cols()-1) * F_control_directions_r.transpose();
+
+    // get H-representation by cylindrificate
+    MatrixXd R_V_lines(V_control_directions_r.rows(), V_control_directions_r.cols() + 1);
+    R_V_lines << 2*VectorXd::Ones(V_control_directions_r.rows()), V_control_directions_r;
+    PPL::Generator_System gs_V;
+    if (!Poly::constructPPLGeneratorsFromV(R_V_lines, &gs_V)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    ph1.add_generators(gs_V);
+    ph1.minimized_constraints();
+    // Extract the colunms for the projected space
+    MatrixXd cylinder_A;
+    VectorXd cylinder_b;
+    if (!Poly::getFacetFromPPL(ph1, &cylinder_A, &cylinder_b)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    cylinder_A = cylinder_A * R_a_inv;
+    MatrixXd pp_A;
+    VectorXd pp_b;
+    pp_A = cylinder_A.leftCols(action->n_af);
+    pp_b = cylinder_b;
+
+    if (goal_id == c) {
+      if (print_level_ > 1)
+        std::cout << " (id: Goal)" << std::endl;
+      // generators projection
+      // assert(pp_R.norm() > 1e-5);
+      // pp_goal_R = pp_R;
+      pp_goal_A = pp_A;
+      pp_goal_b = pp_b;
+    } else {
+      // pps_R.push_back(pp_R); // not using
+      pps_A.push_back(pp_A);
+      pps_b.push_back(pp_b);
+      // std::cout << " (id:" << pps_A.size() - 1 << ") ";;
+      // std::cout << " A rows: " << pp_A.rows() << std::endl;
+    }
+    time_stats_projection += timer_projection.toc();
+  }
+  // assert(pp_goal_R.rows() >= action->n_af); // ideally we should check its rank
+
+  // get rid of cones that are not adjacent to goal cone
+  // std::vector<MatrixXd> cp_A_selected;
+  // std::cout << "reducing irrelevant cones. Total number of cones before: " << cp_A.size() << std::endl;
+  // for (int i = 0; i < cp_A.size(); ++i) {
+  //   VectorXd xs = VectorXd::Zero(cp_goal_A.cols());
+  //   MatrixXd cp_all_A(cp_goal_A.rows() + cp_A[i].rows(), cp_goal_A.cols());
+  //   cp_all_A << cp_goal_A, cp_A[i];
+  //   bool is_feasible = Poly::lpfeasibility(cp_all_A, -1e-7*VectorXd::Ones(cp_all_A.rows()), &xs);
+  //   std::cout << "is_feasible: " << is_feasible << ", xs: " << xs.transpose() << std::endl;
+  //   if (is_feasible && xs.norm() > TOL) {
+  //     cp_A_selected.push_back(cp_A[i]);
+  //   } else {
+  //   }
+  // }
+  // cp_A = cp_A_selected;
+  // std::cout << "Total number of cones after: " << cp_A.size() << std::endl;
+
+  timer.tic();
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping]  3.2 Sample wrenches and find feasible ones." << std::endl;
+
+  VectorXd wrench_best;
+  double control_stability_margin = forceControl(kContactForce, action->n_af,
+      pp_goal_A, pp_goal_b, pps_A, pps_b, &wrench_best);
+
+  if (control_stability_margin < 0) {
+    if (print_level_ > 0)
+      std::cout << "[WrenchStamping] 3. Force control has no solution." << std::endl;
+    return {-4,-4};
+  }
+  time_stats_force_control = timer.toc();
+  action->eta_af = - wrench_best; // the minus sign comes from force balance
+  // now we have the control stability margin
+  VectorXd kv2_vec(12);
+  kv2_vec << kv_vec, kv_vec;
+  MatrixXd Kv2 = kv2_vec.asDiagonal();
+  action->R_a_f = action->R_a * Kf;
+  action->R_a_v = action->R_a * Kv;
+  action->C *= Kv2;
+  // MatrixXd R_a_inv = action->R_a.inverse();
+  // VectorXd V = VectorXd::Zero(kDimActualized);
+  // V.tail(action->n_av) = action->w_av;
+  // VectorXd V_T = R_a_inv*V;
+  if (print_level_ > 0) {
+    VectorXd F_T = F_control_directions_r.transpose() * action->eta_af;
+    std::cout << " 4. Results:" << std::endl;
+    std::cout << "   geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
+    std::cout << "   control_stability_margin: " << control_stability_margin << std::endl;
+    std::cout << "   R_a:\n" << action->R_a << std::endl;
+    std::cout << "   R_a_f:\n" << action->R_a_f << std::endl;
+    std::cout << "   w_av:\n" << action->w_av << std::endl;
+    std::cout << "   eta_af:\n" << action->eta_af << std::endl;
+    // std::cout << "   V_T:" << V_T.transpose() << std::endl;
+    std::cout << "   F_T:" << F_T.transpose() << std::endl;
+    std::cout << "   F_T_scaled:" << (action->R_a_f.topRows(action->n_af).transpose() * action->eta_af).transpose() << std::endl;
+
+    std::cout << "Timing statistics:\n";
+    std::cout << "  time_stats_initialization: " << time_stats_initialization << " ms\n";
+    std::cout << "  time_stats_hybrid_servoing: " << time_stats_hybrid_servoing << " ms\n";
+    std::cout << "  time_stats_velocity_filtering: " << time_stats_velocity_filtering << " ms\n";
+    std::cout << "  time_stats_projection: " << time_stats_projection << " ms\n";
+    std::cout << "  time_stats_robustness: " << time_g_margin << " ms\n";
+    std::cout << "  time_stats_force_control: " << time_stats_force_control << " ms\n";
+    std::cout << "  Total: " << time_stats_initialization + time_stats_hybrid_servoing + time_stats_velocity_filtering
+        + time_stats_projection + time_stats_force_control << " ms\n";
+  }
+  return {geometrical_stability_margin, control_stability_margin};
+}
+std::pair<double, double> WrenchSpaceAnalysis::wrenchStampingEvaluation(MatrixXd Jac_e, MatrixXd Jac_h,
+    MatrixXd eCone_allFix_r, MatrixXd hCone_allFix_r,
+    VectorXd F_G, const double kContactForce,
+    const double kFrictionE, const double kFrictionH,
+    const double kCharacteristicLength, const int kNumSlidingPlanes,
+    const MatrixXi &e_cs_modes, const std::vector<MatrixXi> &e_ss_modes,
+    const MatrixXi &h_cs_modes, const std::vector<MatrixXi> &h_ss_modes,
+    MatrixXd G, const VectorXd &b_G,
+    const MatrixXi &e_cs_modes_goal, const std::vector<MatrixXi> &e_ss_modes_goal,
+    const MatrixXi &h_cs_modes_goal, const std::vector<MatrixXi> &h_ss_modes_goal,
+    const HFVC &action_input) {
+  if (print_level_ > 0)
+    std::cout << "[wrenchStampingEvaluation] Calling..\n";
+
+  Timer timer;
+  timer.tic();
+  double time_stats_initialization;
+  double time_stats_hybrid_servoing;
+  double time_stats_velocity_filtering;
+  double time_stats_force_control;
+
+  bool flag_given_goal_velocity = false;
+  if (b_G.size() > 0) flag_given_goal_velocity = true;
+
+  int kNumEContacts = e_cs_modes.cols();
+  int kNumHContacts = h_cs_modes.cols();
+  int kDim = Jac_e.cols();
+  // scaling for generalized velocity
+  Vector6d kv_vec, kv_inv_vec, kf_vec, kf_inv_vec;
+  double scale = 1./kCharacteristicLength;
+  kv_vec << scale, scale, scale, 1, 1, 1;
+  kv_inv_vec << 1./scale, 1./scale, 1./scale, 1, 1, 1;
+  kf_vec << 1, 1, 1, scale, scale, scale;
+  kf_inv_vec << 1, 1, 1, 1./scale, 1./scale, 1./scale;
+  MatrixXd Kv = kv_vec.asDiagonal();
+  MatrixXd Kf = kf_vec.asDiagonal();
+  MatrixXd Kv_inv = kv_inv_vec.asDiagonal();
+  MatrixXd Kf_inv = kf_inv_vec.asDiagonal();
+
+  Jac_e = Jac_e * Kv_inv;
+  Jac_h = Jac_h * Kv_inv;
+  eCone_allFix_r = eCone_allFix_r * Kf;
+  hCone_allFix_r = hCone_allFix_r * Kf;
+  F_G = Kf * F_G;
+  if (flag_given_goal_velocity) {
+    G.leftCols(kDim) = G.leftCols(kDim) * Kv_inv;
+    G.rightCols(kDim) = G.rightCols(kDim) * Kv_inv;
+  }
+
+  VectorXd kv2_inv_vec(12);
+  kv2_inv_vec << kv_inv_vec, kv_inv_vec;
+  MatrixXd Kv2_inv = kv2_inv_vec.asDiagonal();
+  HFVC action = action_input;
+  action.C *= Kv2_inv;
+  // for crashing check
+  // Instead of
+  //    Poly::coneIntersection(eCone_allFix_r, hCone_allFix_r, &cone_allFix_r);
+  // save the H-representation of the cone of the all-fixed mode
+  MatrixXd Ae_allFix;
+  MatrixXd Ah_allFix;
+  if (!Poly::coneFacetEnumeration(eCone_allFix_r, &Ae_allFix)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+  if (!Poly::coneFacetEnumeration(hCone_allFix_r, &Ah_allFix)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+  MatrixXd A_allFix(Ae_allFix.rows() + Ah_allFix.rows(), Ae_allFix.cols());
+  A_allFix << Ae_allFix, Ah_allFix;
+  // do minimized_constraints here?
+
+  MatrixXi e_sss_modes, h_sss_modes;
+  std::vector<MatrixXi> e_s_modes, h_s_modes;
+
+  // divide the big matrices
+  // Jn: nContacts x 6,  Nn: nContacts x 12,  Jacobian for the normals
+  // Jt: 2*nContacts x 6,  Nn: 2*nContacts x 12, Jacobian for the tangentials
+  MatrixXd Jn(kNumEContacts + kNumHContacts, kDim);
+  Jn << Jac_e.topRows(kNumEContacts), Jac_h.topRows(kNumHContacts);
+  MatrixXd Jt(2*kNumEContacts + 2*kNumHContacts, kDim);
+  Jt << Jac_e.bottomRows(2*kNumEContacts), Jac_h.bottomRows(2*kNumHContacts);
+  MatrixXd Nn(Jn.rows(), 2*kDim);
+  Nn << Jac_e.topRows(kNumEContacts), MatrixXd::Zero(kNumEContacts, kDim),
+       -Jac_h.topRows(kNumHContacts), Jac_h.topRows(kNumHContacts);
+  MatrixXd Nt(Jt.rows(), 2*kDim);
+  Nt << Jac_e.bottomRows(2*kNumEContacts), MatrixXd::Zero(2*kNumEContacts, kDim),
+        -Jac_h.bottomRows(2*kNumHContacts), Jac_h.bottomRows(2*kNumHContacts);
+
+  if (!modeCleaning(e_cs_modes, e_ss_modes, kNumSlidingPlanes, &e_sss_modes, &e_s_modes)) {
+    std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for e contacts." << std::endl;
+    exit(-1);
+  }
+  if (!modeCleaning(h_cs_modes, h_ss_modes, kNumSlidingPlanes, &h_sss_modes, &h_s_modes)) {
+    std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for h contacts." << std::endl;
+    exit(-1);
+  }
+
+  MatrixXi e_sss_modes_goal, h_sss_modes_goal;
+  std::vector<MatrixXi> e_s_modes_goal, h_s_modes_goal;
+
+  std::vector<MatrixXd> sample_grids;
+  sample_grids.push_back(MatrixXd(2, 1));
+  sample_grids.push_back(MatrixXd(4, 2));
+  sample_grids.push_back(MatrixXd(8, 3));
+  sample_grids[0] << 1,
+                    -1;
+  sample_grids[1] << 1, 1,
+                   1, -1,
+                   -1, 1,
+                   -1, -1;
+  sample_grids[2] << 1, 1, 1,
+                   1, 1, -1,
+                   1, -1, 1,
+                   1, -1, -1,
+                   -1, 1, 1,
+                   -1, 1, -1,
+                   -1, -1, 1,
+                   -1, -1, -1;
+
+  if (e_cs_modes_goal.size() == 0 ) {
+    e_sss_modes_goal = e_sss_modes;
+    h_sss_modes_goal = h_sss_modes;
+    e_s_modes_goal = e_s_modes;
+    h_s_modes_goal = h_s_modes;
+  } else {
+    if (!modeCleaning(e_cs_modes_goal, e_ss_modes_goal, kNumSlidingPlanes, &e_sss_modes_goal, &e_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal e contacts." << std::endl;
+      exit(-1);
+    }
+    if (!modeCleaning(h_cs_modes_goal, h_ss_modes_goal, kNumSlidingPlanes, &h_sss_modes_goal, &h_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal h contacts." << std::endl;
+      exit(-1);
+    }
+  }
+
+  int kDimActualized = 6;
+  int kDimUnActualized = 6;
+
+  VectorXi e_sss_mode_goal, h_sss_mode_goal;
+  VectorXi e_sss_mode, h_sss_mode;
+
+  FullPivLU<MatrixXd> lu; // for quickly solving linear system
+  lu.setThreshold(TOL);
+
+  time_stats_initialization = timer.toc();
+  timer.tic();
+
+  /*******************************************************************
+   *      First half: Velocity Filtering
+   */
+  if (print_level_ > 1)
+    std::cout << "##         Begin loop         ##\n";
+  timer.tic();
+  e_sss_mode_goal = e_sss_modes_goal.middleRows(0, 1).transpose();
+  h_sss_mode_goal = h_sss_modes_goal.middleRows(0, 1).transpose();
+  int goal_id_e = findIdInModes(e_sss_mode_goal, e_sss_modes);
+  int goal_id = -1;
+  assert(goal_id_e >= 0);
+
+  std::vector<MatrixXd> e_cones_VFeasible;
+  std::vector<VectorXi> e_modes_VFeasible;
+  std::vector<VectorXi> h_modes_VFeasible;
+
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping] 1. HFVC" << std::endl;
+  MatrixXd N, Nu;
+  getConstraintOfTheMode(Jac_e, Jac_h,
+      e_sss_mode_goal, h_sss_mode_goal,
+      &N, &Nu);
+  // // make sure all velocity commands >= 0
+  // for (int i = 0; i < action.n_av; ++i) {
+  //   if (action.b_C(i) < 0) {
+  //     action.b_C(i) = - action.b_C(i);
+  //     action.C.middleRows(i, 1) = - action.C.middleRows(i, 1);
+  //     action.R_a.middleRows(i + action.n_af, 1) = - action.R_a.middleRows(i + action.n_af, 1);
+  //   }
+  // }
+  // action.w_av = action.b_C;
+
+  // Crashing check
+  MatrixXd V_control_directions_r = -action.R_a.bottomRows(action.n_av);
+  MatrixXd F_control_directions_r = action.R_a.topRows(action.n_af);
+  MatrixXd R_a_inv = action.R_a.inverse();
+
+  time_stats_hybrid_servoing = timer.toc();
+  timer.tic();
+
+  MatrixXd A_V_cone;
+  if (!Poly::coneFacetEnumeration(V_control_directions_r, &A_V_cone)) {
+    std::cout << "BUG: polyhedron computation return false." << std::endl;
+    exit(-1);
+  }
+  MatrixXd A_AF_V(A_V_cone.rows() + A_allFix.rows(), A_allFix.cols());
+  A_AF_V << A_V_cone, A_allFix;
+  VectorXd xs = VectorXd::Zero(A_V_cone.cols());
+  bool is_feasible = Poly::lpfeasibility(A_AF_V, VectorXd::Zero(A_AF_V.rows()), &xs);
+  if (is_feasible && xs.norm() > TOL) {
+    if (print_level_ > 0)
+      std::cout << "[WrenchStamping]    Crashing." << std::endl;
+    return {-1,-1};
+  } else {
+    if (print_level_ > 1)
+      std::cout << "  No crashing." << std::endl;
+  }
+
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping] 2. Check Velocity Feasibility." << std::endl;
+  // How to filter out modes:
+  // 1. If NC degenerates, mark this mode as incompatible;
+  // 2. If NC gives unique solution, record the cone of this mode
+  // 3. If NC gives multiple solutions, record the cone of the all sticking mode.
+  for (int e_sss_i = 0; e_sss_i < e_sss_modes.rows(); ++e_sss_i) {
+    e_sss_mode = e_sss_modes.middleRows(e_sss_i, 1).transpose();
+    for (int h_sss_i = 0; h_sss_i < h_sss_modes.rows(); ++h_sss_i) {
+      h_sss_mode = h_sss_modes.middleRows(h_sss_i, 1).transpose();
+      if (print_level_ > 1) {
+        std::cout << "[WrenchStamping]    Checking id: " << e_sss_i << ", " << h_sss_i;
+        std::cout << " (e: " << e_sss_mode.transpose() << ", h: " << h_sss_mode.transpose() << ")\t";
+      }
+
+      getConstraintOfTheMode(Jac_e, Jac_h, e_sss_mode, h_sss_mode, &N, &Nu);
+
+      MatrixXd NC(N.rows() + action.C.rows(), N.cols());
+      NC << N, action.C;
+      VectorXd b_NC = VectorXd::Zero(NC.rows());
+      b_NC.tail(action.b_C.rows()) = action.b_C;
+      assert(NC.norm() > 10*TOL); //otherwise lu won't be accurate
+      lu.compute(NC);
+      VectorXd sol_NC = lu.solve(b_NC);
+      bool a_solution_exists = (NC*sol_NC).isApprox(b_NC, 10.*TOL);
+      if (!a_solution_exists) {
+          // no solution
+          if (print_level_ > 1)
+            std::cout << "No Solution. " << std::endl;
+          continue;
+      }
+      MatrixXd null_NC = lu.kernel();
+      bool has_penetration = false;
+      if (Nu.rows() > 0) {
+        // check inequalities
+        MatrixXd contact_normal_proj = Nu*null_NC; // this is a linear space, not cone
+        VectorXd contact_normal_sol = Nu*sol_NC;
+        for (int i = 0; i < Nu.rows(); ++i) {
+          if (contact_normal_proj.middleRows(i, 1).norm() < TOL) {
+            if (contact_normal_sol(i) < -TOL) {
+              has_penetration = true;
+              break;
+            }
+          }
+        }
+      }
+      if (has_penetration) {
+        if (print_level_ > 1)
+          std::cout << "Violates inequalities. " << std::endl;
+        continue;
+      }
+
+      // get the generators for the sticking contacts
+      MatrixXd e_cone_base = getConeOfTheMode(eCone_allFix_r, e_sss_mode, kNumSlidingPlanes);
+      // First, decide where to get velocity samples.
+      // If samples from contact, fill up g_sampled directly.
+      // If samples from kernel, fill in vel_samples_in_kernel
+      MatrixXd vel_samples_in_kernel = MatrixXd(0, 2*kDim);
+      std::vector<MatrixXd> g_sampled;
+      if (null_NC.norm() < TOL) {
+        // unique solution
+        // find the cone of this Unique solution
+        vel_samples_in_kernel = sol_NC.transpose();
+        if (print_level_ > 1)
+          std::cout << "Unique Vel. v_sample = " << vel_samples_in_kernel.rows();
+      } else {
+        // Multiple solutions
+        // sample sliding velocities
+        int dim_null_NC = null_NC.cols();
+        if (print_level_ > 1)
+          std::cout << "Non-Unique Vel, kernel = " << dim_null_NC << ", contact dim = ";
+        // check dimension of contact tangential projections for sliding contacts
+        std::vector<int> contact_sliding_DOFs;
+        std::vector<int> contact_ids;
+        std::vector<VectorXd> contact_vels;
+        std::vector<MatrixXd> contact_kernels;
+        for (int i = 0; i < kNumEContacts; ++i) {
+          if (e_sss_mode(i) == 0) {
+            MatrixXd contact_tangent_proj = Nt.middleRows(2*i, 2)*null_NC;
+            if (contact_tangent_proj.norm() < 10.0*TOL) {
+              // rank = 0
+              continue;
+            } else {
+              lu.compute(contact_tangent_proj);
+              int rank = lu.rank();
+              if (print_level_ > 1)
+                std::cout << rank << " ";
+              VectorXd contact_tangent_sol = Nt.middleRows(2*i, 2)*sol_NC;
+              contact_sliding_DOFs.push_back(rank);
+              contact_ids.push_back(i);
+              contact_vels.push_back(contact_tangent_sol);
+              contact_kernels.push_back(lu.image(contact_tangent_proj));
+            }
+          }
+        }
+        if ((print_level_ > 1) && (contact_ids.size() == 0)) {
+          std::cout << "0 ";
+        }
+        // sample velocities
+        //  1. no sliding: g_sampled = empty.
+        //  2. has sliding:
+        //    a. contact dim all zeros (x)
+        //    b. contact dim = 1: sample from contact dim
+        //    c. contact dim > 1: sample from kernel
+        if (contact_sliding_DOFs.size() == 0) {
+          // no sliding, do nothing here
+          if (print_level_ > 1)
+            std::cout << ", no sliding";
+        } else if (contact_sliding_DOFs.size() == 1) {
+          // sample from contact, 1d or 2d
+          assert(contact_sliding_DOFs[0] > 0);
+          assert(contact_sliding_DOFs[0] <= 2);
+          // fill g_sampled directly
+          double mag = contact_vels[0].norm();
+          if (mag < 100*TOL) mag = 1;
+          MatrixXd sample_grid = sample_grids[contact_sliding_DOFs[0]-1] * mag;
+          MatrixXd vel_samples_on_contact =
+              MatrixXd::Ones(sample_grid.rows(), 1) * contact_vels[0].transpose()
+              + sample_grid * contact_kernels[0].transpose();
+          // normalize, get cones
+          double friction = (contact_ids[0] < kNumEContacts)? kFrictionE:kFrictionH;
+          getSlidingGeneratorsFromOneContact(vel_samples_on_contact,
+              Jt.middleRows(2*contact_ids[0], 2), Jn.middleRows(contact_ids[0], 1),
+              friction, &g_sampled);
+          if (print_level_ > 1)
+            std::cout << ", g_sample = " << g_sampled.size();
+        } else {
+          // sample from kernel
+          double mag = sol_NC.norm();
+          if (mag < 100*TOL) mag = 1;
+          assert(dim_null_NC <= 3);
+          MatrixXd sample_grid = sample_grids[dim_null_NC-1] * mag;
+          vel_samples_in_kernel =
+              MatrixXd::Ones(sample_grid.rows(), 1) * sol_NC.transpose()
+              + sample_grid * null_NC.transpose();
+          if (print_level_ > 1)
+            std::cout << ", v_sample = " << vel_samples_in_kernel.rows();
+        }
+      }
+
+      if ((g_sampled.size() == 0) && (vel_samples_in_kernel.rows() != 0)) {
+        // samples are drawn from kernel, in vel_samples_in_kernel
+        // use it to fill up g_sampled
+        // project kernel to every sliding contacts
+        for (int ks = 0; ks < vel_samples_in_kernel.rows(); ++ks) {
+          std::vector<double> g_one_sample;
+          for (int i = 0; i < kNumEContacts; ++i) {
+            if (e_sss_mode(i) == 0) {
+              VectorXd contact_tangent_proj = Nt.middleRows(2*i, 2)*vel_samples_in_kernel.middleRows(ks,1).transpose();
+              std::vector<MatrixXd> g_samples_contact_i;
+              getSlidingGeneratorsFromOneContact(contact_tangent_proj.transpose(),
+                Jt.middleRows(2*i, 2), Jn.middleRows(i, 1), kFrictionE, &g_samples_contact_i);
+              if(g_samples_contact_i.size() > 0)
+                for (int ii = 0; ii < g_samples_contact_i[0].cols(); ++ii) {
+                  g_one_sample.push_back(g_samples_contact_i[0](0, ii));
+                }
+            }
+          }
+          int ng = g_one_sample.size()/kDim;
+          MatrixXd g_sampled_k = MatrixXd::Map(g_one_sample.data(), kDim, ng);
+          g_sampled.push_back(g_sampled_k.transpose());
+        }
+        if (print_level_ > 1)
+          std::cout << ", v2g: " << g_sampled.size();
+      }
+
+      // save the cone(s)
+      int size0 = e_cones_VFeasible.size();
+      if (g_sampled.size() > 0) {
+        // there is at least one sliding contact, or NC has unique solution
+        for (int s = 0; s < g_sampled.size(); ++s) {
+          MatrixXd e_cone(e_cone_base.rows() + g_sampled[s].rows(), kDim);
+          e_cone << e_cone_base, g_sampled[s];
+          e_cones_VFeasible.push_back(e_cone);
+          e_modes_VFeasible.push_back(e_sss_mode);
+          h_modes_VFeasible.push_back(h_sss_mode);
+          if (e_sss_i == goal_id_e) goal_id = e_cones_VFeasible.size() - 1;
+        }
+        if (print_level_ > 1)
+          std::cout << ", save g: " << e_cones_VFeasible.size() - size0;
+      } else {
+        // there is no sliding contact
+        e_cones_VFeasible.push_back(e_cone_base);
+        e_modes_VFeasible.push_back(e_sss_mode);
+        h_modes_VFeasible.push_back(h_sss_mode);
+        if (e_sss_i == goal_id_e) goal_id = e_cones_VFeasible.size() - 1;
+        if (print_level_ > 1)
+          std::cout << ", save base.";
+      }
+      if (e_sss_i == goal_id_e) assert(g_sampled.size() == 1);
+      if (print_level_ > 1)
+        std::cout << std::endl;
+    }
+  }
+  // done with inner SSS loop
+  assert(goal_id >= 0); // if not, the goal mode is V-Infeasible
+  time_stats_velocity_filtering = timer.toc();
+  timer.tic();
+
+  /*******************************************************************
+   *      Second half: Force checking
+   */
+  // transform eta back to f
+  // VectorXd wrench_set = VectorXd::Zero(6);
+  // wrench_set.head(action.n_af) = -action.eta_af;
+  // wrench_set = R_a_inv*wrench_set;
+
+
+  // project cones of the modes onto force-controlled subspace
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping] 3. Compute force control and control-stability-margin." << std::endl;
+  if (print_level_ > 1)
+    std::cout << "[WrenchStamping]  3.1 Compute cone of the modes." << std::endl;
+
+  Timer timer_g_margin, timer_projection;
+  double geometrical_stability_margin = 0;
+  double time_g_margin = 0;
+  double time_projection = 0;
+  // std::vector<MatrixXd> pps_A;
+  // std::vector<VectorXd> pps_b;
+  // int goal_id_in_pps;
+  // bool wrench_is_out = false;
+  for (int c = 0; c < e_cones_VFeasible.size(); ++c) {
+    timer_g_margin.tic();
+    if (print_level_ > 1) {
+      std::cout << "[WrenchStamping]    Cone " << c << ": " << e_modes_VFeasible[c].transpose() << ", " << h_modes_VFeasible[c].transpose() << ": ";
+      std::cout << "computing geometrical_stability_margin: # " << e_cones_VFeasible[c].rows() + hCone_allFix_r.rows()  << std::endl;
+    }
+    // compute cone of the modes
+    // Fe + G - Fh
+    PPL::C_Polyhedron ph_closure(6, PPL::EMPTY);
+    MatrixXd R_cl(e_cones_VFeasible[c].rows() + hCone_allFix_r.rows() + 1, e_cones_VFeasible[c].cols() + 1);
+    R_cl.leftCols(1) = VectorXd::Ones(R_cl.rows());
+    R_cl(R_cl.rows() - 1, 0) = 0;
+    R_cl.block(0, 1, e_cones_VFeasible[c].rows(), e_cones_VFeasible[c].cols()) = e_cones_VFeasible[c];
+    R_cl.block(e_cones_VFeasible[c].rows(), 1, hCone_allFix_r.rows(), hCone_allFix_r.cols()) = - hCone_allFix_r;
+    R_cl.block(R_cl.rows()-1, 1, 1, F_G.rows()) = F_G.transpose();
+    if (!Poly::constructPPLPolyFromV(R_cl, &ph_closure)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    ph_closure.minimized_constraints();
+    // compute the distance from the origin to the facets
+    MatrixXd A_cl;
+    VectorXd b_cl;
+    if (!Poly::getFacetFromPPL(ph_closure, &A_cl, &b_cl)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    // Ax <= b
+    // origin must be in the polyhedra, so 0 <= b
+    if (b_cl.minCoeff() <= 1e-5 ) {
+      if (print_level_ > 1) std::cout << " F-Infeasible." << std::endl;
+      if (c == goal_id) {
+        if (print_level_ > 0) std::cout << " Goal mode is F-Infeasible." << std::endl;
+        return {-2, -2};
+      }
+      continue;
+    }
+    // The polyhedron contains the origin.
+    // compute the stability margin
+    // margin = min(b./normByRow(A));
+    if (c == goal_id) {
+      geometrical_stability_margin = 9999;
+      for (int i = 0; i < b_cl.rows(); ++i) {
+        double A_row_norm = A_cl.middleRows(i, 1).norm();
+        assert(A_row_norm > 1e-7);
+        double margin_new = b_cl(i)/A_row_norm;
+        if (margin_new < geometrical_stability_margin) geometrical_stability_margin = margin_new;
+      }
+      if (print_level_ > 1)
+        std::cout << " geometrical_stability_margin: " << geometrical_stability_margin << std::endl;
+    }
+
+    time_g_margin += timer_g_margin.toc();
+    timer_projection.tic();
+    PPL::C_Polyhedron ph1(6, PPL::EMPTY);
+    MatrixXd R1(e_cones_VFeasible[c].rows() + 1, e_cones_VFeasible[c].cols() + 1);
+    R1 << VectorXd::Zero(e_cones_VFeasible[c].rows()), e_cones_VFeasible[c],
+          1, F_G.transpose();
+    if(!Poly::constructPPLPolyFromV(R1, &ph1)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+
+    PPL::C_Polyhedron ph2(6, PPL::EMPTY);
+    MatrixXd R2(hCone_allFix_r.rows(), hCone_allFix_r.cols() + 1);
+    R2 << VectorXd::Zero(hCone_allFix_r.rows()), hCone_allFix_r;
+    if (!Poly::constructPPLPolyFromV(R2, &ph2)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+
+    ph1.minimized_constraints();
+    ph2.minimized_constraints();
+
+    ph1.intersection_assign(ph2);
+    ph1.minimized_generators();
+
+    // check intersection results
+    MatrixXd p_R;
+    if (!Poly::getVertexFromPPL(ph1, &p_R)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    if (!((p_R.rows() > 0) && (p_R.rightCols(p_R.cols()-1).norm() > TOL))) {
+      std::cout << "BUG!! Empty intersection with a positive G-Margin." << std::endl;
+      exit(-1);
+    }
+
+    /**
+     * Projection to force controlled subspace
+     */
+    MatrixXd R_V_lines(V_control_directions_r.rows(), V_control_directions_r.cols() + 1);
+    R_V_lines << 2*VectorXd::Ones(V_control_directions_r.rows()), V_control_directions_r;
+    PPL::Generator_System gs_V;
+    if (!Poly::constructPPLGeneratorsFromV(R_V_lines, &gs_V)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    ph1.add_generators(gs_V);
+    ph1.minimized_constraints();
+    // Extract the colunms for the projected space
+    MatrixXd cylinder_A;
+    VectorXd cylinder_b;
+    if (!Poly::getFacetFromPPL(ph1, &cylinder_A, &cylinder_b)) {
+      std::cout << "BUG: polyhedron computation return false." << std::endl;
+      exit(-1);
+    }
+    cylinder_A = cylinder_A * R_a_inv;
+    MatrixXd pp_A;
+    VectorXd pp_b;
+    pp_A = cylinder_A.leftCols(action.n_af);
+    pp_b = cylinder_b;
+
+    // pps_A.push_back(pp_A);
+    // pps_b.push_back(pp_b);
+
+    VectorXd res = pp_A*(-action.eta_af) - pp_b;
+    if (res.maxCoeff() > TOL) {
+      // not contained
+      if (c == goal_id) {
+        // wrench_is_out = true;
+        // goal_id_in_pps = pps_A.size()-1;
+        if (print_level_ > 1)
+          std::cout << "Wrench is out of desired mode." << std::endl;
+        return {geometrical_stability_margin, -3};
+      }
+    } else {
+      if (c != goal_id) {
+        if (print_level_ > 0)
+          std::cout << "Wrench is in an undesired mode: e = " << e_modes_VFeasible[c].transpose() << std::endl;
+        return {-4, -4};
+      }
+    }
+    time_projection += timer_projection.toc();
+  }
+  // if (wrench_is_out) {
+  //   // compute the distance between the wrench and each polyhedron
+  //   double dist_goal = Poly::distP2Polyhedron(-action.eta_af, pps_A[goal_id_in_pps], pps_b[goal_id_in_pps],
+  //       Eigen::VectorXd::Zero(action.n_af));
+
+  //   for (int cc = 0; cc < pps_A.size(); ++cc) {
+  //     if (cc == goal_id_in_pps) continue;
+  //     double dist_c = Poly::distP2Polyhedron(-action.eta_af, pps_A[cc], pps_b[cc],
+  //         Eigen::VectorXd::Zero(action.n_af));
+  //     if (dist_c <= dist_goal) {
+  //       std::cout << "Wrench is closer to a non-desired mode." << std::endl;
+  //       return {geometrical_stability_margin,-3};
   //     }
   //   }
   // }
-
-  // // EH cone intersection
-  // //   * Compute safety margins
-  // //   * get rid of infeasible cone
-  // //
-
-  // eh_modes = [];
-  // margins = [];
-
-  // eh_cones = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // cone_e = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // cone_h = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // Jacs = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // Jacus = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-  // Jacues = cell(size(e_modes, 2)*size(h_modes, 2), 1);
-
-  // eh_cone_feasible_mode_count = 0;
-  // goal_id = 0;
-  // for i = 1:size(e_modes, 2)
-  //     for j = 1:size(h_modes, 2)
-  //         [Je_, Jh_] = getFrictionalJacobianFromContacts(e_modes(:, i), h_modes(:, j), eCone_allFix, hCone_allFix);
-
-  //         % check force balance
-  //         R = coneIntersection(Je_', Jh_');
-  //         if isempty(R) || norm(R) == 0
-  //             continue;
-  //         end
-
-  //         % compute cone stability margin
-  //         if sameConeCheck(Je_', R)
-  //             margin_ = coneStabilityMargin(Jh_', R);
-  //         elseif sameConeCheck(Jh_', R)
-  //             margin_ = coneStabilityMargin(Je_', R);
-  //         else
-  //             margin_e = coneStabilityMargin(Je_', R);
-  //             margin_h = coneStabilityMargin(Jh_', R);
-  //             margin_ = min(margin_e, margin_h);
-  //         end
-  //         if margin_ < TOL
-  //             continue;
-  //         end
-
-  //         % compute velocity Jacobian
-  //         [N, Nu] = getJacobianFromContacts(e_modes(:, i), h_modes(:, j), Jac_e, Jac_h);
-
-  //         % figure(1);clf(1);hold on;
-  //         % printModes([e_modes(:, i); h_modes(:, j)]);
-  //         % fprintf('Margin: %f\n', margin_);
-  //         % drawCone(Je_','g', true);
-  //         % drawCone(Jh_','b', true);
-
-  //         eh_modes = [eh_modes [e_modes(:, i); h_modes(:, j)]];
-  //         margins = [margins margin_];
-
-  //         eh_cone_feasible_mode_count = eh_cone_feasible_mode_count + 1;
-  //         eh_cones{eh_cone_feasible_mode_count} = R;
-  //         Jacs{eh_cone_feasible_mode_count} = N;
-  //         Jacus{eh_cone_feasible_mode_count} = Nu;
-
-  //         if goal_mode_is_given
-  //             if (i == e_mode_goal) && (j == h_mode_goal)
-  //                 goal_id = eh_cone_feasible_mode_count;
-  //             end
-  //         end
-  //     end
-  // end
-
-  // disp(['Modes with Margin > 0: ' num2str(eh_cone_feasible_mode_count)]);
-
-  // if goal_mode_is_given && (goal_id == 0)
-  //     disp("Failure: the Cone of the goal mode is empty.");
-  //     return;
-  // end
-
-  // % trim
-  // eh_cones = eh_cones(1:eh_cone_feasible_mode_count);
-  // Jacs = Jacs(1:eh_cone_feasible_mode_count);
-  // Jacus = Jacus(1:eh_cone_feasible_mode_count);
-
-  // %%
-  // %% Begin to check each cone
-  // %%
-  // fprintf("###############################################\n");
-  // fprintf("##            Velocity Filtering             ##\n");
-  // fprintf("###############################################\n");
-
-  // solutions = cell(eh_cone_feasible_mode_count, 1);
-  // solutions_count = 0;
-
-  // for m = 1:eh_cone_feasible_mode_count
-  //     if goal_mode_is_given
-  //         m = goal_id;
-  //     else
-  //         disp('***********');
-  //         fprintf("Mode %d of %d\n", m, eh_cone_feasible_mode_count);
-  //         printModes(eh_modes(:, m));
-  //     end
-
-  //     eh_mode_goal = eh_modes(:, m);
-  //     fprintf("====================================\n");
-  //     fprintf("= Hybrid Servoing & Crashing Check =\n");
-  //     fprintf("====================================\n");
-  //     N_all = Jacs{m};
-  //     [n_av, n_af, R_a, R_a_inv, w_av, Cv, b_C] = hybridServoing(N_all, G, b_G);
-  //     if isempty(n_av)
-  //         disp("Failure: Hybrid Servoing returns no solution.")
-  //         if goal_mode_is_given
-  //             return;
-  //         else
-  //             continue;
-  //         end
-  //     end
-
-  //     V_control_directions = -R_a_inv(:, end-n_av+1:end);
-  //     F_control_directions = [R_a_inv(:, 1:n_af) -R_a_inv(:, 1:n_af)];
-  //     intersection = coneIntersection(cone_allFix, V_control_directions);
-  //     % Crashing check
-  //     if ~isempty(intersection) && norm(intersection) > TOL
-  //         disp('Failure: Crashing. The mode is not feasible.');
-  //         if goal_mode_is_given
-  //             return;
-  //         else
-  //             continue;
-  //         end
-  //     end
-
-  //     fprintf("=======================\n");
-  //     fprintf("=== Mode Filtering ===\n");
-  //     fprintf("=======================\n");
-
-  //     % How to filter out modes:
-  //     % 1. If NC degenerates, mark this mode as incompatible;
-  //     % 2. If nominal velocity under NC exists, and it cause the contact point to
-  //     %    slide in a different direction, remove this mode.
-  //     feasibilities = false(eh_cone_feasible_mode_count, 1);
-
-  //     % cone of possible actuation forces
-  //     %   force controlled direction can have both positive and negative forces
-
-  //     feasible_mode_count = 0;
-  //     flag_goal_infeasible = false;
-  //     flag_goal_impossible = false;
-
-  //     for n = 1:eh_cone_feasible_mode_count
-  //         % filter out modes using velocity command
-  //         N = Jacs{n};
-  //         Nu = Jacus{n};
-
-  //         N = rref(N);
-  //         rank_N = rank(N);
-  //         N = N(1:rank_N, :);
-
-  //         % compute possible sliding directions
-  //         % these computations are based on 'Criteria for Maintaining Desired Contacts for Quasi-Static Systems'
-  //         Lambda_bar = [Cv; N];
-  //         b_Lambda_bar = [b_C; zeros(size(N,1), 1)];
-
-  //         compatible = false;
-  //         if rank([Lambda_bar b_Lambda_bar], TOL) == rank(Lambda_bar, TOL)
-  //             v_star = linsolve(Lambda_bar, b_Lambda_bar);
-  //             if any(Nu*v_star < -TOL)
-  //                 % this mode can not exist
-  //                 % V-Impossible
-  //                 if n == m
-  //                     flag_goal_impossible = true;
-  //                     break;
-  //                 else
-  //                     continue;
-  //                 end
-  //             end
-  //             compatible = true;
-  //         else
-  //             if n == m
-  //                 flag_goal_infeasible = true;
-  //                 break;
-  //             end
-  //         end
-
-  //         % figure(1);clf(1);hold on;
-  //         % drawCone(eh_cones{n},'g', true);
-  //         % drawCone(W_action,'k', true);
-  //         if compatible
-  //             feasible_mode_count = feasible_mode_count + 1;
-  //             feasibilities(n) = true;
-  //         end
-  //     end
-
-  //     if flag_goal_infeasible
-  //         disp('Goal mode violates velocity equality constraints. Discard this mode.');
-  //         if goal_mode_is_given
-  //             return;
-  //         else
-  //             continue;
-  //         end
-  //     end
-  //     if flag_goal_impossible
-  //         disp('Goal mode violates velocity inequality constraints. Discard this mode.');
-  //         if goal_mode_is_given
-  //             return;
-  //         else
-  //             continue;
-  //         end
-  //     end
-  //     disp(['Remaining feasible modes: ' num2str(feasible_mode_count)]);
-
-  //     drawWrenchSpace(cone_allFix, eCone_allFix, hCone_allFix, ...
-  //             V_control_directions, F_control_directions, eh_cones, eh_modes, ...
-  //             eh_cone_feasible_mode_count, feasibilities, goal_id);
-
-  //     eh_cones_goal_m = eh_cones{m};
-  //     feasibilities(m) = 0;
-  //     eh_cones_other_feasible_m = eh_cones(feasibilities);
-
-  //     fprintf("===============================\n");
-  //     fprintf("===  Compute Force Action   ===\n");
-  //     fprintf("===============================\n");
-
-  //     % action selection
-  //     force_basis = R_a_inv(:, 1:n_af);
-  //     [force_action, shape_margin] = forceControl(force_basis, ...
-  //             eh_cones_goal_m, eh_cones_other_feasible_m);
-
-  //     if ~isempty(force_action)
-  //         disp('Force command:');
-  //         disp(force_action);
-  //         solution.eh_mode = eh_mode_goal;
-  //         solution.n_af = n_af;
-  //         solution.n_av = n_av;
-  //         solution.w_av = w_av;
-  //         solution.eta_af = -kForceMagnitude*force_action; % the minus sign comes from force balance
-  //         solution.margin = min(shape_margin, margins(m));
-
-  //         R_a_inv = R_a^-1;
-  //         Cf_inv = vscale_inv*R_a_inv; Cf_inv = Cf_inv(:, 1:n_af);
-  //         Cv_inv = vscale*R_a_inv; Cv_inv = Cv_inv(:, end-n_av+1:end);
-  //         solution.R_a_inv = [Cf_inv Cv_inv];
-  //         solution.R_a = solution.R_a_inv^-1;
-
-  //         solutions_count = solutions_count + 1;
-  //         solutions{solutions_count} = solution;
-
-  //         if goal_mode_is_given
-  //             break;
-  //         end
-  //     else
-  //         disp('Failure: no distinguishable force command.');
-  //         if goal_mode_is_given
-  //             return;
-  //         else
-  //             continue;
-  //         end
-  //     end
-  // end
-
-  // fprintf("###############################################\n");
-  // fprintf("##                  Results                  ##\n");
-  // fprintf("###############################################\n");
-  // fprintf("Total number of feasible modes found: %d\n", solutions_count);
-  // solution = [];
-  // if solutions_count > 0
-  //     if goal_mode_is_given
-  //         solution = solutions(1);
-  //     else
-  //         solutions = solutions(1:solutions_count);
-  //         margins = zeros(1, solutions_count);
-  //         for i = 1:solutions_count
-  //             mode_text = printModes(solutions{i}.eh_mode, false);
-  //             fprintf("Mode %d: %s\nmargin: %f\n", i, mode_text, solutions{i}.margin);
-  //             margins(i) = solutions{i}.margin;
-  //         end
-  //         disp('Best solution:');
-  //         [~, best_solution_id] = max(margins);
-  //         solution = solutions{best_solution_id};
-  //     end
-
-  //     printModes(solution.eh_mode);
-  //     V_T = solution.R_a_inv*[zeros(solution.n_af,1); solution.w_av];
-  //     F_T = solution.R_a_inv*[solution.eta_af; zeros(solution.n_av, 1)];
-  //     disp('R_a:');
-  //     disp(solution.R_a);
-  //     disp('V_T:');
-  //     disp(V_T);
-  //     disp('F_T:');
-  //     disp(F_T);
-  // end
-
+  time_stats_force_control = timer.toc();
+  if (print_level_ > 0) {
+    std::cout << "Timing statistics:\n";
+    std::cout << "  time_stats_initialization: " << time_stats_initialization << " ms\n";
+    std::cout << "  time_stats_hybrid_servoing: " << time_stats_hybrid_servoing << " ms\n";
+    std::cout << "  time_stats_velocity_filtering: " << time_stats_velocity_filtering << " ms\n";
+    std::cout << "  time_stats_robustness: " << time_g_margin << " ms\n";
+    std::cout << "  time_stats_projection: " << time_projection << " ms\n";
+    std::cout << "  time_stats_force_control: " << time_stats_force_control << " ms\n";
+    std::cout << "  Total: " << time_stats_initialization + time_stats_hybrid_servoing + time_stats_velocity_filtering
+        + time_projection + time_g_margin + time_stats_force_control << " ms\n";
+  }
+  return {geometrical_stability_margin, 1};
 }
 
-bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes,
+void WrenchSpaceAnalysis::updateConstants(
+    double kFrictionE, double kFrictionH, double kNumSlidingPlanes,
+    double kContactForce, double kObjWeight, double kCharacteristicLength) {
+  // contact-agnostic parameters
+  kFrictionE_ = kFrictionE;
+  kFrictionH_ = kFrictionH;
+  kNumSlidingPlanes_ = kNumSlidingPlanes;
+  kContactForce_ = kContactForce;
+  kObjWeight_ = kObjWeight;
+  kCharacteristicLength_ = kCharacteristicLength;
+}
+
+void WrenchSpaceAnalysis::updateContactGeometry(
+    int kNumEContacts, int kNumHContacts,
+    const MatrixXd &CP_H_e, const MatrixXd &CN_H_e,
+    const MatrixXd &CP_H_h, const MatrixXd &CN_H_h,
+    const VectorXd &CP_H_G, const VectorXd &v_HG) {
+  kNumEContacts_ = kNumEContacts;
+  kNumHContacts_ = kNumHContacts;
+
+  /**
+   * Geometrical processing
+   */
+  sharedGraspingGeometryProcessing3d(kFrictionE_, kFrictionH_,
+      kNumSlidingPlanes_, CP_H_e, CN_H_e, CP_H_h, CN_H_h, N_e_, T_e_, N_h_, T_h_,
+      eCone_allFix_, hCone_allFix_);
+
+  F_G_ = getGravityVector3d(kObjWeight_, CP_H_G, v_HG);
+}
+
+void WrenchSpaceAnalysis::computeContactModes() {
+  /**
+   * Contact mode enumeration
+   */
+  assert(kNumEContacts_ >= 1);
+  if (kNumEContacts_ == 1) {
+    e_cs_modes_ = MatrixXi::Zero(2, kNumEContacts_);
+    e_cs_modes_(0,0) = 0;
+    e_cs_modes_(1,0) = 1;
+    e_ss_modes_.resize(2);
+    e_ss_modes_[0] = MatrixXi::Zero(5, kNumEContacts_*kNumSlidingPlanes_);
+    e_ss_modes_[0] << 0, 0,
+                      -1, 1,
+                      1, -1,
+                      1, 1,
+                      -1, -1;
+    e_ss_modes_[1] = MatrixXi::Zero(1, kNumEContacts_*kNumSlidingPlanes_);
+    e_ss_modes_[1] << 0, 0;
+  } else {
+    VectorXd b_e = VectorXd::Zero(N_e_.rows());
+    IncidenceGraph* cs_graph = enumerate_cs_modes(N_e_, b_e, 1e-8);
+    std::vector<std::string> svs = cs_graph->get_proper_sign_vectors();
+    e_cs_modes_ = MatrixXi::Zero(svs.size(), kNumEContacts_);
+    int ss_modes_count = 0, cs_modes_count = 0;
+    e_ss_modes_.resize(svs.size());
+    for (int k = cs_graph->rank() - 1; k >= 0; k--) {
+      for (Node* u : cs_graph->rank(k)) {
+        // get cs modes
+        ModeEnumerationOptions opt;
+        opt.interior_point = u->interior_point;
+        std::string sv = get_sign_vector(N_e_ * u->interior_point - b_e, 1e-8);
+        assert(kNumEContacts_ == sv.length());
+        if (print_level_ > 0)
+          std::cout << "cs sign " << sv << std::endl;
+
+        // decode cs modes
+        for (int j = 0; j < kNumEContacts_; ++j) {
+          if (sv[j] == '0')
+            e_cs_modes_(cs_modes_count, j) = 0;
+          else
+            e_cs_modes_(cs_modes_count, j) = 1;
+        }
+
+        // get ss modes
+        IncidenceGraph* ss_graph =
+            enumerate_ss_modes(N_e_, b_e, T_e_, u->sign_vector, 1e-8, &opt);
+
+        auto ss_modes = ss_graph->get_sign_vectors(u->sign_vector);
+        if (print_level_ > 0)
+          std::cout << "ss count: " << ss_modes.size() << std::endl;
+        MatrixXi e_ss_mode = MatrixXi::Zero(ss_modes.size(), kNumEContacts_*kNumSlidingPlanes_);
+        for (int ss_id = 0; ss_id < ss_modes.size(); ss_id++) {
+          std::string ss = ss_modes[ss_id];
+          if (print_level_ > 1)
+            std::cout << ss << std::endl;
+          int sliding_count = 0;
+          for (int j = 0; j < kNumEContacts_; ++j) {
+            if (sv[j] == '0') {
+              for (int jj = 0; jj < kNumSlidingPlanes_; ++jj) {
+                // std::cout << "ss[" << kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj << "] = " << ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] << std::endl;
+                if (ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] == '+')
+                  e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = 1;
+                else if (ss[kNumEContacts_+sliding_count*kNumSlidingPlanes_ + jj] == '-')
+                  e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = -1;
+                else
+                  e_ss_mode(ss_id, j*kNumSlidingPlanes_ + jj) = 0;
+              }
+              sliding_count++;
+            }
+          }
+        }
+        // std::cout << "e_ss_mode: \n" << e_ss_mode << std::endl;
+        // std::cout << std::endl;
+        e_ss_modes_[cs_modes_count] = e_ss_mode;
+
+        ss_modes_count += ss_modes.size();
+        delete ss_graph;
+
+        if (u->sign_vector == "00-------0-0") {
+            int*a = nullptr;
+            std::cout << *a << std::endl;
+        }
+        cs_modes_count ++;
+      }
+    }
+    delete cs_graph;
+  }
+
+  h_cs_modes_ = MatrixXi::Zero(1, kNumHContacts_);
+  h_ss_modes_.resize(1);
+  h_ss_modes_[0] = MatrixXi::Zero(1, kNumHContacts_*kNumSlidingPlanes_);
+}
+
+std::pair<double, double> WrenchSpaceAnalysis::wrenchStampingWrapper(
+  const MatrixXd &G, const VectorXd &b_G,
+  const Eigen::MatrixXi &e_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+  const Eigen::MatrixXi &h_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
+  HFVC &action) {
+  MatrixXd J_e(N_e_.rows() + T_e_.rows(), N_e_.cols());
+  J_e << N_e_, T_e_;
+  MatrixXd J_h(N_h_.rows() + T_h_.rows(), N_h_.cols());
+  J_h << N_h_, T_h_;
+  return wrenchStamping(
+      J_e, J_h, eCone_allFix_, hCone_allFix_, F_G_, kContactForce_,
+      kFrictionE_, kFrictionH_, kCharacteristicLength_, kNumSlidingPlanes_,
+      e_cs_modes_, e_ss_modes_, h_cs_modes_, h_ss_modes_,
+      G, b_G, e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal,
+      &action);
+}
+
+std::pair<double, double> WrenchSpaceAnalysis::wrenchStampingEvaluationWrapper(
+  const MatrixXd &G, const VectorXd &b_G,
+  const Eigen::MatrixXi &e_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+  const Eigen::MatrixXi &h_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
+  const HFVC &action) {
+  MatrixXd J_e(N_e_.rows() + T_e_.rows(), N_e_.cols());
+  J_e << N_e_, T_e_;
+  MatrixXd J_h(N_h_.rows() + T_h_.rows(), N_h_.cols());
+  J_h << N_h_, T_h_;
+  return wrenchStampingEvaluation(
+      J_e, J_h, eCone_allFix_, hCone_allFix_, F_G_, kContactForce_,
+      kFrictionE_, kFrictionH_, kCharacteristicLength_, kNumSlidingPlanes_,
+      e_cs_modes_, e_ss_modes_, h_cs_modes_, h_ss_modes_,
+      G, b_G, e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal,
+      action);
+}
+
+std::pair<double, double> WrenchSpaceAnalysis::computeStabilityMargin(
+  double kFrictionE, double kFrictionH, double kNumSlidingPlanes,
+  double kContactForce, double kObjWeight, double kCharacteristicLength,
+  int kNumEContacts, int kNumHContacts,
+  const MatrixXd &CP_H_e, const MatrixXd &CN_H_e,
+  const MatrixXd &CP_H_h, const MatrixXd &CN_H_h,
+  const VectorXd &CP_H_G, const VectorXd &v_HG,
+  const MatrixXd &G, const VectorXd &b_G,
+  const Eigen::MatrixXi &e_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+  const Eigen::MatrixXi &h_cs_modes_goal,
+  const std::vector<Eigen::MatrixXi> &h_ss_modes_goal) {
+
+  updateConstants(kFrictionE, kFrictionH, kNumSlidingPlanes,
+    kContactForce, kObjWeight, kCharacteristicLength);
+
+  updateContactGeometry(kNumEContacts, kNumHContacts, CP_H_e, CN_H_e, CP_H_h,
+      CN_H_h, CP_H_G, v_HG);
+
+  computeContactModes();
+
+  /**
+   * Wrench stamping
+   */
+  HFVC action;
+  return WrenchSpaceAnalysis::wrenchStampingWrapper(
+    G, b_G, e_cs_modes_goal, e_ss_modes_goal, h_cs_modes_goal, h_ss_modes_goal,
+    action);
+}
+
+bool WrenchSpaceAnalysis::computeControlFromMotionPlan(const MatrixXd &obj_traj,
+    const MatrixXd &finger_traj, const std::vector<MatrixXd> &CP_W_e_traj,
+    const std::vector<MatrixXd> &CN_W_e_traj, const Vector3d &p_OG,
+    const std::vector<MatrixXi> &e_ss_modes, std::vector<HFVC> &action_traj,
+    double dt) {
+  action_traj.clear();
+  // variables that do not vary
+  int N = obj_traj.cols();
+  int kNumFingers = finger_traj.rows()/6;
+  int kNumContactsH = kNumFingers;
+  MatrixXi h_cs_modes = MatrixXi::Zero(1, kNumContactsH);
+  std::vector<MatrixXi> h_ss_modes(1);
+  h_ss_modes[0] = MatrixXi::Zero(1, kNumContactsH*kNumSlidingPlanes_);
+
+  // Choice of Hand Frame
+  //  xyz: center of hand contacts
+  //  orientation: same as world frame
+  // Note that rotation doesn't change the shape of the cones, so it should
+  // not affect the result of wrench space analysis
+  std::cout << "Computing HFVC from Trajectory: " << std::endl;
+  RUT::CartesianPose pose_WO(obj_traj.middleCols(0, 1));
+  for (int t = 1; t < N; ++t) {
+    // std::cout << "\n==========================\n";
+    std::cout << "Time step = " << t << std::endl;
+    RUT::CartesianPose pose_WO_next(obj_traj.middleCols(t, 1));
+    MatrixXd CP_W_e = CP_W_e_traj[t];
+    MatrixXd CN_W_e = CN_W_e_traj[t];
+    int kNumContactsE = CP_W_e.cols();
+    VectorXd CP_W_G(3);
+    CP_W_G = pose_WO.transformPoint(p_OG);
+    std::vector<Vector3d> p_WF(kNumFingers);
+    std::vector<Vector3d> n_WF(kNumFingers);
+    for (int i = 0; i < kNumFingers; ++i) {
+      p_WF[i] = finger_traj.block<3,1>(i*6, t);
+      n_WF[i] = finger_traj.block<3,1>(3+i*6, t);
+    }
+
+    MatrixXi e_cs_modes = MatrixXi::Zero(1, kNumContactsE);
+    // std::cout << "CP_W_e:\n" << CP_W_e << std::endl;
+    // std::cout << "CN_W_e:\n" << CN_W_e << std::endl;
+    // std::cout << "p_WF[0]: " << p_WF[0].transpose() << std::endl;
+    // std::cout << "p_WF[1]: " << p_WF[1].transpose() << std::endl;
+    // std::cout << "n_WF[0]: " << n_WF[0].transpose() << std::endl;
+    // std::cout << "n_WF[1]: " << n_WF[1].transpose() << std::endl;
+    // std::cout << "CP_W_G:\n" << CP_W_G << std::endl;
+    // std::cout << "pose_WO:\n" << pose_WO.poseString() << std::endl;
+    // std::cout << "p_OG:\n" << p_OG << std::endl;
+
+    /**
+     * Get the Hand(Contact) frame C
+     */
+    RUT::CartesianPose pose_WC =
+        RUT::getFrameFromTwoPoint(p_WF[0], p_WF[1]);
+    RUT::CartesianPose pose_CW = pose_WC.inv();
+
+    /**
+     * get quantities in hand frame
+     */
+    MatrixXd CP_C_e = pose_CW.transformPoints(CP_W_e);
+    MatrixXd CN_C_e = pose_CW.getRotationMatrix()*CN_W_e;
+    MatrixXd CP_C_h(3, kNumFingers);
+    MatrixXd CN_C_h(3, kNumFingers);
+    for (int i = 0; i < kNumFingers; ++i) {
+      CP_C_h.middleCols(i, 1) = pose_CW.transformPoint(p_WF[i]);
+      CN_C_h.middleCols(i, 1) = pose_CW.transformPoint(n_WF[i]);
+    }
+    VectorXd CP_C_G = pose_CW.transformPoints(CP_W_G);
+    Vector3d v_CG = pose_CW.transformVec(-Vector3d::UnitZ());
+
+    // std::cout << "CP_C_e:\n" << CP_C_e << std::endl;
+    // std::cout << "CN_C_e:\n" << CN_C_e << std::endl;
+    // std::cout << "CP_C_h:\n" << CP_C_h << std::endl;
+    // std::cout << "CN_C_h:\n" << CN_C_h << std::endl;
+    // std::cout << "CP_C_G:\n" << CP_C_G << std::endl;
+    // std::cout << "v_CG:\n" << v_CG << std::endl;
+    /**
+     * Get desired instantaneous Motion Goal
+     * C: null(J)
+     * b_C: C*v_star
+     */
+    MatrixXi e_ss_modes_old_format(1, kNumContactsE*kNumSlidingPlanes_);
+    for (int i = 0; i < kNumContactsE; ++i) {
+      e_ss_modes_old_format.middleCols(i*kNumSlidingPlanes_, kNumSlidingPlanes_)
+          = e_ss_modes[t](i)*MatrixXi::Ones(1, kNumSlidingPlanes_);
+    }
+
+    // get current goal mode
+    MatrixXi e_sss_modes_goal, h_sss_modes_goal;
+    std::vector<MatrixXi> e_s_modes_goal, h_s_modes_goal;
+    if (!modeCleaning(e_cs_modes, {e_ss_modes_old_format}, kNumSlidingPlanes_, &e_sss_modes_goal, &e_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal e contacts." << std::endl;
+      exit(-1);
+    }
+    if (!modeCleaning(h_cs_modes, h_ss_modes, kNumSlidingPlanes_, &h_sss_modes_goal, &h_s_modes_goal)) {
+      std::cerr << "[wrenchSpaceAnalysis] failed to call modeCleaning for goal h contacts." << std::endl;
+      exit(-1);
+    }
+
+
+    VectorXi e_sss_mode_goal, h_sss_mode_goal;
+    e_sss_mode_goal = e_sss_modes_goal.middleRows(0, 1).transpose();
+    h_sss_mode_goal = h_sss_modes_goal.middleRows(0, 1).transpose();
+
+
+    // assemble the jacobians
+    MatrixXd N_e, T_e;
+    MatrixXd N_h, T_h;
+    getJacobian3d(CP_C_e, CN_C_e, N_e, T_e);
+    getJacobian3d(CP_C_h, CN_C_h, N_h, T_h);
+    // flip sign for hand contacts
+    N_h = - N_h;
+    T_h = - T_h;
+    MatrixXd Jac_e(N_e.rows() + T_e.rows(), N_e.cols());
+    Jac_e << N_e, T_e;
+    MatrixXd Jac_h(N_h.rows() + T_h.rows(), N_h.cols());
+    Jac_h << N_h, T_h;
+
+    std::cout << "kNumFingers: " << kNumFingers << std::endl;
+    std::cout << "h_cs_modes:\n" << h_cs_modes << std::endl;
+    std::cout << "h_ss_modes[0]:\n" << h_ss_modes[0] << std::endl;
+    std::cout << "h_sss_modes_goal:\n" << h_sss_modes_goal << std::endl;
+    std::cout << "h_s_modes_goal[0]:\n" << h_s_modes_goal[0] << std::endl;
+
+    std::cout << "CP_C_h:\n" << CP_C_h << std::endl;
+    std::cout << "CN_C_h:\n" << CN_C_h << std::endl;
+    std::cout << "Jac_e:\n" << Jac_e << std::endl;
+    std::cout << "Jac_h:\n" << Jac_h << std::endl;
+    MatrixXd J, Ju;
+    getConstraintOfTheMode(Jac_e, Jac_h,
+          e_sss_mode_goal, h_sss_mode_goal,
+          &J, &Ju);
+
+
+    MatrixXd C;
+    RUT::nullSpace(&J, &C);
+    // std::cout << "J:\n" << J << std::endl;
+    // std::cout << "C:\n" << C << std::endl;
+    RUT::CartesianPose pose_CO_now = pose_CW*pose_WO;
+    RUT::CartesianPose pose_CO_next = pose_CW*pose_WO_next;
+    Vector6d vel_body = RUT::vee6(pose_CO_now.inv().getTransformMatrix()*(pose_CO_next.getTransformMatrix() - pose_CO_now.getTransformMatrix()))/dt;
+    // std::cout << "pose_CO_now:\n" << pose_CO_now.getTransformMatrix() << std::endl;
+    // std::cout << "pose_CO_next\n:" << pose_CO_next.getTransformMatrix() << std::endl;
+    // std::cout << "difference:\n" << pose_CO_now.getTransformMatrix() - pose_CO_next.getTransformMatrix() << std::endl;
+    // std::cout << "relative\n:" << (pose_CO_next.inv()*pose_CO_now).getTransformMatrix() << std::endl;
+
+    MatrixXd G = MatrixXd::Zero(C.rows(), 12);
+    G.leftCols(6) = C.leftCols(6);
+    VectorXd b_G = C.leftCols(6)*vel_body;
+
+    // std::cout << "vel_body: " << vel_body.transpose() << std::endl;
+    // std::cout << "G:\n" << G.transpose() << std::endl;
+    // std::cout << "b_G:\n" << b_G.transpose() << std::endl;
+    // std::cout << "Press Enter" << std::endl;
+    // getchar();
+
+    // main Shared grasping computation
+    updateContactGeometry(kNumContactsE, kNumContactsH,
+        CP_C_e, CN_C_e, CP_C_h, CN_C_h, CP_C_G, v_CG);
+    computeContactModes();
+    HFVC action;
+    // getchar();
+
+    
+    // std::cout << "G:\n" << G << std::endl;
+    // std::cout << "C:\n" << C << std::endl;
+    // std::cout << "vel_body:\n" << vel_body << std::endl;
+    // std::cout << "b_G:\n" << b_G << std::endl;
+    // std::cout << "e_cs_modes: " << e_cs_modes << std::endl;
+    // std::cout << "e_ss_modes: " << e_ss_modes_old_format << std::endl;
+    // std::cout << "h_cs_modes: " << h_cs_modes << std::endl;
+    // std::cout << "h_ss_modes[0]: " << h_ss_modes[0] << std::endl;
+    auto [g_margin, c_margin] = wrenchStampingWrapper(G, b_G,
+      e_cs_modes, {e_ss_modes_old_format}, h_cs_modes, h_ss_modes, action);
+    action_traj.push_back(action);
+    std::cout << "stability margin: " << g_margin << ", " << c_margin << std::endl;
+    // std::cout << "Press Enter to continue" << std::endl;
+    // getchar();
+    pose_WO = pose_WO_next;
+  }
+  std::cout << "All HFVC are computed." << std::endl;
+  return true;
+}
+
+bool WrenchSpaceAnalysis::modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_modes, int kNumSlidingPlanes,
     MatrixXi *sss_modes, std::vector<MatrixXi> *s_modes) {
   int num_cs_modes = cs_modes.rows();
   int num_contacts = cs_modes.cols();
@@ -458,12 +2222,12 @@ bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_mode
   std::vector<std::string> sss_modes_; // sticking, sliding, separation
   std::vector<std::vector<int>> s_modes_;
 
-  Eigen::VectorXi cs_mode;
+  VectorXi cs_mode;
   std::string sss_mode;
   sss_mode.resize(num_contacts);
   for (int cs = 0; cs < num_cs_modes; ++cs) {
     cs_mode = cs_modes.middleRows(cs, 1).transpose();
-    std::cout << "  cs_mode: " << cs_mode.transpose() << std::endl;
+    // std::cout << "  cs_mode: " << cs_mode.transpose() << std::endl;
     int num_ss_modes = ss_modes[cs].rows();
     for (int row = 0; row < num_ss_modes; ++row) {
       // process one contact mode
@@ -476,7 +2240,7 @@ bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_mode
           else if (ss_mode_contact_i_sum == kNumSlidingPlanes) {
             sss_mode[i] = '0';
           } else {
-            redundant = true;
+            redundant = true; // along an edge of a sliding plane, not within a region
             break;
           }
         } else {
@@ -493,7 +2257,7 @@ bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_mode
           for (int i = 0; i < total_sliding_directions; ++i) s_modes_[id].push_back(ss_modes[cs](row, i));
         } else {
           // this sss mode is new
-          std::cout << "sss_mode: " << sss_mode << std::endl;
+          // std::cout << "sss_mode: " << sss_mode << std::endl;
           sss_modes_.push_back(sss_mode);
           s_modes_.emplace_back();
           for (int i = 0; i < total_sliding_directions; ++i) s_modes_.back().push_back(ss_modes[cs](row, i));
@@ -525,49 +2289,86 @@ bool modeCleaning(const MatrixXi &cs_modes, const std::vector<MatrixXi> &ss_mode
     }
   }
   for (int i = 0; i < s_modes_.size(); ++i) {
-    Eigen::MatrixXi modes_i_colmajor(total_sliding_directions, s_modes_[i].size()/total_sliding_directions);
+    MatrixXi modes_i_colmajor(total_sliding_directions, s_modes_[i].size()/total_sliding_directions);
     modes_i_colmajor = MatrixXi::Map(s_modes_[i].data(), modes_i_colmajor.rows(), modes_i_colmajor.cols());
     s_modes->push_back(modes_i_colmajor.transpose());
   }
   return true;
 }
 
-Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
-    const Eigen::VectorXi &sss_mode, const Eigen::VectorXi &s_mode, int kNumSlidingPlanes) {
+MatrixXd WrenchSpaceAnalysis::getConeOfTheMode_2d(const MatrixXd &cone_allFix,
+    const VectorXi &modes) {
+  int num_contacts = modes.size();
+  std::vector<double> generators; // concatenation of all generators
+  for (int i = 0; i < num_contacts; ++i) {
+    // 0:separation 1:fixed 2/3: sliding
+    int id_start = 2*i;
+    MatrixXd generators_add(0, 0);
+    if (modes[i] == 1) {
+      // record all 2 generators
+      generators_add = cone_allFix.middleRows(id_start, 2);
+    } else if (modes[i] == 2) {
+      // Right sliding, left edge of friction cone
+      generators_add = cone_allFix.middleRows(id_start, 1);
+    } else if (modes[i] == 3) {
+      // Left sliding, right edge of friction cone
+      generators_add = cone_allFix.middleRows(id_start + 1, 1);
+    }
+    // add generators
+    if (generators_add.size() > 0) {
+      int g_size = generators.size();
+      generators.resize(g_size + generators_add.rows()*3);
+      MatrixXd::Map(&generators[g_size], 3, generators_add.rows()) = generators_add.transpose();
+    }
+  }
+  // convert generators to matrix form
+  int num_generators = generators.size()/3;
+  return MatrixXd::Map(generators.data(), 3, num_generators).transpose();
+}
 
-  int number_of_edges = 0;
+// MatrixXd getConeOfTheMode(const MatrixXd &cone_allFix,
+//     const VectorXi &sss_mode, const VectorXi &s_mode, int kNumSlidingPlanes) {
+MatrixXd WrenchSpaceAnalysis::getConeOfTheMode(const MatrixXd &cone_allFix,
+    const VectorXi &sss_mode, int kNumSlidingPlanes) {
+
   int num_contacts = sss_mode.size();
-  Eigen::VectorXi s_mode01 = s_mode;
-  s_mode01.array() = (s_mode01.array() + 1)/2; // -1/1 -> 0/1
+  // VectorXi s_mode01 = s_mode;
+  // s_mode01.array() = (s_mode01.array() + 1)/2; // -1/1 -> 0/1
   std::vector<double> generators; // concatenation of all generators
   for (int i = 0; i < num_contacts; ++i) {
     // -1: sticking   0: sliding   1: separation
-    int id_start = (2*kNumSlidingPlanes+1)*i;
+    int id_start = 2*kNumSlidingPlanes*i; // this was (2*kNumSlidingPlanes + 1)*i. In the c++ Jacobian, the repeated last row in Cone was removed.
     MatrixXd generators_add(0, 0);
     if (sss_mode[i] == -1) {
       // record all 2*kNumSlidingPlanes generators
-      generators_add = cone_allFix.middleRows(1, 2*kNumSlidingPlanes);
+      generators_add = cone_allFix.middleRows(id_start, 2*kNumSlidingPlanes);
     } else if (sss_mode[i] == 0) {
-      // find two corresponding generators
-      std::vector<double> v;
-      v.resize(2*6);
+      /**
+       * Note: the generators for sliding direction are determined in other part
+       * of the ws algorithm. This function should return no sliding friction
+       * generators.
+       */
 
-      // Compute the order from bit-wise code:
-      int id_s = kNumSlidingPlanes*i;
-      int mode_sum = s_mode01.segment(id_s, kNumSlidingPlanes).sum();
-      int id_g;
-      if (s_mode01(id_s) == 1)
-          id_g = mode_sum - 1;
-      else
-          id_g = 2*kNumSlidingPlanes - mode_sum - 1;
-      generators_add = cone_allFix.middleRows(id_start + id_g, 2);
+      // // find two corresponding generators
+      // std::vector<double> v;
+      // v.resize(2*6);
+
+      // // Compute the order from bit-wise code:
+      // int id_s = kNumSlidingPlanes*i;
+      // int mode_sum = s_mode01.segment(id_s, kNumSlidingPlanes).sum();
+      // int id_g;
+      // if (s_mode01(id_s) == 1)
+      //     id_g = mode_sum - 1;
+      // else
+      //     id_g = 2*kNumSlidingPlanes - mode_sum - 1;
+      // generators_add = cone_allFix.middleRows(id_start + id_g, 2);
     }
 
     // add generators
     if (generators_add.size() > 0) {
       int g_size = generators.size();
       generators.resize(g_size + generators_add.rows()*6);
-      Eigen::MatrixXd::Map(&generators[g_size], 6, generators_add.rows()) = generators_add.transpose();
+      MatrixXd::Map(&generators[g_size], 6, generators_add.rows()) = generators_add.transpose();
     }
   }
   // convert generators to matrix form
@@ -575,3 +2376,396 @@ Eigen::MatrixXd getConeOfTheMode(const Eigen::MatrixXd &cone_allFix,
   return MatrixXd::Map(generators.data(), 6, num_generators).transpose();
 }
 
+void WrenchSpaceAnalysis::getConstraintOfTheMode_2d(
+    const MatrixXd &J_e_AF, const MatrixXd &J_h_AF,
+    const VectorXi &mode_e, const VectorXi &mode_h,
+    MatrixXd *N, MatrixXd *Nu) {
+  const int kNumEContacts = mode_e.size();
+  const int kNumHContacts = mode_h.size();
+  const int kDim = J_h_AF.cols();
+  assert(J_e_AF.cols() == kDim);
+
+  // count number of rows
+  // 0:separation 1:fixed 2/3: sliding
+  int NRows = 0;
+  int NuRows = 0;
+  for (int i = 0; i < kNumEContacts; ++i) {
+    if (mode_e[i] == 1) {
+      NRows += 2;
+    } else if (mode_e[i] == 0) {
+      NuRows += 1;
+    } else {
+      NRows += 1;
+      NuRows += 1;
+    }
+  }
+  for (int i = 0; i < kNumHContacts; ++i) {
+    if (mode_h[i] == 1) {
+      NRows += 2;
+    } else if (mode_h[i] == 0) {
+      NuRows += 1;
+    } else {
+      NRows += 1;
+      NuRows += 1;
+    }
+  }
+
+  *N  = MatrixXd::Zero(NRows, 2*kDim);
+  *Nu = MatrixXd::Zero(NuRows, 2*kDim);
+
+  int n_count = 0, nu_count = 0;
+  for (int i = 0; i < kNumEContacts; ++i) {
+    // 0: separation, 1: sticking, 2:right sliding 3: left sliding
+    if (mode_e[i] == 0) {
+      // separation
+      Nu->block(nu_count, 0, 1, kDim) = J_e_AF.middleRows(i, 1);
+      nu_count ++;
+    } else if (mode_e[i] == 1) {
+      // sticking
+      N->block(n_count, 0, 1, kDim) = J_e_AF.middleRows(i, 1);
+      N->block(n_count+1, 0, 1, kDim) = J_e_AF.middleRows(kNumEContacts + i, 1);
+      n_count += 2;
+    } else if (mode_e[i] == 2) {
+      // right sliding
+      N->block(n_count, 0, 1, kDim) = J_e_AF.middleRows(i, 1);
+      n_count ++;
+      Nu->block(nu_count, 0, 1, kDim) = -J_e_AF.middleRows(kNumEContacts + i, 1);
+      nu_count ++;
+    } else {
+      // left sliding
+      N->block(n_count, 0, 1, kDim) = J_e_AF.middleRows(i, 1);
+      n_count ++;
+      Nu->block(nu_count, 0, 1, kDim) = J_e_AF.middleRows(kNumEContacts + i, 1);
+      nu_count ++;
+    }
+  }
+  for (int i = 0; i < kNumHContacts; ++i) {
+    // 0: separation, 1: sticking, 2:right sliding 3: left sliding
+    if (mode_h[i] == 0) {
+      // separation
+      Nu->block(nu_count, 0, 1, kDim) = -J_h_AF.middleRows(i, 1);
+      Nu->block(nu_count, kDim, 1, kDim) = J_h_AF.middleRows(i, 1);
+      nu_count ++;
+    } else if (mode_h[i] == 1) {
+      // sticking
+      N->block(n_count, 0, 1, kDim) = -J_h_AF.middleRows(i, 1);
+      N->block(n_count, kDim, 1, kDim) = J_h_AF.middleRows(i, 1);
+      N->block(n_count+1, 0, 1, kDim) = -J_h_AF.middleRows(kNumHContacts + i, 1);
+      N->block(n_count+1, kDim, 1, kDim) = J_h_AF.middleRows(kNumHContacts + i, 1);
+      n_count += 2;
+    } else if (mode_h[i] == 2) {
+      // right sliding
+      N->block(n_count, 0, 1, kDim) = -J_h_AF.middleRows(i, 1);
+      N->block(n_count, kDim, 1, kDim) = J_h_AF.middleRows(i, 1);
+      n_count ++;
+      Nu->block(nu_count, 0, 1, kDim) = J_h_AF.middleRows(kNumHContacts + i, 1);
+      Nu->block(nu_count, kDim, 1, kDim) = -J_h_AF.middleRows(kNumHContacts + i, 1);
+      nu_count ++;
+    } else {
+      // left sliding
+      N->block(n_count, 0, 1, kDim) = -J_h_AF.middleRows(i, 1);
+      N->block(n_count, kDim, 1, kDim) = J_h_AF.middleRows(i, 1);
+      n_count ++;
+      Nu->block(nu_count, 0, 1, kDim) = -J_h_AF.middleRows(kNumHContacts + i, 1);
+      Nu->block(nu_count, kDim, 1, kDim) = J_h_AF.middleRows(kNumHContacts + i, 1);
+      nu_count ++;
+    }
+  }
+}
+
+
+// for now, only implemented the bilateral part for hybrid servoing
+void WrenchSpaceAnalysis::getConstraintOfTheMode(
+    const MatrixXd &J_e_AF, const MatrixXd &J_h_AF,
+    const VectorXi &sss_mode_e, const VectorXi &sss_mode_h,
+    MatrixXd *N, MatrixXd *Nu) {
+  const int kNumEContacts = sss_mode_e.size();
+  const int kNumHContacts = sss_mode_h.size();
+  const int kDim = J_h_AF.cols();
+  assert(J_e_AF.cols() == kDim);
+
+  // count number of rows
+  // -1: sticking   0: sliding   1: separation
+  int NeRows = 0, NhRows = 0;
+  int NueRows = 0, NuhRows = 0;
+  for (int i = 0; i < kNumEContacts; ++i) {
+    if (sss_mode_e[i] == -1) {
+      NeRows += 3;
+    } else if (sss_mode_e[i] == 0) {
+      NeRows += 1;
+    } else {
+      NueRows += 1;
+    }
+  }
+  for (int i = 0; i < kNumHContacts; ++i) {
+    if (sss_mode_h[i] == -1) {
+      NhRows += 3;
+    } else if (sss_mode_h[i] == 0) {
+      NhRows += 1;
+    } else {
+      NuhRows += 1;
+    }
+  }
+
+  *N  = MatrixXd::Zero(NeRows+NhRows, 2*kDim);
+  *Nu = MatrixXd::Zero(NueRows+NuhRows, 2*kDim);
+
+  int n_count = 0, nu_count = 0;
+  for (int i = 0; i < kNumEContacts; ++i) {
+    // -1: sticking   0: sliding   1: separation
+    if (sss_mode_e[i] == 1) {
+      // separation
+      Nu->block(nu_count, 0, 1, kDim) = J_e_AF.middleRows(i, 1);
+      nu_count ++;
+      continue;
+    }
+    N->block(n_count, 0, 1, kDim) = J_e_AF.middleRows(i, 1);
+    n_count ++;
+    if (sss_mode_e[i] == -1) {
+      // sticking
+      N->block(n_count, 0, 2, kDim) = J_e_AF.middleRows(kNumEContacts + i*2, 2);
+      n_count += 2;
+    }
+  }
+  for (int i = 0; i < kNumHContacts; ++i) {
+    // -1: sticking   0: sliding   1: separation
+    if (sss_mode_h[i] == 1) {
+      // separation
+      Nu->block(nu_count, 0, 1, kDim) = -J_h_AF.middleRows(i, 1);
+      Nu->block(nu_count, kDim, 1, kDim) = J_h_AF.middleRows(i, 1);
+      nu_count ++;
+      continue;
+    }
+    N->block(n_count, 0, 1, kDim) = -J_h_AF.middleRows(i, 1);
+    N->block(n_count, kDim, 1, kDim) = J_h_AF.middleRows(i, 1);
+    n_count++;
+    if (sss_mode_h[i] == -1) {
+      // sticking
+      N->block(n_count, 0, 2, kDim) = -J_h_AF.middleRows(kNumHContacts + i*2, 2);
+      N->block(n_count, kDim, 2, kDim) = J_h_AF.middleRows(kNumHContacts + i*2, 2);
+      n_count += 2;
+    }
+  }
+}
+
+bool WrenchSpaceAnalysis::getSlidingGeneratorsFromOneContact(
+    const MatrixXd &vel_samples_on_contact,
+    const MatrixXd &Jt, const MatrixXd &Jn, double friction,
+    std::vector<MatrixXd> *g_sampled) {
+    if (vel_samples_on_contact.norm() < 100*TOL) {
+        return true;
+    }
+    for (int i = 0; i < vel_samples_on_contact.rows(); ++i) {
+      g_sampled->push_back(( - friction * vel_samples_on_contact.middleRows(i, 1).normalized() * Jt + Jn)/(std::sqrt(1+friction*friction)));
+  }
+  return true;
+}
+
+int WrenchSpaceAnalysis::findIdInModes(const VectorXi &target_mode, const MatrixXi &modes) {
+  assert(modes.cols() == target_mode.size());
+  int dim = modes.cols();
+  for (int row = 0; row < modes.rows(); ++row) {
+    bool found = true;
+    for (int i = 0; i < dim; ++i) {
+      if (target_mode(i) != modes(row, i)) {
+        found = false;
+        break;
+      }
+    }
+    if (found) return row;
+  }
+  return -1;
+}
+
+double WrenchSpaceAnalysis::forceControl(double kContactForce, int n_af,
+    const MatrixXd &pp_goal_A, const VectorXd &pp_goal_b,
+    const std::vector<MatrixXd> &pps_A, const std::vector<VectorXd> &pps_b,
+    VectorXd *wrench_best) {
+  /**
+   * Setup some parameters
+   */
+  double force_limit = 3*kContactForce; // has to be larger than kContactForce,
+                                        // since each polytope is the minkowski
+                                        // sum of edges with length kContactForce
+  VectorXd xl = -force_limit * VectorXd::Ones(n_af);
+  VectorXd xu = force_limit * VectorXd::Ones(n_af);
+  if (n_af == 0) {
+    std::cout << "[ForceControl] n_af = 0!!" << std::endl;
+    exit(1);
+  }
+  if (n_af == 6) {
+    std::cout << "[ForceControl] n_af = 6!!" << std::endl;
+    exit(1);
+  }
+  int NInitialPoints = num_seeds_[n_af-1];
+  int sample_ns = hitAndRun_num_points_[n_af-1];
+  int sample_discard = hitAndRun_num_discard_[n_af-1];
+  int sample_runup = hitAndRun_num_runup_[n_af-1];
+  int ransac_num = ransac_num_[n_af-1];
+  int ins_num_iter = opt_ins_num_iter_[n_af-1];
+
+  double max_radius = force_limit * sqrt(n_af) + 1e-7;
+  /**
+   * Step one: get an internal point of goal polyhedron for use in step two.
+   *    Solve an inscribed sphere problem.
+   */
+  VectorXd x0;
+  double radius = Poly::inscribedSphere(pp_goal_A, pp_goal_b, xl, xu,
+      MatrixXd(0, n_af), VectorXd(0), &x0);
+  if (radius < 0) {
+    return -1;
+    // std::cout << "radius: " << radius << std::endl;
+    // std::cout << "BUG: can not find an internal point" << std::endl;
+    // std::cout << "xu limit: " << xu.transpose() << std::endl;
+    // xl = VectorXd(0);
+    // xu = VectorXd(0);
+    // radius = Poly::inscribedSphere(pp_goal_A, pp_goal_b, xl, xu,
+    //     MatrixXd(0, n_af), VectorXd(0), &x0);
+    // if (radius < 0) {
+    //   std::cout << "No solution even without bound limit." << std::endl;
+    // } else {
+    //   std::cout << "solution without bound limit is: " << x0.transpose() << std::endl;
+    // }
+    // exit(-1);
+  }
+  // std::cout << "debug: pp_goal_A:\n" << pp_goal_A << std::endl;
+  // std::cout << "debug: pp_goal_b:\n" << pp_goal_b << std::endl;
+  // std::cout << "debug: pp_goal_A * x0 - pp_goal_b =\n" << pp_goal_A * x0 - pp_goal_b << std::endl;
+  // for (int i = 0; i < pps_A.size(); ++i) {
+  //   std::cout << "debug: pps_A:\n" << pps_A[i] << std::endl;
+  //   std::cout << "debug: pps_b:\n" << pps_b[i] << std::endl;
+  // }
+  // std::cout << "debug: xl:" << xl << std::endl;
+  // std::cout << "debug: xu:" << xu << std::endl;
+  /**
+   * Step two: sample a ton of points in the goal region.
+   * Use hit-and-run sampling. Sample sample_ns points,
+   * discard sample_discarad + sample_runup points
+   */
+
+  // # line search doesn't work well for high dim. go back to hit-and-run
+  // std::vector<VectorXd> wrench_samples = Poly::sampleInP1OutOfP2(
+  //     cp_goal_A, cp_goal_b, cp_A, cp_b, x0, sample_ns, max_radius);
+
+  MatrixXd wrench_samples_eigen = Poly::hitAndRunSampleInPolytope(
+    pp_goal_A, pp_goal_b, x0, sample_ns, sample_discard, sample_runup, max_radius);
+  /**
+   * Step three: Use Ransac to find a set of @p NInitialPoints that are far
+   * away from each other
+   */
+  // Ransac
+  // sample n1 set of NInitialPoints points, use the most sparse one
+  double max_dist_points = 0;
+  std::vector<int> ids_best;
+  Timer tempTimer;
+  tempTimer.tic();
+  for (int i = 0; i < ransac_num; ++i) {
+    std::vector<int> ids;
+    for (int j = 0; j < NInitialPoints; ++j) {
+      ids.push_back(RUT::randi(sample_ns));
+    }
+    // evaluate the minimal distance among the points
+    double min_dist_points = 99999;
+    for (int ii = 0; ii < NInitialPoints; ++ii) {
+      for (int jj = ii + 1; jj < NInitialPoints; ++jj) {
+        double dist = (wrench_samples_eigen.middleRows(ids[ii] ,1) - wrench_samples_eigen.middleRows(ids[jj] ,1)).norm();
+        if (dist < min_dist_points) min_dist_points = dist;
+      }
+    }
+    // compare with the best so far
+    if (min_dist_points > max_dist_points - 1e-9) {
+      max_dist_points = min_dist_points;
+      ids_best = ids;
+    }
+  }
+  double time_added = tempTimer.toc();
+  // std::cout << "max_dist_points " << max_dist_points << std::endl;
+  // std::cout << "time added: " << time_added << std::endl;
+  std::vector<VectorXd> wrench_samples;
+  for (int i = 0; i < NInitialPoints; ++i)
+    wrench_samples.push_back(wrench_samples_eigen.middleRows(ids_best[i], 1).transpose());
+
+  /**
+   * Step four: Optimize each sample point with iterative inscribed sphere
+   */
+  double control_stability_margin = -1;
+  VectorXd wrench_s;
+  std::vector<VectorXd> wrench_ball_centers;
+  std::vector<double> wrench_ball_radius;
+  for (int s = 0; s < NInitialPoints; ++s) {
+    if (print_level_ > 0)
+      std::cout << "[wrenchSpaceAnalysis/forceControl]    Sample #" << s << ": ";
+    wrench_s = wrench_samples[s];
+
+    // // check if it is close to existing balls
+    // bool too_close = false;
+    // for (int i = 0; i < wrench_ball_centers.size(); ++i) {
+    //   // std::cout << "(wrench_s - wrench_ball_centers[i]).norm(): " << (wrench_s - wrench_ball_centers[i]).norm() << std::endl;
+    //   // std::cout << "wrench_ball_radius[i]: " << wrench_ball_radius[i] << std::endl;
+    //   if ((wrench_s - wrench_ball_centers[i]).norm() < wrench_ball_radius[i]) {
+    //     std::cout << " too close." << std::endl;
+    //     too_close = true;
+    //     break;
+    //   }
+    // }
+    // if (too_close) continue;
+
+    // compute cost before optimization
+    // double cost_before = 999;
+    // for (int i = 0; i < cp_A.size(); ++i) {
+    //   double temp = Poly::distP2Polyhedron(wrench_s, cp_A[i], cp_b[i],
+    //     VectorXd::Zero(cp_goal_A.cols()));
+    //   if (temp < cost_before) cost_before = temp;
+    // }
+
+    // Refine this sample by iteratively computing inscribed sphere
+    double min_dist;
+    min_dist = Poly::getAwayFromPolyhedrons(
+        pps_A, pps_b, pp_goal_A, pp_goal_b, xl, xu, &wrench_s);
+    if (min_dist < 0) {
+      if (print_level_ > 0)
+        std::cout << " infeasible." << std::endl;
+      continue;
+    }
+    double min_dist_new;
+    for (int iter = 0; iter < ins_num_iter; ++iter) {
+      min_dist_new = Poly::getAwayFromPolyhedrons(
+        pps_A, pps_b, pp_goal_A, pp_goal_b, xl, xu, &wrench_s);
+      // std::cout << min_dist_new - min_dist << ", ";
+      double improvement = min_dist_new - min_dist;
+      min_dist = min_dist_new;
+      if (improvement < opt_min_dist_improvement_) break;
+    }
+    // std::cout << "x0: " << wrench_samples[s].transpose() << std::endl;
+    // std::cout << "wrench_s: " << wrench_s.transpose() << std::endl;
+    // std::cout << "wrench_s - x0: " << (wrench_samples[s] - wrench_s).norm() << std::endl;
+
+    // std::cout << "\nDebug: getAwayFromPolyhedrons\n";
+    // std::cout << "cp_A.size():\n" << cp_A.size() << std::endl;
+    // std::cout << "cp_b.size():\n" << cp_b.size() << std::endl;
+    // std::cout << "cp_goal_A:\n" << cp_goal_A << std::endl;
+    // std::cout << "cp_goal_b:\n" << cp_goal_b << std::endl;
+    // std::cout << "xl: " << xl.transpose() << std::endl;
+    // std::cout << "xu: " << xu.transpose() << std::endl;
+    // getchar();
+
+    // double cost_after = 999;
+    // for (int i = 0; i < cp_A.size(); ++i) {
+    //   double temp = Poly::distP2Polyhedron(wrench_s, cp_A[i], cp_b[i],
+    //     VectorXd::Zero(cp_goal_A.cols()));
+    //   if (temp < cost_after) cost_after = temp;
+    // }
+
+    // record this wrench ball
+    wrench_ball_centers.push_back(wrench_s);
+    wrench_ball_radius.push_back((wrench_s - wrench_samples[s]).norm());
+    if (min_dist > control_stability_margin) {
+      control_stability_margin = min_dist;
+      *wrench_best = wrench_s;
+    }
+    // std::cout << " cost before: " << cost_before << ", cost after: " << cost_after;
+    if (print_level_ > 0)
+      std::cout << " min_dist:" << min_dist << std::endl;
+  }
+  return control_stability_margin;
+}

@@ -1,0 +1,32 @@
+# int print_level
+
+##
+## print_level:
+##  0: minimal print to screen.
+##  1: show key information in each iteraton.
+#
+print_level: 0
+
+##
+## The five elements corresponds to dimension 1~5 of the force-controlled
+## space.
+force_control:
+  initial_seed_sampling:
+    ##
+    ## num_seeds: number of seeds to try for optimization.
+    ##
+    num_seeds: [3, 3, 5, 8, 8] # [3,3,3,3,3]
+    ## Hit-and-run sampling
+    hitAndRun:
+        num_points: [10, 50, 50, 100, 100] # sample_ns
+        num_discard: [100, 100, 100, 500, 500] # sample_discard
+        num_runup: [100, 100, 100, 500, 500] # sample_runup;
+    ransac:
+        num: [100,100,100,200,200]
+  optimization:
+        ins_num_iter: [2,2,2,3,3]
+        ##
+        ## min_dist_improvement: Stop inscribed sphere iterations if cost improvement
+        ## from the last iteration is smaller than this number
+        ##
+        min_dist_improvement: 0.005

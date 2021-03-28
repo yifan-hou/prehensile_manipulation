@@ -1,0 +1,16 @@
+getJacobian
+    computing CT may not be necessary. SP is already what I want
+
+wrenchstamping
+    ss mode is not necessary. Input SSS mode directly.
+    Goal ss mode is not necessary.
+
+    add proper rescaling of R_a_v and R_a_f to 2D wrench stamping
+
+clean up files under cpp/src
+clean up files under matlab
+
+-1, -1, 1, 1"
+iterative inscribed sphere: every iteration, check distance to previous solution centers
+clean up modes
+
