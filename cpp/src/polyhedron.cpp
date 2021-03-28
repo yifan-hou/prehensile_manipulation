@@ -185,7 +185,13 @@ double Poly::getAwayFromPolyhedrons(
     /**
      * Solve for the largest inscribed sphere
      */
-    return inscribedSphere(A, b, xl, xu, A1, b1, x);
+    // return inscribedSphere(A, b, xl, xu, A1, b1, x);
+    // 2021.3.27: when computing inscribed sphere, also maximize distance towards goal polyhedron faces.
+    Eigen::MatrixXd Ac(A.rows() + A1.rows(), A.cols());
+    Ac << A, A1;
+    Eigen::VectorXd bc(A.rows() + A1.rows());
+    bc << b, b1;
+    return inscribedSphere(Ac, bc, xl, xu, Eigen::MatrixXd(0, dim), Eigen::VectorXd(0), x);
   } else {
     // no P2. Return the center of P1
     assert(A1.rows() > 0); //P1 cannot also be empty

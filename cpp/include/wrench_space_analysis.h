@@ -91,6 +91,18 @@ public:
         const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
         HFVC *action);
 
+    std::pair<double, double> wrenchStampingEvaluation(Eigen::MatrixXd Jac_e, Eigen::MatrixXd Jac_h,
+        Eigen::MatrixXd eCone_allFix_r, Eigen::MatrixXd hCone_allFix_r,
+        Eigen::VectorXd F_G, const double kContactForce,
+        const double kFrictionE, const double kFrictionH,
+        const double kCharacteristicLength, const int kNumSlidingPlanes,
+        const Eigen::MatrixXi &e_cs_modes, const std::vector<Eigen::MatrixXi> &e_ss_modes,
+        const Eigen::MatrixXi &h_cs_modes, const std::vector<Eigen::MatrixXi> &h_ss_modes,
+        Eigen::MatrixXd G, const Eigen::VectorXd &b_G,
+        const Eigen::MatrixXi &e_cs_modes_goal, const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+        const Eigen::MatrixXi &h_cs_modes_goal, const std::vector<Eigen::MatrixXi> &h_ss_modes_goal,
+        const HFVC &action);
+
     void updateConstants(
         double kFrictionE, double kFrictionH, double kNumSlidingPlanes,
         double kContactForce, double kObjWeight, double kCharacteristicLength);
@@ -119,6 +131,12 @@ public:
       const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
       const Eigen::MatrixXi &h_cs_modes_goal,
       const std::vector<Eigen::MatrixXi> &h_ss_modes_goal, HFVC &action);
+
+    std::pair<double, double> wrenchStampingEvaluationWrapper(const Eigen::MatrixXd &G, const Eigen::VectorXd &b_G,
+      const Eigen::MatrixXi &e_cs_modes_goal,
+      const std::vector<Eigen::MatrixXi> &e_ss_modes_goal,
+      const Eigen::MatrixXi &h_cs_modes_goal,
+      const std::vector<Eigen::MatrixXi> &h_ss_modes_goal, const HFVC &action);
 
     std::pair<double, double> computeStabilityMargin(
       double kFrictionE, double kFrictionH, double kNumSlidingPlanes,

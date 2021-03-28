@@ -63,7 +63,7 @@ double distRay2ConeFromOutside(const Eigen::VectorXd &p, const Eigen::MatrixXd &
  * @param[in]  p          The query point
  * @param[in]  A          Polyhedron description, A x <= b
  * @param[in]  b          Polyhedron description, A x <= b
- * @param[in]  x0         Initial guess for QP
+ * @param[in]  x0         Initial guess for QP, doesn't have to be feasible
  * @param      x_closest  The point in the polyhedron that is the closest to p
  *
  * @return     { description_of_the_return_value }

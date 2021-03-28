@@ -68,6 +68,7 @@ target_link_libraries(sharedgraspinglib
 	PRIVATE
 		polylib
 		modus
+		jacobianlib
 		${RobotUtilLib}
 		${YAML_LIBRARY}
 )
@@ -78,23 +79,30 @@ target_link_libraries(sharedgraspinglib
 # add_executable(qhulltest src/testQHull.cpp)
 # target_link_libraries(qhulltest ${qhullLibs})
 
-add_executable(polytest src/testpoly.cpp)
-target_link_libraries(polytest polylib ${qhullLibs} ${RobotUtilLib})
+# add_executable(polytest src/testpoly.cpp)
+# target_link_libraries(polytest polylib ${qhullLibs} ${RobotUtilLib})
 
-pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
-target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib
-	${RobotUtilLib} ${YAML_LIBRARY})
+# pybind11_add_module(wrenchStampingLib src/wrenchStampingPybind.cpp)
+# target_link_libraries(wrenchStampingLib PRIVATE sharedgraspinglib
+# 	${RobotUtilLib} ${YAML_LIBRARY})
 
-add_executable(lutest src/testEigenLU.cpp)
+# add_executable(lutest src/testEigenLU.cpp)
 
-add_executable(ppltest src/testppl.cpp)
-target_link_libraries(ppltest ${PPLLIB} ${GMPLIB})
+# add_executable(ppltest src/testppl.cpp)
+# target_link_libraries(ppltest ${PPLLIB} ${GMPLIB})
 
-add_executable(lptest src/lp.cpp)
-target_link_libraries(lptest ${GLPKLIB})
+# add_executable(lptest src/lp.cpp)
+# target_link_libraries(lptest ${GLPKLIB})
 
-add_executable(sharedGraspingCpptest src/test_wrenchstamping.cpp)
+add_executable(sharedGraspingCpptest tests/test_wrenchstamping.cpp)
 target_link_libraries(sharedGraspingCpptest
+	jacobianlib
+	sharedgraspinglib
+	modus
+	ortools::ortools)
+
+add_executable(sharedGraspingCpptest2 tests/test_wrenchstamping2.cpp)
+target_link_libraries(sharedGraspingCpptest2
 	jacobianlib
 	sharedgraspinglib
 	modus
