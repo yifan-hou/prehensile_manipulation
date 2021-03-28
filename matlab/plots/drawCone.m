@@ -30,15 +30,17 @@ elseif rw == 2
     else
         h = patch(data(:, 1), data(:, 2), data(:, 3), color);
     end
-    h.FaceAlpha = 0.95;
+    h.FaceAlpha = 0.75;
 else
     % line or ray
     h = patch(data(:, 1), data(:, 2), data(:, 3), color);
     h.LineWidth = 3;
 end
 
+
 h.FaceColor = color;
 h.EdgeColor = color;
+
 
 % axis equal;
 
@@ -52,7 +54,7 @@ hyl = ylabel('F_Y(N)');
 hzl = zlabel('T_Z(N)');
 grid on;
 set([hxl hyl hzl], 'FontName', 'Times New Roman', 'FontWeight','bold')
-axis([-1.1 1.1 -1.1 1.1 -1.1 1.1]);
+axis([-1.1 1.1 -0.1 1.1 -0.6 0.1]);
 
 set(gca, 'XColor', [.3 .3 .3], 'YColor', [.3 .3 .3], 'ZColor', [.3 .3 .3],...
     'LineWidth', 1)

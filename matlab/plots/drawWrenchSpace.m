@@ -5,26 +5,24 @@ function drawWrenchSpace(cone_all_fix, eCone_allFix, hCone_allFix, V_control_dir
 
 % blue shades
 blue=[58/255,67/255,186/255];
-slate=[117/255,123/255,135/255];
 sky=[98/255,197/255,218/255];
-navy=[11/255,17/255,113/255];
-indigo=[40/255,30/255,93/255];
-cobalt=[19/255,56/255,189/255];
+% navy=[11/255,17/255,113/255];
+% indigo=[40/255,30/255,93/255];
 teal=[72/255,170/255,173/255];
 ocean=[1/255,96/255,100/255];
 peacock=[1/255,45/255,54/255];
-azure=[22/255,32/255,166/255];
+% azure=[22/255,32/255,166/255];
 cerulean=[4/255,146/255,194/255];
 lapis=[39/255,50/255,194/255];
 spruce=[44/255,62/255,76/255];
-stone=[89/255,120/255,141/255];
 aegean=[30/255,69/255,110/255];
-blueberry=[36/255,21/255,112/255];
-denim=[21/255,30/255,61/255];
-admiral=[6/255,16/255,148/255];
+% blueberry=[36/255,21/255,112/255];
+% denim=[21/255,30/255,61/255];
+% admiral=[6/255,16/255,148/255];
 sapphire=[82/255,178/255,192/255];
 artic=[130/255,237/255,253/255];
-bluecolors = [blue;slate;sky;navy;indigo;cobalt;teal;ocean;peacock;azure;cerulean;lapis;spruce;stone;aegean;blueberry;denim;admiral;sapphire;artic];
+bluecolors = [blue;sky;teal;ocean;cerulean;lapis;aegean;sapphire;artic];
+bluecolors = [bluecolors; bluecolors];
 nbcolor = size(bluecolors, 1);
 
 % red shades
@@ -51,6 +49,11 @@ lipstick=[156/255,16/255,3/255];
 redcolors = [red;cherry;rosered;jam;merlot;garnet;crimson;ruby;scarlet;winered;brick;apple;mahogany;blood;sangriared;berryred;currant;blushred;candy;lipstick];
 nrcolor = size(redcolors, 1);
 
+rorder_b = randperm(nbcolor);
+rorder_r = randperm(nrcolor);
+bcount = 1;
+rcount = 1;
+
 % exam all the modes
 % draw contact screws
 figure(1); clf(1); hold on;
@@ -66,8 +69,13 @@ plot3(0,0,0,'k.','markersize',25);
 % draw the whole hand cone and e cone
 % drawCone(cone_all_fix, sapphire, true);
 % drawCone([eCone_allFix; -hCone_allFix]', peacock, true);
-% drawCone(eCone_allFix', peacock, true);
-% drawCone(hCone_allFix', spruce, true);
+drawCone(eCone_allFix', sapphire, true);
+drawCone(hCone_allFix', blue, true);
+
+axis([-0.8 0.8 -0.1 1.1 -0.4 0.25]);
+set(gca, 'XTick', -0.4:0.2:0.4, 'YTick', -0.1:0.25:1.1, 'ZTick', -0.4:0.325:.25);
+view(-135, 27);
+
 
 % draw cones
 for i = 1:number_of_modes
@@ -79,7 +87,8 @@ for i = 1:number_of_modes
     texts = printModes(eh_modes(:, i), false);
     if compatibilities(i) == true
         disp(texts);
-        bcolor = bluecolors(randi(nbcolor), :);
+        bcolor = bluecolors(rorder_b(bcount), :);
+        bcount = bcount + 1;
         drawCone(cone_generators{i}, bcolor, true, texts);
 
 %         % projection on force plane
@@ -87,8 +96,9 @@ for i = 1:number_of_modes
 %         drawCone(cone_projection_i, bcolor, true);
     else
         disp([texts ' Infeasible']);
-        rcolor = redcolors(randi(nrcolor), :);
-        bcolor = bluecolors(randi(nbcolor), :);
+%         rcolor = redcolors(randi(nrcolor), :);
+        bcolor = bluecolors(rorder_b(bcount), :);
+        bcount = bcount + 1;
         drawCone(cone_generators{i}, bcolor, true, texts);
     end
 end
